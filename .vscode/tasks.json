@@ -30,6 +30,31 @@
       "args": ["scripts/graficar.py"],
       "options": { "cwd": "${workspaceFolder}/TP1-parte2/01_C++" },
       "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: correr una simulación",
+      "type": "shell",
+      "command": "python",
+      "args": ["src/main.py", "20000", "8"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "group": { "kind": "build", "isDefault": false },
+      "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: ejecutar experimentos",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar_experimentos.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: graficar resultados",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/graficar.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "problemMatcher": []
     }
   ]
 }
