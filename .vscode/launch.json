@@ -12,6 +12,15 @@
       "miDebuggerPath": "C:\\Users\\maria\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\gdb.exe",
       "preLaunchTask": "Naruto: compilar",
       "externalConsole": false
+    },
+    {
+      "name": "Netherrealm: debug (Python)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/TP1-parte2/02_Python/src/main.py",
+      "args": ["1000", "4"],
+      "cwd": "${workspaceFolder}/TP1-parte2/02_Python",
+      "console": "integratedTerminal"
     }
   ]
 }
