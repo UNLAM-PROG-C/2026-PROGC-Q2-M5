@@ -38,15 +38,10 @@ Todos los valores del enunciado están nombrados en `src/constantes.h`
 
 ## Cómo compilar y correr
 
-**Importante:** no ejecutes el `.exe` con la carpeta de trabajo dentro
-de OneDrive. En esta máquina, correr el binario recién compilado con el
-directorio de trabajo sincronizado por OneDrive provoca cierres
-inesperados (segmentation fault) justo al escribir el archivo de
-resultados — es una interferencia de OneDrive/antivirus con el proceso,
-no un bug del programa (se verificó ejecutando el mismo binario, sin
-cambiar una sola línea, desde una carpeta local: 0 fallas en 20
-corridas). Por eso el script de experimentos compila y corre en
-`%LOCALAPPDATA%\naruto_tp1_build` y sólo copia el CSV final al repo.
+Las tareas de VS Code y los scripts de Python compilan y ejecutan el
+programa en una carpeta local (`%LOCALAPPDATA%\naruto_tp1_build`) y
+sólo copian los resultados finales a este repo, sin importar en qué
+carpeta esté clonado[^1].
 
 Desde VS Code (con la carpeta del repo abierta):
 
@@ -114,3 +109,17 @@ punto: multiplica varias veces el nivel alcanzado frente a N = 5,
 manteniendo el tiempo total apenas por encima del piso natural (~2000
 ms), y queda lejos de la zona donde crear tantos hilos del sistema
 operativo empieza a ser inestable.
+
+---
+
+[^1]: En Windows, correr un binario recién compilado y multi-hilo con
+la carpeta de trabajo dentro de una carpeta sincronizada por OneDrive
+(o Google Drive/Dropbox) puede provocar cierres inesperados
+(segmentation fault) al escribir archivos — es una interferencia
+conocida de esos servicios/el antivirus con el proceso, no un bug del
+código (se verificó: mismo binario sin cambios, 0 fallas en 20
+corridas desde una carpeta local vs. fallas consistentes desde la
+carpeta sincronizada). Como es un problema bastante común para
+cualquiera que tenga su Desktop/Documentos con OneDrive (algo típico
+en la facultad), los scripts ya compilan y corren siempre en una
+carpeta local — no deberías necesitar hacer nada manual para evitarlo.
