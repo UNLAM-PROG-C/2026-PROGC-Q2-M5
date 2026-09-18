@@ -97,6 +97,22 @@
       "args": ["scripts/graficar.py"],
       "options": { "cwd": "${workspaceFolder}/TP1-parte3/03_Java" },
       "problemMatcher": []
+    },
+    {
+      "label": "Babuinos: correr simulación (8 izquierda, 6 derecha)",
+      "type": "shell",
+      "command": "python",
+      "args": ["src/main.py", "8", "6"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Babuinos: verificar (pruebas de estrés)",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/verificar.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/02_Python" },
+      "problemMatcher": []
     }
   ]
 }
