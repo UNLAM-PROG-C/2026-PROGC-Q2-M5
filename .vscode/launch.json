@@ -17,9 +17,9 @@
       "name": "Netherrealm: debug (Python)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/TP2-parte1/02_Python/src/main.py",
+      "program": "${workspaceFolder}/TP1-parte2/02_Python/src/main.py",
       "args": ["1000", "4"],
-      "cwd": "${workspaceFolder}/TP2-parte1/02_Python",
+      "cwd": "${workspaceFolder}/TP1-parte2/02_Python",
       "console": "integratedTerminal"
     }
   ]
