@@ -11,7 +11,7 @@
         "-Command",
         "New-Item -ItemType Directory -Force -Path \"$env:LOCALAPPDATA\\naruto_tp1_build\\resultados\" | Out-Null; g++ -std=c++17 -O2 -g -Wall -Wextra src/main.cpp src/simulador.cpp src/clon_de_sombra.cpp src/clon_factory.cpp src/intento_strategy.cpp -o \"$env:LOCALAPPDATA\\naruto_tp1_build\\naruto_entrenamiento.exe\""
       ],
-      "options": { "cwd": "${workspaceFolder}/TP1-parte2/01_C++" },
+      "options": { "cwd": "${workspaceFolder}/TP2-parte1/01_C++" },
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$gcc"]
     },
@@ -20,7 +20,7 @@
       "type": "shell",
       "command": "python",
       "args": ["scripts/ejecutar_experimentos.py"],
-      "options": { "cwd": "${workspaceFolder}/TP1-parte2/01_C++" },
+      "options": { "cwd": "${workspaceFolder}/TP2-parte1/01_C++" },
       "problemMatcher": []
     },
     {
@@ -28,7 +28,7 @@
       "type": "shell",
       "command": "python",
       "args": ["scripts/graficar.py"],
-      "options": { "cwd": "${workspaceFolder}/TP1-parte2/01_C++" },
+      "options": { "cwd": "${workspaceFolder}/TP2-parte1/01_C++" },
       "problemMatcher": []
     },
     {
