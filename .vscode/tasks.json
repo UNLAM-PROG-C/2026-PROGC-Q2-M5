@@ -113,6 +113,23 @@
       "args": ["scripts/verificar.py"],
       "options": { "cwd": "${workspaceFolder}/TP1-parte3/02_Python" },
       "problemMatcher": []
+    },
+    {
+      "label": "Baño: correr simulación (8 hombres, 6 mujeres)",
+      "detail": "Compila y corre en una carpeta LOCAL (fuera de OneDrive), igual que el TP de Naruto.",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar.py", "bano", "8", "6"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/01_C++" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Baño: verificar (pruebas de estrés)",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar.py", "verificar"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/01_C++" },
+      "problemMatcher": []
     }
   ]
 }
