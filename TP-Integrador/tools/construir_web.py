@@ -4,8 +4,8 @@ Uso:
     .venv/bin/python tools/construir_web.py
 
 Arma una carpeta temporal (build/web-src) sólo con lo que necesita el
-navegador: web/main.py como main.py, el paquete fdc (sin las partes de
-procesos y del servidor) y los sprites. Después ejecuta pygbag y deja el
+navegador: web/main.py como main.py, el paquete fdc (sin el proceso de
+simulación ni el servidor) y los sprites. Después ejecuta pygbag y deja el
 resultado en build/web, que es lo que sirve servidor.py.
 
 Necesita internet la primera vez: pygbag descarga su plantilla. En el
@@ -21,8 +21,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STAGE = os.path.join(ROOT, "build", "web-src")
 OUT = os.path.join(ROOT, "build", "web")
 
-# lo que el navegador no puede (ni necesita) usar: procesos y servidor
-SKIP = {os.path.join("fdc", "ipc.py"), os.path.join("fdc", "sim"), os.path.join("fdc", "online", "server.py")}
+# lo que el navegador no puede (ni necesita) usar: el proceso de simulación con
+# sus colas (multiprocessing) y el servidor. La simulación en sí SÍ va: los modos
+# locales la corren dentro de la página (fdc/sim/inline.py).
+SKIP = {os.path.join("fdc", "ipc.py"), os.path.join("fdc", "sim", "process.py"),
+        os.path.join("fdc", "online", "server.py")}
 
 
 def copy_package():

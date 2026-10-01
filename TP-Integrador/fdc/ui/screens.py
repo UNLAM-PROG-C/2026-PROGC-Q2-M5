@@ -223,7 +223,7 @@ class BootScreen(Screen):
         if self.to_warm:                   # retratos, uno por cuadro: la ventana responde
             self.app.sprites.portrait(self.to_warm.pop(0))
         elif self.app.link is None or self.app.link.ready:
-            self.app.switch(self.app.home())
+            self.app.switch(self.app.first_screen())
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
@@ -234,7 +234,7 @@ class BootScreen(Screen):
         msg = "Iniciando el proceso de simulación..." if waiting else "Preparando personajes..."
         draw_text(surf, msg, 24, (640, 420), C.INK, outline=C.WHITE)
         self.app.ball_sprite.draw(surf, 640, 480 - abs(math.sin(self.t * 5)) * 30, 17, self.t * 400)
-        if link is not None:
+        if link is not None and not getattr(link, "inline", False):
             draw_text(surf, f"Esperando la confirmación READY ({self.t:.1f} s de {IPC.READY_TIMEOUT:.0f} s)"
                       if waiting else "Simulación lista", 16, (640, 540), C.INK_SOFT, outline=None)
 
@@ -245,20 +245,23 @@ class BootScreen(Screen):
 class MenuScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
-        self.menu = Menu([
+        items = [
             ("Jugar", lambda: app.switch(PlayMenuScreen(app))),
             ("Controles", lambda: app.switch(ControlsScreen(app))),
             ("Poderes", lambda: app.switch(LegendScreen(app))),
-            ("Salir", app.quit),
-        ], (640, 440))
+        ]
+        if not app.web:
+            items.append(("Salir", app.quit))     # una página web no se cierra a sí misma
+        self.menu = Menu(items, (640, 440))
 
     def enter(self):
         self.app.audio.crowd(False)
 
     def handle_event(self, ev):
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self.menu.sel = len(self.menu.items) - 1   # Esc lleva a "Salir" (no cierra de golpe)
-            self.app.audio.play("select")
+            if not self.app.web:
+                self.menu.sel = len(self.menu.items) - 1   # Esc lleva a "Salir" (no cierra de golpe)
+                self.app.audio.play("select")
             return
         self.menu.handle_event(ev, self.app.audio)
 
@@ -470,7 +473,8 @@ class ErrorScreen(Screen):
         self.message = message
         tb = [ln for ln in (detail or "").strip().splitlines() if ln.strip()]
         self.detail = tb[-3:] if tb else []
-        self.menu = Menu([("Reintentar", self.retry), ("Salir", app.quit)], (640, 560), width=300)
+        items = [("Reintentar", self.retry)] + ([] if app.web else [("Salir", app.quit)])
+        self.menu = Menu(items, (640, 560), width=300)
 
     def enter(self):
         self.app.audio.crowd(False)
@@ -501,7 +505,9 @@ class ErrorScreen(Screen):
         for ln in self.detail:
             draw_text(surf, ln[:110], 16, (640, y), C.INK_SOFT, outline=None)
             y += 22
-        draw_text(surf, "La interfaz sigue funcionando: podés reintentar (se lanza un proceso nuevo) o salir.",
+        hint = ("Podés reintentar: la simulación vuelve a empezar." if getattr(self.app.link, "inline", False)
+                else "La interfaz sigue funcionando: podés reintentar (se lanza un proceso nuevo) o salir.")
+        draw_text(surf, hint,
                   16, (640, inner.bottom - 18), C.INK, outline=None)
         self.menu.draw(surf)
 

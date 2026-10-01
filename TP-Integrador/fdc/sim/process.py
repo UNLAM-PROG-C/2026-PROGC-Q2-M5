@@ -22,43 +22,31 @@ import traceback
 
 from .. import config as C
 from .. import protocol as P
-from .match import Match
+from .core import SimulationCore
 
 log = logging.getLogger("fdc.sim")
 
 
-class SimulationServer:
+class SimulationServer(SimulationCore):
+    """El núcleo de la simulación (fdc/sim/core.py) en su propio proceso, con colas."""
+
     def __init__(self, cmd_q, input_q, state_q, event_q, stop_event, options):
+        super().__init__(options)
         self.cmd_q = cmd_q
         self.input_q = input_q
         self.state_q = state_q
         self.event_q = event_q
         self.stop_event = stop_event
-        self.test_mode = bool(options.get("test_mode"))
-        self.seed = options.get("seed")
-        self.duration = options.get("duration")   # partidos cortos para pruebas/demostración
-        self.match = None
-        self.eid = 0
-        self.seq = 0
-        self.press = [[P.PressCounter(), P.PressCounter()] for _ in range(2)]
-        self.last_input_time = time.monotonic()
         self.last_parent_check = 0.0
         self.last_heartbeat = 0.0
-        self.running = True
-        self.dropped_cosmetic = 0
-        self.dropped_states = 0
 
-    # ------------------------------------------------------------------ envío
-    def emit(self, etype, match_id=None, **payload):
-        self.eid += 1
-        msg = P.make_event(etype, self.eid, match_id, **payload)
-        if etype in P.COSMETIC_EVENTS:
-            try:
-                self.event_q.put_nowait(msg)
-            except queue.Full:
-                self.dropped_cosmetic += 1   # política explícita: sólo cosméticos
-            return
-        self.put_reliable(msg)
+    # ------------------------------------------------------------------ envío (colas)
+    def put_cosmetic(self, msg):
+        try:
+            self.event_q.put_nowait(msg)
+            return True
+        except queue.Full:
+            return False
 
     def put_reliable(self, msg):
         """Entrega garantizada salvo que se esté cerrando todo."""
@@ -72,12 +60,8 @@ class SimulationServer:
                     return False
                 log.warning("cola de eventos llena; reintentando %s", msg.get("type"))
 
-    def publish_state(self):
+    def put_state(self, snap):
         """Estados reemplazables: si la cola está llena se descarta el MÁS VIEJO."""
-        self.seq += 1
-        snap = self.match.snapshot(self.seq)
-        snap["dropped_states"] = self.dropped_states
-        snap["dropped_cosmetic"] = self.dropped_cosmetic
         try:
             self.state_q.put_nowait(snap)
             return
@@ -93,68 +77,7 @@ class SimulationServer:
         except queue.Full:
             self.dropped_states += 1        # la UI lo reemplazará por el siguiente
 
-    def flush_match_events(self, events):
-        mid = self.match.id if self.match else None
-        for etype, data in events:
-            self.emit(etype, mid, **data)
-
-    # ------------------------------------------------------------------ órdenes
-    def handle_command(self, cmd):
-        ctype, cid = cmd.get("type"), cmd.get("cid")
-        ack = lambda ok=True, detail="", match=None: self.put_reliable(P.make_ack(
-            cid, ctype, ok, match if match is not None else (self.match.id if self.match else None),
-            detail))
-
-        if ctype == P.CMD_START or ctype == P.CMD_RESTART:
-            chars = cmd.get("characters") or (self.match.characters if self.match else ("?", "?"))
-            seed = cmd.get("seed", self.seed)
-            # un partido nuevo es un objeto nuevo: no arrastra efectos ni estado viejo
-            self.match = Match(cmd["match"], seed=seed, characters=chars, duration=self.duration,
-                               golden_goal=bool(cmd.get("golden_goal", False)))
-            self.last_input_time = time.monotonic()
-            log.info("%s partido #%s (%s vs %s, semilla %s)", ctype, self.match.id,
-                     chars[0], chars[1], self.match.seed)
-            ack(True, f"semilla {self.match.seed}")
-            self.publish_state()
-        elif ctype == P.CMD_PAUSE:
-            if self.match is None:
-                ok = False
-            elif cmd.get("after_goal"):
-                # online: queda pendiente hasta después del próximo gol
-                ok = self.match.request_pause_after_goal(cmd.get("by"))
-            else:
-                ok = self.match.pause(cmd.get("reason", P.PAUSE_REASON_USER))
-            ack(ok, "" if ok else "no hay partido en curso")
-            if ok:
-                self.publish_state()
-        elif ctype == P.CMD_RESUME:
-            ok = self.match is not None and self.match.resume()
-            self.last_input_time = time.monotonic()
-            ack(ok, "" if ok else "no estaba en pausa")
-            if ok:
-                self.publish_state()
-        elif ctype == P.CMD_END:
-            self.match = None
-            ack(True)
-        elif ctype == P.CMD_DEBUG_POWER:
-            if not self.test_mode or self.match is None:
-                ack(False, "modo de prueba desactivado" if not self.test_mode else "sin partido")
-                return
-            ok, detail, events = self.match.debug_power(cmd.get("power"), cmd.get("mode", "spawn"))
-            ack(ok, detail)
-            self.flush_match_events(events)
-        elif ctype == P.CMD_DEBUG_CRASH:
-            if not self.test_mode:
-                ack(False, "modo de prueba desactivado")
-                return
-            ack(True, "fallo provocado")
-            raise RuntimeError("Fallo provocado desde el modo de prueba (F12)")
-        elif ctype == P.CMD_SHUTDOWN:
-            ack(True)
-            self.running = False
-        else:
-            ack(False, f"orden desconocida {ctype!r}")
-
+    # ------------------------------------------------------------------ recepción (colas)
     def drain_commands(self):
         while True:
             try:
@@ -171,29 +94,16 @@ class SimulationServer:
                 latest = self.input_q.get_nowait()
             except queue.Empty:
                 break
-        if latest is None:
-            return
-        self.last_input_time = time.monotonic()
-        for idx, (left, right, jumps, kicks) in enumerate(latest["p"][:2]):
-            new_j = self.press[idx][0].update(jumps)
-            new_k = self.press[idx][1].update(kicks)
-            if self.match is not None:
-                self.match.set_input(idx, left, right, new_j, new_k)
+        if latest is not None:
+            self.apply_inputs(latest)
 
     # ------------------------------------------------------------------ bucle
     def _parent_alive(self):
         parent = mp.parent_process()
         return parent is None or parent.is_alive()
 
-    def _match_running(self):
-        m = self.match
-        return m is not None and not m.paused and m.phase != P.PHASE_FINISHED
-
     def run(self):
-        self.put_reliable(P.make_event(
-            P.EV_READY, None, None, pid=os.getpid(), protocol=C.PROTOCOL_VERSION,
-            hz=C.PHYSICS_HZ, test_mode=self.test_mode, seed=self.seed,
-            pygame_loaded="pygame" in sys.modules))
+        self.put_reliable(self.ready_event())
         next_tick = time.monotonic()
         while self.running and not self.stop_event.is_set():
             now = time.monotonic()
@@ -202,14 +112,14 @@ class SimulationServer:
                 if not self._parent_alive():
                     log.error("la interfaz desapareció: la simulación termina sola")
                     return
-            if not self._match_running():
+            if not self.match_running():
                 self._idle()
                 next_tick = time.monotonic()
                 continue
 
             self.drain_commands()
             self.drain_inputs()
-            if not self._match_running():
+            if not self.match_running():
                 continue
             if time.monotonic() - self.last_input_time > C.MatchRules.INPUT_WATCHDOG:
                 # la interfaz dejó de mandar controles (ventana bloqueada, etc.)
@@ -221,13 +131,10 @@ class SimulationServer:
             steps = 0
             now = time.monotonic()
             while now >= next_tick and steps < C.MAX_CATCHUP_STEPS:
-                events = self.match.step(C.PHYSICS_DT)
-                self.flush_match_events(events)
+                self.step_once()
                 next_tick += C.PHYSICS_DT
                 steps += 1
-                if self.match.tick % C.STATE_EVERY_TICKS == 0 or self.match.phase == P.PHASE_FINISHED:
-                    self.publish_state()
-                if not self._match_running():
+                if not self.match_running():
                     break
             if steps >= C.MAX_CATCHUP_STEPS and now >= next_tick:
                 next_tick = now   # demasiado atraso: se descarta en vez de acelerar

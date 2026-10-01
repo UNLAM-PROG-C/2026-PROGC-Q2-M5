@@ -1,8 +1,8 @@
 # Futbol De Cabeza
 
-Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas, en el navegador.
+Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas. Todo eso también está **en el navegador**: entrando a la página del juego se elige el modo igual que en la versión de escritorio.
 
-Es un trabajo práctico de **Programación Concurrente**. La solución usa **dos procesos** (`multiprocessing`, contexto `spawn`) que se comunican con **colas de mensajes** y se sincronizan con **confirmaciones**, **identificadores de partido** y un **`multiprocessing.Event`** de cierre. En el online, un servidor `asyncio` atiende las conexiones y lanza **un proceso de simulación por sala** (el mismo de la versión local).
+Es un trabajo práctico de **Programación Concurrente**. La solución usa **dos procesos** (`multiprocessing`, contexto `spawn`) que se comunican con **colas de mensajes** y se sincronizan con **confirmaciones**, **identificadores de partido** y un **`multiprocessing.Event`** de cierre. En el online, un servidor `asyncio` atiende las conexiones y lanza **un proceso de simulación por sala** (el mismo de la versión local). La lógica de la simulación es una sola (`fdc/sim/core.py`) y corre en tres lugares: el proceso de escritorio, los procesos de sala del servidor y, en el navegador (donde no hay procesos), dentro de la misma página.
 
 > El nombre se cambia en un único lugar: `GAME_NAME` en `fdc/config.py`.
 
@@ -29,7 +29,7 @@ Opciones útiles:
 
 Ejemplo para la defensa: `.venv/bin/python main.py --prueba --depuracion --semilla 7 --duracion 40`
 
-**Online** (opcional: el juego local no lo necesita):
+**Versión web y online** (opcional: el juego de escritorio no lo necesita):
 
 ```bash
 .venv/bin/python -m pip install -r requirements-online.txt   # una vez: websockets y pygbag
@@ -37,7 +37,8 @@ Ejemplo para la defensa: `.venv/bin/python main.py --prueba --depuracion --semil
 .venv/bin/python servidor.py                                  # servidor + página en http://127.0.0.1:8765
 ```
 
-- **Jugar:** abrí <http://127.0.0.1:8765> en dos navegadores, o usá *Jugar > Multijugador > Online* en `main.py`.
+- **Jugar en el navegador:** abrí <http://127.0.0.1:8765>. Está el juego completo: Mundialito, multijugador local (dos personas en un teclado) y online. Para el online, abrilo en dos navegadores; también se puede usar *Jugar > Multijugador > Online* en `main.py`.
+- **Desde otra compu de tu casa:** el servidor muestra al arrancar la dirección de la red local (por ejemplo `http://192.168.0.84:8765`). La primera vez, la Mac pregunta si Python acepta conexiones entrantes: hay que permitirlo.
 - **Otro servidor:** `main.py --servidor wss://tu-dominio/ws` (o la variable `FDC_SERVIDOR`).
 - **NAS con Windows:** la puesta en marcha, con dominio y HTTPS, está en [docs/ONLINE.md](docs/ONLINE.md).
 
@@ -73,12 +74,14 @@ Las teclas se definen en `PLAYER_KEYS` (en `fdc/config.py`) y la pantalla **Cont
 
 ```
 Jugar
-  Mundialito        1 jugador contra la computadora (sólo local)
+  Mundialito        1 jugador contra la computadora (no es online: se juega en tu equipo)
   Multijugador
     Local           2 personas en el mismo teclado
-    Online          1 contra 1 por internet, en salas (también desde el navegador)
+    Online          1 contra 1 por internet, en salas
 Controles / Poderes / Salir
 ```
+
+El menú es el mismo en la versión de escritorio y en la página web. En la web no aparece *Salir*, porque una página no se puede cerrar sola.
 
 ### Mundialito (1 jugador)
 
@@ -277,7 +280,7 @@ Tampoco hay hilos, semáforos ni procesos decorativos: los únicos hilos extra s
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Son 92 pruebas y tardan unos 90 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
+Son 98 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
 
 | Archivo | Qué prueba |
 |---|---|
@@ -287,6 +290,7 @@ Son 92 pruebas y tardan unos 90 s. Usan `unittest`; las del online necesitan ade
 | `test_process.py` | **Procesos reales:** READY desde otro pid y sin pygame, iniciar, pausar (reloj congelado en los latidos), continuar, reiniciar (sólo se aceptan estados del partido nuevo, sin efectos), eventos de partidos anteriores, watchdog, cierre ordenado (`bye`, código 0), fallo informado, proceso muerto detectado, sin huérfanos si la interfaz muere, órdenes de prueba rechazadas sin `--prueba` |
 | `test_lobby.py` | Salas del online (lógica pura, sin red): nombre de usuario, sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
 | `test_online.py` | **Servidor real con conexiones WebSocket reales:** nombres repetidos, salas con contraseña, mensajes inválidos, archivos de la página sin salir de su carpeta. Partido completo con estados y final, revancha, abandono (gana el que se quedó y la sala sigue abierta), corte de red con pausa y vuelta con el token, y derrota por no volver en el plazo. También prueba la lógica de la sala sin procesos (pausa pedida que espera el gol, "listo" de los dos, 30 s, desconexión durante la pausa), la pausa tras el gol en la simulación, la interpolación y la validación de mensajes |
+| `test_inline.py` | La simulación dentro de la página (versión de navegador): READY, ACK, estados con número, controles con contadores, pausa con el reloj congelado, sin "ponerse al día" de golpe tras una traba, error informado sin romper la interfaz. También prueba la **app en modo navegador** sin procesos: menú sin *Salir*, Mundialito (moverse, pausa, abandonar), multijugador local con los dos jugadores moviéndose y entrada al online |
 | `test_online_ui.py` | La **aplicación de escritorio** sin ventana contra un servidor real, con un rival de prueba: nombre, lista, sala privada con contraseña, elegir personaje, listo, partido (el movimiento lo decide el servidor), pausa pedida con el aviso bajo el marcador, abandono del rival y resultado |
 | `test_mundialito.py` | Torneo (los 6 rivales, avance, puestos al perder, campeón) y rival automático (no aprieta teclas fuera del juego, le gana a un jugador quieto, el nivel más alto le gana al más bajo). El gol de oro está en `test_match.py` |
 | `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, Jugar > Multijugador > Online (pide el nombre y vuelve sin conectarse) y Local, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba un Mundialito (elegir, jugar con las dos combinaciones de teclas, resultado, progreso guardado al ir al menú y abandono desde la pausa), la pantalla de error y *Reintentar* |
@@ -340,12 +344,14 @@ Durante las pruebas se ven en la salida trazas de error y avisos que son esperad
 ```
 main.py                   entrada: argumentos, if __name__ == "__main__", freeze_support
 servidor.py               entrada del servidor online (salas por WebSocket + página web)
-web/main.py               entrada de la versión web (pygbag): arranca directo en el online
+web/main.py               entrada de la versión web (pygbag): el juego completo en el navegador
 fdc/config.py             nombre, resolución, teclas, física, reglas, poderes, colas (sin pygame)
 fdc/protocol.py           tipos de mensaje, constructores, PressCounter, StateFilter, EventDeduper
 fdc/link.py               MatchLink: contrato entre las pantallas locales y la simulación
 fdc/ipc.py                SimLink (MatchLink local): proceso, colas, salud y cierre coordinado
-fdc/sim/process.py        proceso de simulación: bucle, órdenes, watchdog, envío de estados/eventos
+fdc/sim/core.py           núcleo de la simulación sin transporte: órdenes y ACK, controles, pasos, estados
+fdc/sim/process.py        el núcleo en su proceso: colas, bucle con stop_event.wait, watchdog, cierre
+fdc/sim/inline.py         el núcleo dentro de la página (navegador): InlineLink, mismo contrato que SimLink
 fdc/sim/match.py          partido: fases, reloj, goles, último toque, estado serializable
 fdc/sim/physics.py        pelota, jugadores (cabeza + botín), arcos, colisiones, subpasos
 fdc/sim/powers.py         objetos, efectos, reemplazo/renovación, bombas
@@ -432,7 +438,8 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 - **Online, latencia:**
   - **Demora de la red:** la propia pulsación se ve después de un viaje de ida y vuelta al servidor (entre dos casas, unos 20 a 80 ms). No hay predicción del lado del cliente.
   - **Suavizado:** dibuja 1/30 s "en el pasado".
-- **Online, navegador:**
+- **Navegador:**
+  - **Modos locales sin proceso aparte:** el Mundialito y el multijugador local simulan dentro de la página, porque en el navegador no hay procesos ni hilos. Es el mismo núcleo de simulación y el mismo protocolo (órdenes con ACK, fotos de controles, estados con número), pero en un solo hilo. La demostración de concurrencia es la versión de escritorio y el servidor. Si la página se traba, la simulación se traba con ella; por eso no hace falta watchdog.
   - **Primer arranque:** necesita un clic para empezar (por el audio).
   - **Intérprete:** descarga Python (WebAssembly) del CDN de pygame-web.
   - **Sin táctil:** sólo funciona con teclado y mouse, no con pantallas táctiles.
@@ -449,6 +456,7 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 **Hecho y verificado:**
 
 - Las 92 pruebas automáticas pasan.
+- **Juego completo en un navegador real** (Chrome sin ventana, versión compilada con pygbag): menú, Mundialito contra la computadora, multijugador local con los dos jugadores a la vez y entrada al online, todo a 60 FPS.
 - **Online en navegadores reales:** dos instancias de Chrome (sin ventana) jugaron contra `servidor.py`, con la versión web compilada con pygbag (Python 3.12 en WebAssembly) a 60 FPS. La prueba recorrió:
   - nombre, crear sala, unirse, elegir personaje, listo y lados sorteados;
   - el movimiento decidido por el servidor;
@@ -486,6 +494,9 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 - **Una sola simulación:** la del local. El servidor lanza **un proceso de simulación por sala en juego** con `SimLink`, con las mismas colas acotadas, ACK, número de partido, watchdog y cierre coordinado. Los navegadores sólo mandan controles (con contadores de pulsaciones) y pedidos, y dibujan lo que llega.
 - **Sin locks en el servidor:** un único bucle `asyncio` atiende todas las conexiones y es el único que toca las salas. Cada conexión tiene una tarea lectora y una escritora con su cola (estados reemplazables), así que un cliente lento no frena a nadie. Lo que bloquea (lanzar o cerrar un proceso) va a un hilo del ejecutor.
 - **Seguridad:** por la red va JSON validado (nunca `pickle`), con tamaño y frecuencia de mensajes limitados. Las contraseñas de sala se guardan como hash con sal. El servidor decide qué jugador mueve cada conexión.
-- **Navegador:** la misma interfaz en pygame, compilada con **pygbag** (Python en WebAssembly). Como ahí no hay procesos ni hilos, el bucle es asíncrono y lee el WebSocket de JavaScript una vez por cuadro.
+- **Navegador:** el juego completo, con la misma interfaz en pygame compilada con **pygbag** (Python en WebAssembly). Como ahí no hay procesos ni hilos:
+  - **el bucle es asíncrono:** cada cuadro le devuelve el control al navegador;
+  - **el online** lee el WebSocket de JavaScript una vez por cuadro;
+  - **los modos locales** usan `InlineLink` (`fdc/sim/inline.py`). Cumple el mismo contrato que `SimLink`, con el mismo núcleo de simulación (`fdc/sim/core.py`), pero avanza la física dentro de la página, una vez por cuadro y con paso fijo de 1/120 s.
 
 Reglas, catálogo de mensajes y la puesta en marcha en la NAS (Windows, dominio, HTTPS con Caddy o Cloudflare Tunnel) están en [docs/ONLINE.md](docs/ONLINE.md).

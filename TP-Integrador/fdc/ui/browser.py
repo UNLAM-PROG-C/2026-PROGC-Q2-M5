@@ -7,6 +7,7 @@ página. Se anula SÓLO la acción del navegador (preventDefault): el evento
 sigue llegando a pygame. Espacio no se toca porque hace falta para escribir
 espacios en los nombres.
 """
+import sys
 
 _GUARD_JS = r"""
 if (!window.fdcKeyGuard) {
@@ -18,5 +19,7 @@ if (!window.fdcKeyGuard) {
 
 
 def install_key_guard():
+    if sys.platform != "emscripten":
+        return                   # fuera del navegador (p. ej. pruebas del modo web) no hace falta
     import platform              # en pygbag, "platform" expone el objeto window de JS
     platform.window.eval(_GUARD_JS)

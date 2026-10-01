@@ -162,7 +162,6 @@ class OnlineHomeScreen(OnlineScreen):
         self.enter_rect.center = (640, 430)
         self.hover = False
         self.waiting = False
-        self.back_button.visible = not app.web       # en el navegador es la primera pantalla
         saved = NC.saved_session()
         if saved and self.net.status == NC.IDLE:
             # se recargó la página: se vuelve con el mismo token (sala y partido incluidos)
@@ -1086,12 +1085,8 @@ class OnlineErrorScreen(Screen):
     def __init__(self, app, message):
         super().__init__(app)
         self.message = message
-        items = [("Reintentar", self.retry)]
-        if not app.web:
-            items.append(("Volver", self.back))
-        self.menu = Menu(items, (640, 520), width=300)
+        self.menu = Menu([("Reintentar", self.retry), ("Volver", self.back)], (640, 520), width=300)
         self.back_button = BackButton(self.back)
-        self.back_button.visible = not app.web
 
     def enter(self):
         self.app.audio.crowd(False)
@@ -1109,7 +1104,7 @@ class OnlineErrorScreen(Screen):
     def handle_event(self, ev):
         if self.back_button.handle_event(ev):
             return
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and not self.app.web:
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             self.back()
             return
         self.menu.handle_event(ev, self.app.audio)

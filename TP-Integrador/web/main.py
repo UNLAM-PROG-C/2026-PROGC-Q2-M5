@@ -1,9 +1,10 @@
-"""Entrada de la versión web (pygbag): se juega sólo online.
+"""Entrada de la versión web (pygbag): el juego completo en el navegador.
 
 No se ejecuta directamente: tools/construir_web.py copia este archivo como
 main.py junto con el paquete fdc y los sprites, y pygbag lo compila para el
-navegador. En el navegador no hay multiprocessing: la simulación de cada
-partido corre en el servidor (un proceso por sala).
+navegador. Ahí no hay multiprocessing: el Mundialito y el multijugador local
+simulan dentro de la página (fdc/sim/inline.py) y el online usa el proceso de
+la sala en el servidor.
 """
 import asyncio
 import logging

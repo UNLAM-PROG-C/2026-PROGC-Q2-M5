@@ -6,9 +6,11 @@ bloquea esperando a la simulación ni a la red: en cada cuadro lee lo que haya
 llegado (get_nowait) y dibuja el último estado válido. El ritmo lo marca
 FrameLimiter, que duerme entre cuadros (no hay espera activa).
 
-En el navegador (pygbag) no hay procesos: la aplicación arranca directamente
-en el modo online (la simulación corre en el servidor) y el bucle es
-asíncrono: cada cuadro le devuelve el control al navegador.
+En el navegador (pygbag) está el juego completo, pero no hay procesos: los
+modos locales simulan en la misma página (InlineLink, fdc/sim/inline.py, con el
+mismo núcleo de simulación), el online usa el proceso de la sala en el
+servidor, y el bucle es asíncrono: cada cuadro le devuelve el control al
+navegador.
 """
 import logging
 import os
@@ -106,13 +108,15 @@ class App:
 
         # El proceso de simulación arranca ANTES de mostrar el menú; la
         # pantalla de arranque espera su READY sin bloquear la ventana.
-        # (En el navegador no hay proceso local: se juega sólo online.)
-        self.link = None
-        if not self.web:
+        # En el navegador no hay procesos: la simulación local corre en la página.
+        duration = getattr(options, "duration", None)
+        if self.web:
+            from ..sim.inline import InlineLink
+            self.link = InlineLink(test_mode=options.test_mode, seed=options.seed, duration=duration)
+        else:
             from ..ipc import SimLink   # acá y no arriba: en el navegador no hay multiprocessing
-            self.link = SimLink(test_mode=options.test_mode, seed=options.seed,
-                                duration=getattr(options, "duration", None))
-            self.link.start()
+            self.link = SimLink(test_mode=options.test_mode, seed=options.seed, duration=duration)
+        self.link.start()
         self.current = BootScreen(self)
         self.current.enter()
 
@@ -128,12 +132,19 @@ class App:
         screen.enter()
 
     def home(self):
-        """Pantalla inicial: el menú principal, o el ingreso al online en el navegador."""
-        if self.web:
-            from .online_screens import OnlineHomeScreen
-            return OnlineHomeScreen(self)
+        """El menú principal (igual en escritorio y navegador)."""
         from .screens import MenuScreen
         return MenuScreen(self)
+
+    def first_screen(self):
+        """Después del arranque: el menú, salvo que el navegador se haya recargado
+        en medio de una partida online (ahí se vuelve a la sala o al partido)."""
+        if self.web:
+            from ..online.client import saved_session
+            if saved_session():
+                from .online_screens import OnlineHomeScreen
+                return OnlineHomeScreen(self)
+        return self.home()
 
     def online(self):
         """Cliente de red (se crea la primera vez que se entra a Online)."""
@@ -247,9 +258,13 @@ class App:
         if self.link is not None:
             li = self.link.debug_lines()
             info = self.link.ready_info or {}
-            lines.append((f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} "
-                          f"({'viva' if li['alive'] else 'detenida'}), "
-                          f"pygame en SIM: {yes(info.get('pygame_loaded'))}", None))
+            if getattr(self.link, "inline", False):
+                lines.append(("Navegador: sin procesos; la simulación local corre en la misma página "
+                              "(el online, en el servidor)", None))
+            else:
+                lines.append((f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} "
+                              f"({'viva' if li['alive'] else 'detenida'}), "
+                              f"pygame en SIM: {yes(info.get('pygame_loaded'))}", None))
         lines += [
             (f"Pantalla {type(self.current).__name__}  |  partido #{si.get('match', '-')}  |  "
              f"fase {si.get('phase', '-')}", None),

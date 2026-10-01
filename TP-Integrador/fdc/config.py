@@ -15,7 +15,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identidad
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_TAGLINE = "Duelo de cabezones - 2 jugadores - 1 teclado"
+GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
 PROTOCOL_VERSION = 1
 
 # ---------------------------------------------------------------------------

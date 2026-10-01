@@ -1,6 +1,8 @@
-# Modo online (1 contra 1 en salas)
+# Modo online (1 contra 1 en salas) y versión web
 
 Dos personas juegan desde **sus casas**, cada una en su **navegador**, contra un **servidor propio** (la NAS). La versión de escritorio también puede jugar online (*Jugar > Multijugador > Online*), útil para probar.
+
+**La página web trae el juego completo:** el mismo menú que la versión de escritorio, con *Jugar → Mundialito* (contra la computadora), *Multijugador → Local* (dos personas en un teclado) y *Multijugador → Online*, más *Controles* y *Poderes*. Los modos locales corren enteros en el navegador de quien juega, así que no cargan al servidor. Sólo el online usa la NAS.
 
 ## Reglas
 
@@ -47,6 +49,12 @@ El servidor **sirve la página del juego** (`build/web`) y el **WebSocket `/ws`*
 | Lanzar o cerrar un proceso | **Hilo del ejecutor** (`run_in_executor`) | `Process.start()` y el cierre coordinado pueden tardar: se hacen fuera del bucle para no congelar a los demás. |
 | Cliente de escritorio (`ThreadTransport`) | **Hilo lector + cola acotada** | El hilo queda bloqueado en la red (no gasta CPU). La interfaz vacía la cola sin bloquear en cada cuadro. |
 | Cliente web (`BrowserTransport`) | **Un solo hilo** (el navegador no tiene hilos ni procesos) | El WebSocket de JavaScript deja lo que llega en un arreglo, y Python lo retira una vez por cuadro. El bucle es asíncrono: cada cuadro le devuelve el control al navegador. |
+
+**Modos locales en el navegador** (`fdc/sim/inline.py`). En el navegador no se pueden lanzar procesos, así que el Mundialito y el multijugador local usan `InlineLink`:
+
+- **Mismo contrato:** el que `SimLink`, con órdenes con ACK, fotos de controles con contadores y estados con número de partido.
+- **Mismo núcleo:** la simulación es la misma (`fdc/sim/core.py`).
+- **Dentro de la página:** cada cuadro aplica las órdenes y la última foto de controles, y avanza la física con paso fijo de 1/120 s hasta el momento actual. La física tarda unos 8 µs por paso, así que sobra margen.
 
 **Teclas en el navegador** (`fdc/ui/browser.py`). En Chrome, `Esc` "detiene la carga" de la página y eso congelaba el WebSocket: el partido dejaba de actualizarse justo al pedir la pausa. Ahora la página anula la acción del navegador para `Esc`, `F3` (Buscar), `Tab` (saca el foco) y las flechas (desplazan la página). El evento igual llega al juego.
 
