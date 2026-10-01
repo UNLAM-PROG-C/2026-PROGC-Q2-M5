@@ -6,7 +6,11 @@ Dos personas juegan desde **sus casas**, cada una en su **navegador**, contra un
 
 ## Reglas
 
-1. **Nombre de usuario:** al entrar, cada persona escribe uno (de 3 a 16 letras, números o espacios). No hay cuentas ni contraseñas de usuario. Dos personas conectadas no pueden usar el mismo nombre.
+1. **Nombre:**
+   - **Una sola vez:** se elige **al abrir el juego**, antes del menú, y vale para todos los modos (de 3 a 16 letras, números o espacios). Al entrar a *Online* no se vuelve a pedir.
+   - **Dónde se guarda:** en el navegador (`localStorage`) o en la compu (`~/.futbol_de_cabeza.json`). Se cambia desde el menú, con el botón del nombre o la tecla `N`.
+   - **Nombres repetidos:** se permiten. Cada persona recibe una **etiqueta** de 4 dígitos ("Ale #4821") que la distingue de otra con el mismo nombre. La etiqueta sale de un id propio del perfil, así que la misma persona suele conservar la suya.
+   - **Sin cuentas:** no hay cuentas ni contraseñas de usuario.
 2. **Salas:** se puede **crear una sala libre o con contraseña**. La lista muestra el nombre de cada sala, quién la creó, un candado si es privada, cuántos hay (máximo 2) y su estado. Se actualiza sola.
 3. **Elegir personaje:** con 2 personas en la sala, cada una elige personaje (pueden repetirlo) y toca **¡LISTO!**. Cuando los dos están listos, el **servidor sortea los lados** y empieza el partido. Al arrancar se muestra "JUGÁS A LA IZQUIERDA" (o derecha).
 4. **Partido:** son las mismas reglas que el local: 60 s, los 17 poderes y el **empate vale**. Cada persona juega con **cualquiera de las dos combinaciones de teclas**: A/W/D + Espacio o flechas + P.
@@ -55,6 +59,13 @@ El servidor **sirve la página del juego** (`build/web`) y el **WebSocket `/ws`*
 - **Mismo contrato:** el que `SimLink`, con órdenes con ACK, fotos de controles con contadores y estados con número de partido.
 - **Mismo núcleo:** la simulación es la misma (`fdc/sim/core.py`).
 - **Dentro de la página:** cada cuadro aplica las órdenes y la última foto de controles, y avanza la física con paso fijo de 1/120 s hasta el momento actual. La física tarda unos 8 µs por paso, así que sobra margen.
+
+**Pantalla de carga** (`web/plantilla.tmpl`). Reemplaza la de pygbag:
+
+- **Diseño:** el estadio con el logo y los cabezones, una barra de carga retro por etapas ("Llegando al estadio...", "Marcando la cancha...") y una pelota que pica.
+- **Botón:** cuando todo está descargado, aparece **¡TOCÁ PARA JUGAR!**. El navegador exige un clic o una tecla antes de reproducir sonido.
+- **Imágenes:** las genera `tools/construir_web.py` con el mismo código de dibujo del juego.
+- **Salida:** el juego la oculta cuando dibuja su primer cuadro.
 
 **Teclas en el navegador** (`fdc/ui/browser.py`). En Chrome, `Esc` "detiene la carga" de la página y eso congelaba el WebSocket: el partido dejaba de actualizarse justo al pedir la pausa. Ahora la página anula la acción del navegador para `Esc`, `F3` (Buscar), `Tab` (saca el foco) y las flechas (desplazan la página). El evento igual llega al juego.
 

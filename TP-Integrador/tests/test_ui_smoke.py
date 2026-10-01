@@ -242,5 +242,37 @@ class UISmokeTest(unittest.TestCase):
             app.shutdown()
 
 
+class ProfileTest(unittest.TestCase):
+    def test_name_is_asked_once_at_start(self):
+        from fdc import profile as prof
+        from fdc.ui.profile_screen import ProfileScreen
+        app = driver.make_app(test_mode=False, seed=1, profile_name=None)   # primera vez
+        d = driver.Driver(app)
+        try:
+            d.until(lambda: isinstance(d.screen(), ProfileScreen), 20, "pantalla del nombre")
+            self.assertFalse(d.screen().back_button.visible)        # la primera vez no hay a dónde volver
+            d.tap(pygame.K_RETURN)                                   # vacío: no avanza
+            self.assertIsInstance(d.screen(), ProfileScreen)
+            d.post(pygame.TEXTINPUT, text="Ale")
+            d.tap(pygame.K_RETURN)
+            self.assertIsInstance(d.screen(), MenuScreen)
+            saved = prof.load(app.profile_path)                      # queda guardado para la próxima vez
+            self.assertEqual(saved.name, "Ale")
+            pid = saved.player_id
+            d.tap(pygame.K_n)                                        # cambiar el nombre desde el menú
+            self.assertIsInstance(d.screen(), ProfileScreen)
+            self.assertTrue(d.screen().back_button.visible)
+            for _ in range(3):
+                d.tap(pygame.K_BACKSPACE)
+            d.post(pygame.TEXTINPUT, text="Alan")
+            d.tap(pygame.K_RETURN)
+            self.assertIsInstance(d.screen(), MenuScreen)
+            renamed = prof.load(app.profile_path)
+            self.assertEqual((renamed.name, renamed.player_id), ("Alan", pid))   # mismo jugador
+        finally:
+            app.running = False
+            app.shutdown()
+
+
 if __name__ == "__main__":
     unittest.main()

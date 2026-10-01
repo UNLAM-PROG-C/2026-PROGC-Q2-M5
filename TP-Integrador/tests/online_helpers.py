@@ -54,13 +54,15 @@ async def _wrap(fn):
 class Client:
     """Cliente de prueba sincrónico: guarda todo lo que llega."""
 
-    def __init__(self, url, name=None):
+    def __init__(self, url, name=None, player_id=None):
         self.ws = connect(url, open_timeout=5, close_timeout=1, legacy=True)
         self.inbox = []
         self.token = None
+        self.welcome = None
         if name:
-            self.send({"type": "hello", "username": name})
-            self.token = self.wait("welcome")["token"]
+            self.send({"type": "hello", "username": name, "player_id": player_id or f"prueba-{name}"})
+            self.welcome = self.wait("welcome")
+            self.token = self.welcome["token"]
 
     def send(self, msg):
         self.ws.send(json.dumps(msg))

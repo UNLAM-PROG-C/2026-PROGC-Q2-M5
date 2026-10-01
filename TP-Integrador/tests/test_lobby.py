@@ -14,14 +14,21 @@ class LobbyTest(unittest.TestCase):
     def setUp(self):
         self.lobby = Lobby(rng=random.Random(3))
 
-    def hello(self, conn, name):
-        return self.lobby.handle(conn, {"type": "hello", "username": name})
+    def hello(self, conn, name, player_id=None):
+        return self.lobby.handle(conn, {"type": "hello", "username": name, "player_id": player_id or conn})
 
     def test_username_rules(self):
-        self.assertEqual(msgs_for(self.hello("a", "Ale"), "a", "welcome")[0]["username"], "Ale")
-        err = msgs_for(self.hello("b", "ale"), "b", "error")[0]
-        self.assertEqual(err["code"], "nombre_en_uso")
+        wa = msgs_for(self.hello("a", "Ale", "perfil-1"), "a", "welcome")[0]
+        self.assertEqual((wa["username"], wa["display"]), ("Ale", f"Ale #{wa['tag']:04d}"))
+        # otro con el MISMO nombre (y hasta el mismo perfil abierto dos veces): otra etiqueta
+        wb = msgs_for(self.hello("b", "ale", "perfil-1"), "b", "welcome")[0]
+        self.assertNotEqual(wa["tag"], wb["tag"])
         self.assertEqual(msgs_for(self.hello("c", "x"), "c", "error")[0]["code"], "nombre_invalido")
+        # la etiqueta sale del perfil: la misma persona vuelve a tener la misma
+        self.lobby.disconnect("a")
+        self.lobby.disconnect("b")
+        again = msgs_for(self.hello("e", "Ale", "perfil-1"), "e", "welcome")[0]
+        self.assertEqual(again["tag"], wa["tag"])
         out = self.lobby.handle("d", {"type": "list_rooms"})
         self.assertEqual(msgs_for(out, "d", "error")[0]["code"], "sin_nombre")
 
@@ -30,10 +37,10 @@ class LobbyTest(unittest.TestCase):
         self.hello("b", "Bruno")
         out = self.lobby.handle("a", {"type": "create_room", "name": "Picadito"})
         room = msgs_for(out, "a", "room")[0]
-        self.assertEqual(room["owner"], "Ale")
+        self.assertTrue(room["owner"].startswith("Ale #"))
         self.assertEqual(room["state"], WAITING)
         rooms = msgs_for(out, "b", "rooms")[0]["rooms"]          # quien mira la lista la ve
-        self.assertEqual([(r["name"], r["owner"], r["private"]) for r in rooms], [("Picadito", "Ale", False)])
+        self.assertEqual([(r["name"], r["owner"][:5], r["private"]) for r in rooms], [("Picadito", "Ale #", False)])
         out = self.lobby.handle("b", {"type": "join_room", "room": room["room"]})
         detail = msgs_for(out, "a", "room")[0]
         self.assertEqual(detail["state"], CHOOSING)
@@ -88,11 +95,11 @@ class LobbyTest(unittest.TestCase):
         self.lobby.handle("b", {"type": "join_room", "room": rid})
         out = self.lobby.disconnect("a")                              # se corta el creador
         self.assertTrue(msgs_for(out, "b", "opponent_left"))
-        self.assertEqual(self.lobby.rooms[rid].owner, "Bruno")
+        self.assertTrue(self.lobby.rooms[rid].owner.startswith("Bruno #"))
         self.assertEqual(self.lobby.rooms[rid].state, WAITING)
         self.lobby.handle("b", {"type": "leave_room"})
         self.assertNotIn(rid, self.lobby.rooms)                        # sala vacía: desaparece
-        self.assertTrue(msgs_for(self.hello("c", "Ale"), "c", "welcome"))   # el nombre quedó libre
+        self.assertTrue(msgs_for(self.hello("c", "Ale"), "c", "welcome"))
 
 
 if __name__ == "__main__":

@@ -57,7 +57,8 @@ class Session:
     def __init__(self):
         self.id = f"s{next(self._ids)}"
         self.token = secrets.token_urlsafe(18)     # para volver después de un corte
-        self.username = None
+        self.username = None                      # para mostrar y registrar: "Ale #4821"
+        self.identity = {}                        # username, tag y display (del Lobby)
         self.ws = None
         self.queue = collections.deque()          # mensajes confiables, en orden
         self.state_text = None                    # último estado: reemplazable
@@ -469,7 +470,7 @@ class GameServer:
                 old.expire_task.cancel()
                 old.expire_task = None
             old.attach(ws)
-            old.send({"type": W.WELCOME, "username": old.username, "token": old.token, "restored": True})
+            old.send({"type": W.WELCOME, **old.identity, "token": old.token, "restored": True})
             self.deliver(self.lobby.set_connected(old.id, True))
             self.deliver(self.lobby.resync(old.id))
             runner, side = self._runner_side(old.id)
@@ -477,13 +478,15 @@ class GameServer:
                 runner.player_back(side, old)
             log.info("%s volvió a conectarse", old.username)
             return old
-        out = self.lobby.handle(pending.id, {"type": "hello", "username": msg.get("username")})
+        out = self.lobby.handle(pending.id, {"type": "hello", "username": msg.get("username"),
+                                             "player_id": msg.get("player_id")})
         welcome = next((m for _, m in out if m["type"] == W.WELCOME), None)
         if welcome is None:
             for _, m in out:
                 pending.send(m)
             return None
-        pending.username = welcome["username"]
+        pending.identity = {k: welcome[k] for k in ("username", "tag", "display")}
+        pending.username = welcome["display"]
         welcome.update(token=pending.token, restored=False)
         self.sessions[pending.id] = pending
         self.tokens[pending.token] = pending
@@ -559,7 +562,7 @@ class GameServer:
         runner = self.runners.get(room_id)
         if runner is None:
             runner = self.runners[room_id] = RoomRunner(self, room_id)
-        self.spawn(runner.begin(any_msg["match"], sids, [p["username"] for p in players],
+        self.spawn(runner.begin(any_msg["match"], sids, [p["display"] for p in players],
                                 [p["character"] for p in players], [msgs[0], msgs[1]]))
 
     def room_changed(self, room_id):

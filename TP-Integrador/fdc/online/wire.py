@@ -8,7 +8,9 @@ Lo usan el servidor (fdc/online/server.py) y el cliente (fdc/online/client.py),
 también dentro del navegador (pygbag): no importa pygame ni librerías de red.
 
 Cliente -> servidor
-    hello {username, token?}        presentarse (o volver, con el token recibido)
+    hello {username, player_id, token?}
+                                    presentarse con el nombre del perfil (o volver,
+                                    con el token recibido); player_id da la etiqueta
     list_rooms / create_room / join_room / leave_room / choose_character / ready
                                     salas (ver fdc/online/lobby.py)
     input {p: [izq, der, saltos, patadas]}
@@ -20,7 +22,8 @@ Cliente -> servidor
     ping {t}                        medir la latencia
 
 Servidor -> cliente
-    welcome {username, token, restored}   rooms {rooms}   room {...}   error {code, message}
+    welcome {username, tag, display, token, restored}
+    rooms {rooms}   room {...}   error {code, message}
     opponent_left                   el rival se fue de la sala
     match_start {room, match, players, you}
     state {...}                     foto del partido (reemplazable: "el último gana")

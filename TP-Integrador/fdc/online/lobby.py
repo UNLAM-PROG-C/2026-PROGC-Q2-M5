@@ -1,7 +1,11 @@
 """Salas del modo online (1 contra 1). Lógica pura, SIN red.
 
 Este módulo implementa las reglas acordadas para el online:
-  * al entrar, cada persona elige un nombre de usuario (sin cuentas);
+  * cada persona entra con el nombre que eligió al abrir el juego (sin
+    cuentas). Los nombres se pueden repetir: a cada persona conectada se le da
+    una etiqueta de 4 dígitos ("Ale #4821") que la distingue de otra con el
+    mismo nombre. La etiqueta sale del id del perfil, así que es la misma cada
+    vez que esa persona entra (salvo que choque con otra conectada);
   * se puede crear una sala libre o con contraseña;
   * todos ven la lista de salas con el nombre de quien la creó y pueden unirse;
   * con 2 personas en la sala, cada una elige personaje y confirma;
@@ -18,12 +22,12 @@ import hmac
 import itertools
 import os
 import random
-import re
 
 from ..config import CHARACTER_IDS, Online
+from ..profile import NAME_RE as USERNAME_RE
 
 MAX_PLAYERS = 2
-USERNAME_RE = re.compile(r"^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ _.-]{3,16}$")
+TAGS = 10000                # etiquetas #0000 a #9999
 ROOM_NAME_MAX = 24
 # contraseña de una sala (no de una cuenta): alcanza con esto y el hash tarda
 # unos pocos ms, así no frena el bucle del servidor que atiende a todos
@@ -50,25 +54,42 @@ def _hash_password(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ROUNDS)
 
 
+class User:
+    def __init__(self, name, tag):
+        self.name = name
+        self.tag = tag
+
+    @property
+    def display(self):
+        return f"{self.name} #{self.tag:04d}"
+
+    def public(self):
+        return {"username": self.name, "tag": self.tag, "display": self.display}
+
+
 class Member:
-    def __init__(self, conn, username):
+    def __init__(self, conn, user):
         self.conn = conn
-        self.username = username
+        self.user = user
         self.character = None
         self.ready = False
         self.side = None
         self.connected = True       # False mientras se espera que vuelva a conectarse
 
+    @property
+    def username(self):
+        return self.user.name
+
     def public(self):
-        return {"username": self.username, "character": self.character, "ready": self.ready,
-                "side": self.side, "connected": self.connected}
+        return dict(self.user.public(), character=self.character, ready=self.ready, side=self.side,
+                    connected=self.connected)
 
 
 class Room:
     def __init__(self, room_id, name, owner, password=None):
         self.id = room_id
         self.name = name
-        self.owner = owner                  # nombre de usuario de quien la creó
+        self.owner = owner                  # quien la creó, con su etiqueta ("Ale #4821")
         self.salt = os.urandom(16) if password else None
         self.password_hash = _hash_password(password, self.salt) if password else None
         self.members = []
@@ -106,7 +127,7 @@ class Lobby:
     def __init__(self, rng=None, max_rooms=Online.MAX_ROOMS):
         self.rng = rng or random.Random()
         self.max_rooms = max_rooms
-        self.users = {}                    # conn -> nombre de usuario
+        self.users = {}                    # conn -> User (nombre + etiqueta)
         self.rooms = {}                    # id -> Room
         self.room_of = {}                  # conn -> id de sala
         self._ids = itertools.count(1)
@@ -130,7 +151,7 @@ class Lobby:
             return [([conn], {"type": "error", "code": err.code, "message": err.message})]
 
     def disconnect(self, conn):
-        """La conexión se cortó: sale de su sala y se libera el nombre."""
+        """La conexión se cortó del todo: sale de su sala y se libera su etiqueta."""
         out = self._leave(conn, {}) if conn in self.room_of else []
         self.users.pop(conn, None)
         return out
@@ -162,10 +183,23 @@ class Lobby:
         name = (msg.get("username") or "").strip()
         if not USERNAME_RE.match(name):
             raise LobbyError("nombre_invalido", "El nombre debe tener entre 3 y 16 letras, números o espacios.")
-        if any(n.lower() == name.lower() for c, n in self.users.items() if c != conn):
-            raise LobbyError("nombre_en_uso", f"El nombre «{name}» ya está en uso.")
-        self.users[conn] = name
-        return [([conn], {"type": "welcome", "username": name}), ([conn], self._rooms_msg())]
+        user = User(name, self._tag_for(conn, name, msg.get("player_id")))
+        self.users[conn] = user
+        return [([conn], {"type": "welcome", **user.public()}), ([conn], self._rooms_msg())]
+
+    def _tag_for(self, conn, name, player_id):
+        """Etiqueta estable para ese perfil y distinta de la de otro conectado con el mismo nombre."""
+        if isinstance(player_id, str) and 0 < len(player_id) <= 64:
+            tag = int(hashlib.sha256(player_id.encode("utf-8")).hexdigest()[:8], 16) % TAGS
+        else:
+            tag = self.rng.randrange(TAGS)
+        taken = {u.tag for c, u in self.users.items() if c != conn and u.name.lower() == name.lower()}
+        while tag in taken:
+            tag = (tag + 1) % TAGS
+        return tag
+
+    def user(self, conn):
+        return self.users.get(conn)
 
     def _rooms_msg(self):
         rooms = sorted(self.rooms.values(), key=lambda r: r.id)
@@ -190,11 +224,11 @@ class Lobby:
             raise LobbyError("ya_en_sala", "Ya estás en una sala.")
         if len(self.rooms) >= self.max_rooms:
             raise LobbyError("demasiadas_salas", "El servidor está lleno: probá más tarde.")
-        owner = self.users[conn]
-        name = (msg.get("name") or f"Sala de {owner}").strip()[:ROOM_NAME_MAX]
+        user = self.users[conn]
+        name = (msg.get("name") or f"Sala de {user.name}").strip()[:ROOM_NAME_MAX]
         password = msg.get("password") or None
-        room = Room(next(self._ids), name, owner, password)
-        room.members.append(Member(conn, owner))
+        room = Room(next(self._ids), name, user.display, password)
+        room.members.append(Member(conn, user))
         self.rooms[room.id] = room
         self.room_of[conn] = room.id
         return self._room_update(room) + self._broadcast_rooms()
@@ -226,7 +260,7 @@ class Lobby:
         else:
             # quien queda pasa a ser el dueño; si había partido, termina
             left = room.members[0]
-            room.owner = left.username
+            room.owner = left.user.display
             room.state = WAITING
             left.character, left.ready, left.side = None, False, None
             out += self._room_update(room)
@@ -273,8 +307,8 @@ class Lobby:
         room.state = PLAYING
         room.matches_played += 1
         match_id = next(self._match_ids)
-        players = [{"side": m.side, "side_name": SIDE_NAMES[m.side], "username": m.username,
-                    "character": m.character} for m in order]
+        players = [dict(m.user.public(), side=m.side, side_name=SIDE_NAMES[m.side], character=m.character)
+                   for m in order]
         out = []
         for m in order:
             out.append(([m.conn], {"type": "match_start", "room": room.id, "match": match_id,

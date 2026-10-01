@@ -4,6 +4,8 @@ Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Footbal
 
 Es un trabajo práctico de **Programación Concurrente**. La solución usa **dos procesos** (`multiprocessing`, contexto `spawn`) que se comunican con **colas de mensajes** y se sincronizan con **confirmaciones**, **identificadores de partido** y un **`multiprocessing.Event`** de cierre. En el online, un servidor `asyncio` atiende las conexiones y lanza **un proceso de simulación por sala** (el mismo de la versión local). La lógica de la simulación es una sola (`fdc/sim/core.py`) y corre en tres lugares: el proceso de escritorio, los procesos de sala del servidor y, en el navegador (donde no hay procesos), dentro de la misma página.
 
+> **¿Cómo funciona la concurrencia en todo el juego?** Procesos, tareas asíncronas, hilos, colas y sincronización, del escritorio al servidor y al navegador: [docs/CONCURRENCIA.md](docs/CONCURRENCIA.md).
+
 > El nombre se cambia en un único lugar: `GAME_NAME` en `fdc/config.py`.
 
 ---
@@ -81,7 +83,8 @@ Jugar
 Controles / Poderes / Salir
 ```
 
-El menú es el mismo en la versión de escritorio y en la página web. En la web no aparece *Salir*, porque una página no se puede cerrar sola.
+- **Nombre:** al abrir el juego por primera vez se elige el **nombre**, una sola vez y para todos los modos. Queda guardado: en la compu en `~/.futbol_de_cabeza.json` (o el archivo de la variable `FDC_PERFIL`) y en el navegador en `localStorage`. Se cambia desde el menú con el botón del nombre (arriba a la derecha) o la tecla `N`.
+- **Mismo menú en todos lados:** el de la versión de escritorio y el de la página web. En la web no aparece *Salir*, porque una página no se puede cerrar sola.
 
 ### Mundialito (1 jugador)
 
@@ -112,7 +115,8 @@ El menú es el mismo en la versión de escritorio y en la página web. En la web
 
 ### Multijugador online
 
-- **Salas:** cada persona elige un nombre de usuario, crea una sala (libre o con contraseña) o se une a una de la lista.
+- **Salas:** se entra con el nombre elegido al empezar (no se vuelve a pedir). Se puede crear una sala (libre o con contraseña) o unirse a una de la lista.
+- **Nombres repetidos:** se permiten. A cada persona la distingue una **etiqueta** ("Ale #4821").
 - **Inicio:** con 2 en la sala, eligen personaje, tocan **¡LISTO!** y el servidor **sortea los lados**.
 - **Reglas del partido:** las mismas que el local (60 s, 17 poderes y el empate vale).
 - **Pausa:** la pide cualquiera y se activa **después del próximo gol**. Mientras tanto se avisa "*usuario* pidió la pausa" debajo del marcador. El partido sigue cuando los dos tocan **Estoy listo**, o a los **30 s**.
@@ -252,7 +256,7 @@ No hay esperas activas en ninguno de los dos procesos:
 
 No se usan `Queue.empty()` ni `qsize()`: para leer sin bloquear se usa `get_nowait()` y se atrapa `queue.Empty`.
 
-Tampoco hay hilos, semáforos ni procesos decorativos: los únicos hilos extra son los que crea `multiprocessing.Queue` internamente (el alimentador) y los de SDL para el audio.
+Tampoco hay hilos, semáforos ni procesos decorativos: en el modo local, los únicos hilos extra son los que crea `multiprocessing.Queue` internamente (el alimentador) y los de SDL para el audio. El online agrega un hilo lector de red en el cliente de escritorio y los hilos del ejecutor en el servidor. La lista completa, con el motivo de cada uno, está en [docs/CONCURRENCIA.md](docs/CONCURRENCIA.md).
 
 ---
 
@@ -280,7 +284,7 @@ Tampoco hay hilos, semáforos ni procesos decorativos: los únicos hilos extra s
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Son 98 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
+Son 99 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
 
 | Archivo | Qué prueba |
 |---|---|
@@ -288,12 +292,12 @@ Son 98 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan ade
 | `test_match.py` | Gol válido y un solo gol por ingreso, gol con un jugador escondido dentro del arco, pararse sobre la cabeza del rival y caerse si se corre, subirse al travesaño desde una cabeza, salto desde el piso sin tocar el travesaño, cruce parcial, pelota sobre el travesaño, pelota que se achica sobre la línea, sin atravesar travesaños ni cabezas a velocidad máxima, velocidad máxima, choques entre jugadores, último toque (incluye contactos simultáneos), una patada por pulsación, recuperación, sin doble salto, reloj congelado en pausa, cuentas regresivas y celebración, final con empate o victoria, y un partido completo con entradas aleatorias que verifica invariantes en cada paso |
 | `test_powers.py` | Los 17 poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, aparición de 7 a 10 s y vencimiento a 6 s, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
 | `test_process.py` | **Procesos reales:** READY desde otro pid y sin pygame, iniciar, pausar (reloj congelado en los latidos), continuar, reiniciar (sólo se aceptan estados del partido nuevo, sin efectos), eventos de partidos anteriores, watchdog, cierre ordenado (`bye`, código 0), fallo informado, proceso muerto detectado, sin huérfanos si la interfaz muere, órdenes de prueba rechazadas sin `--prueba` |
-| `test_lobby.py` | Salas del online (lógica pura, sin red): nombre de usuario, sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
+| `test_lobby.py` | Salas del online (lógica pura, sin red): nombres repetidos con etiquetas distintas (y la misma etiqueta para el mismo perfil), sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
 | `test_online.py` | **Servidor real con conexiones WebSocket reales:** nombres repetidos, salas con contraseña, mensajes inválidos, archivos de la página sin salir de su carpeta. Partido completo con estados y final, revancha, abandono (gana el que se quedó y la sala sigue abierta), corte de red con pausa y vuelta con el token, y derrota por no volver en el plazo. También prueba la lógica de la sala sin procesos (pausa pedida que espera el gol, "listo" de los dos, 30 s, desconexión durante la pausa), la pausa tras el gol en la simulación, la interpolación y la validación de mensajes |
 | `test_inline.py` | La simulación dentro de la página (versión de navegador): READY, ACK, estados con número, controles con contadores, pausa con el reloj congelado, sin "ponerse al día" de golpe tras una traba, error informado sin romper la interfaz. También prueba la **app en modo navegador** sin procesos: menú sin *Salir*, Mundialito (moverse, pausa, abandonar), multijugador local con los dos jugadores moviéndose y entrada al online |
 | `test_online_ui.py` | La **aplicación de escritorio** sin ventana contra un servidor real, con un rival de prueba: nombre, lista, sala privada con contraseña, elegir personaje, listo, partido (el movimiento lo decide el servidor), pausa pedida con el aviso bajo el marcador, abandono del rival y resultado |
 | `test_mundialito.py` | Torneo (los 6 rivales, avance, puestos al perder, campeón) y rival automático (no aprieta teclas fuera del juego, le gana a un jugador quieto, el nivel más alto le gana al más bajo). El gol de oro está en `test_match.py` |
-| `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, Jugar > Multijugador > Online (pide el nombre y vuelve sin conectarse) y Local, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba un Mundialito (elegir, jugar con las dos combinaciones de teclas, resultado, progreso guardado al ir al menú y abandono desde la pausa), la pantalla de error y *Reintentar* |
+| `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, Jugar > Multijugador > Online (pide el nombre y vuelve sin conectarse) y Local, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba un Mundialito (elegir, jugar con las dos combinaciones de teclas, resultado, progreso guardado al ir al menú y abandono desde la pausa), la pantalla de error y *Reintentar* | También prueba que el nombre se pide al empezar (y no se puede dejar vacío), que queda guardado y que al cambiarlo desde el menú se conserva el mismo jugador.
 
 Durante las pruebas se ven en la salida trazas de error y avisos que son esperados:
 
@@ -361,6 +365,7 @@ fdc/online/client.py      cliente (escritorio: hilo + cola acotada; navegador: W
 fdc/online/wire.py        mensajes online en JSON: validación y compactación de estados
 fdc/online/interp.py      suavizado del movimiento entre estados en el cliente online
 fdc/mundialito.py         torneo del Mundialito: etapas, avance, puestos, campeón
+fdc/profile.py            nombre del jugador (se elige una vez) e id propio; se guarda en la compu o el navegador
 fdc/bot.py                rival automático: mira el estado y genera pulsaciones (6 niveles)
 fdc/ui/app.py             ventana, bucle de cuadros, eventos, foco, panel F3, cierre
 fdc/ui/screens.py         arranque, menú, controles, leyenda, error, botones retro
@@ -368,6 +373,7 @@ fdc/ui/match_screens.py   selección (teclado y mouse), partido (pausa, reinicio
 fdc/ui/mundialito_screens.py  elección, llave del torneo, partido contra la CPU, resultado y copa
 fdc/ui/online_screens.py  nombre, salas, crear sala, sala, partido online, resultado y revancha
 fdc/ui/widgets.py         campos de texto y casillas retro
+fdc/ui/profile_screen.py  pantalla "¿Cómo te llamás?" (al empezar y desde el menú)
 fdc/ui/browser.py         en el navegador: Esc, F3, Tab y flechas no disparan acciones de la página
 fdc/ui/render.py          dibujo del partido y del tablero LED a partir del estado
 fdc/ui/sprites.py         jugadores en pixel art: cabeza + botín animado, contorno J1/J2, retratos
@@ -386,6 +392,8 @@ tools/construir_web.py    compila el cliente web con pygbag en build/web
 assets/originales/        sprites originales (uno por personaje, con su botín)
 assets/personajes/        cabezas, cuadros del botín y sprites.json (generados por el importador)
 docs/ONLINE.md            modo online: reglas, arquitectura, mensajes y puesta en marcha en la NAS
+docs/CONCURRENCIA.md      cómo funciona la concurrencia en todo el juego (procesos, asyncio, hilos)
+web/plantilla.tmpl        pantalla de carga de la página (estadio, barra, "¡TOCÁ PARA JUGAR!")
 tests/                    pruebas (unittest) y el conductor de la interfaz sin ventana
 ```
 

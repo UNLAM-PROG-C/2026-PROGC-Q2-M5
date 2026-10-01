@@ -117,7 +117,8 @@ class WebAppTest(unittest.TestCase):
         from fdc.ui.screens import MenuScreen, MultiplayerMenuScreen, PlayMenuScreen
 
         opts = types.SimpleNamespace(web=True, test_mode=False, seed=4, no_audio=False, fullscreen=False,
-                                     debug_panel=True, duration=None, server_url="ws://127.0.0.1:1/ws")
+                                     debug_panel=True, duration=None, server_url="ws://127.0.0.1:1/ws",
+                                     profile_path=driver.profile_file("Web"))
         app = App(opts)
         d = driver.Driver(app)
         try:

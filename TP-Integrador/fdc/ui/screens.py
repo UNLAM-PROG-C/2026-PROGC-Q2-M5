@@ -254,10 +254,33 @@ class MenuScreen(Screen):
             items.append(("Salir", app.quit))     # una página web no se cierra a sí misma
         self.menu = Menu(items, (640, 440))
 
+    def player_label(self):
+        return f"{self.app.profile.name.upper()}  (CAMBIAR)" if self.app.profile else ""
+
+    def player_rect(self):
+        """Botón con el nombre del jugador, arriba a la derecha (su ancho depende del nombre)."""
+        from .assets import text_width
+        r = pygame.Rect(0, 0, text_width(self.player_label(), 16) + 40, 44)
+        r.topright = (1264, 12)
+        return r
+
     def enter(self):
         self.app.audio.crowd(False)
 
+    def change_name(self):
+        from .profile_screen import ProfileScreen
+        self.app.audio.play("confirm")
+        self.app.switch(ProfileScreen(self.app, first_run=False))
+
     def handle_event(self, ev):
+        if ev.type == pygame.MOUSEMOTION:
+            self.player_hover = self.player_rect().collidepoint(ev.pos)
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.player_rect().collidepoint(ev.pos):
+            self.change_name()
+            return
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_n:
+            self.change_name()
+            return
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             if not self.app.web:
                 self.menu.sel = len(self.menu.items) - 1   # Esc lleva a "Salir" (no cierra de golpe)
@@ -283,9 +306,12 @@ class MenuScreen(Screen):
         panel(surf, pygame.Rect(360, 20, 560, 150), alpha=225)
         draw_logo(surf, (640, 72), 0.9, self.t)
         self.menu.draw(surf)
+        if self.app.profile is not None:            # jugador: clic (o N) para cambiar el nombre
+            button(surf, self.player_rect(), self.player_label(), getattr(self, "player_hover", False),
+                   True, 16, self.t)
         badge = "  -  MODO PRUEBA" if self.app.options.test_mode else ""
-        footer(surf, f"{key_label(DEBUG_PANEL_KEY)}: panel de depuración  -  {key_label(FULLSCREEN_KEY)}: "
-                     f"pantalla completa  -  {key_label(MUTE_KEY)}: silencio{badge}")
+        footer(surf, f"N: cambiar nombre  -  {key_label(DEBUG_PANEL_KEY)}: depuración  -  "
+                     f"{key_label(FULLSCREEN_KEY)}: pantalla completa  -  {key_label(MUTE_KEY)}: silencio{badge}")
 
 
 # ---------------------------------------------------------------------------

@@ -234,7 +234,10 @@ class NetClient:
         self.status = IDLE
         self.fatal = None              # texto si la conexión se perdió del todo
         self.wanted_name = None
+        self.player_id = None
         self.username = None
+        self.tag = None
+        self.display = None            # "Ale #4821": así lo ven los demás
         self.token = None
         self.welcomed = False
         self.rooms = []
@@ -251,12 +254,13 @@ class NetClient:
         self.sent = self.received = self.bad = 0
 
     # ------------------------------------------------------------------ conexión
-    def connect(self, username):
-        """Abre la conexión (o reusa la actual) y se presenta con ese nombre."""
+    def connect(self, username, player_id=None):
+        """Abre la conexión (o reusa la actual) y se presenta con el nombre del perfil."""
         self.wanted_name = username
+        self.player_id = player_id
         self.fatal = None
         if self.status == OPEN:
-            self.send({"type": W.HELLO, "username": username})
+            self.send({"type": W.HELLO, "username": username, "player_id": player_id})
         elif self.status not in (CONNECTING, RECONNECTING):
             self.status = CONNECTING
             self._open()
@@ -287,6 +291,10 @@ class NetClient:
         self.sent += ok
         return ok
 
+    def is_me(self, member):
+        """En una sala puede haber dos con el mismo nombre: se compara nombre y etiqueta."""
+        return member["username"] == self.username and member.get("tag") == self.tag
+
     def send_input(self, p):
         self.send({"type": W.INPUT, "p": p})
 
@@ -309,7 +317,7 @@ class NetClient:
             for kind, data in self.transport.receive():
                 if kind == "open":
                     self.status = OPEN
-                    hello = {"type": W.HELLO, "username": self.wanted_name}
+                    hello = {"type": W.HELLO, "username": self.wanted_name, "player_id": self.player_id}
                     if self.token:
                         hello["token"] = self.token          # recuperar la sesión
                     self.send(hello)
@@ -367,6 +375,8 @@ class NetClient:
         if t == W.WELCOME:
             self.welcomed = True
             self.username = msg["username"]
+            self.tag = msg.get("tag")
+            self.display = msg.get("display") or self.username
             self.token = msg.get("token")
             self.lost_at = None
             remember_session(self.username, self.token)
@@ -409,5 +419,5 @@ class NetClient:
 
     def debug_lines(self):
         rtt = f"{self.rtt * 1000:.0f} ms" if self.rtt is not None else "-"
-        return {"url": self.url, "status": self.status, "user": self.username or "-", "rtt": rtt,
+        return {"url": self.url, "status": self.status, "user": self.display or "-", "rtt": rtt,
                 "traffic": f"{self.sent} enviados / {self.received} recibidos / {self.bad} inválidos"}

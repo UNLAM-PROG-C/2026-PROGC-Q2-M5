@@ -15,7 +15,8 @@ _textinput_seen = False
 
 
 class TextField:
-    def __init__(self, rect, label, max_len=16, password=False, allowed=None, value="", placeholder=""):
+    def __init__(self, rect, label, max_len=16, password=False, allowed=None, value="", placeholder="",
+                 sticky=False):
         self.rect = pygame.Rect(rect)
         self.label = label
         self.max_len = max_len
@@ -25,6 +26,7 @@ class TextField:
         self.placeholder = placeholder
         self.focused = False
         self.enabled = True
+        self.sticky = sticky          # único campo de la pantalla: un clic afuera no lo desactiva
         self._last_key_char = None
 
     def focus(self, on=True):
@@ -44,7 +46,7 @@ class TextField:
             return False
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             hit = self.rect.collidepoint(ev.pos)
-            self.focus(hit)
+            self.focus(hit or self.sticky)
             return hit
         if not self.focused:
             return False

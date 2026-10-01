@@ -16,7 +16,7 @@ import pygame
 from online_helpers import Client, ServerThread
 
 from fdc.online import wire as W
-from fdc.ui.online_screens import (CreateRoomScreen, OnlineHomeScreen, OnlineMatchScreen, OnlineResultScreen,
+from fdc.ui.online_screens import (CreateRoomScreen, OnlineMatchScreen, OnlineResultScreen,
                                    RoomScreen, RoomsScreen)
 from fdc.ui.screens import BackButton, MenuScreen
 
@@ -26,7 +26,7 @@ SHOTS = os.environ.get("FDC_CAPTURAS")
 class OnlineUITest(unittest.TestCase):
     def test_full_online_flow(self):
         with ServerThread(duration=30.0, seed=3) as srv:
-            app = driver.make_app(test_mode=False, seed=None, server_url=srv.url)
+            app = driver.make_app(test_mode=False, seed=None, server_url=srv.url, profile_name="Ale")
             d = driver.Driver(app, SHOTS)
             rival = None
             try:
@@ -36,12 +36,10 @@ class OnlineUITest(unittest.TestCase):
                 d.tap(pygame.K_RETURN)                       # Multijugador
                 d.tap(pygame.K_s)
                 d.tap(pygame.K_RETURN)                       # Online
-                self.assertIsInstance(d.screen(), OnlineHomeScreen)
-                d.post(pygame.TEXTINPUT, text="Ale")
-                d.shot("online_1_nombre")
-                d.tap(pygame.K_RETURN)
+                # entra directo con el nombre del perfil (no lo vuelve a pedir)
                 d.until(lambda: isinstance(d.screen(), RoomsScreen), 10, "lista de salas")
                 self.assertEqual(app.net.username, "Ale")
+                self.assertTrue(app.net.display.startswith("Ale #"))
 
                 # crear una sala propia y volver a la lista
                 d.tap(pygame.K_c)
@@ -49,7 +47,7 @@ class OnlineUITest(unittest.TestCase):
                 d.tap(pygame.K_ESCAPE)
                 self.assertIsInstance(d.screen(), RoomsScreen)
 
-                rival = Client(srv.url, "Bruno")
+                rival = Client(srv.url, "Ale")             # mismo nombre que yo: lo distingue la etiqueta
                 d.each_frame = rival.pump
                 rival.send({"type": "create_room", "name": "Picadito", "password": "1234"})
                 d.until(lambda: app.net.rooms, 5, "sala en la lista")
@@ -69,7 +67,8 @@ class OnlineUITest(unittest.TestCase):
                 d.tap(pygame.K_SPACE)                        # ¡listo!
                 d.until(lambda: isinstance(d.screen(), OnlineMatchScreen), 10, "partido")
                 ms = d.screen()
-                self.assertEqual(ms.names[ms.you], "Ale")
+                self.assertEqual(ms.names[ms.you], app.net.display)
+                self.assertNotEqual(ms.names[0], ms.names[1])
                 d.until(lambda: ms.state is not None and ms.state["phase"] == "playing", 15, "juego")
 
                 # me muevo: la posición la decide la simulación del servidor
@@ -84,7 +83,8 @@ class OnlineUITest(unittest.TestCase):
 
                 # pausa pedida: se anuncia debajo del marcador y no corta la jugada
                 d.tap(pygame.K_ESCAPE)
-                d.until(lambda: ms.renderer.center_note == "Ale pidió la pausa", 5, "aviso de pausa")
+                d.until(lambda: ms.renderer.center_note == f"{app.net.display} pidió la pausa", 5,
+                        "aviso de pausa")
                 self.assertFalse(ms.state["paused"])
                 d.shot("online_4_partido")
 

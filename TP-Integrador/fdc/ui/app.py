@@ -102,9 +102,13 @@ class App:
         self.running = True
         self.keys = {k: key_code(k) for k in (DEBUG_PANEL_KEY, FULLSCREEN_KEY, MUTE_KEY)}
         self.net = None                 # conexión con el servidor online (al entrar a Online)
+        self.first_frame_shown = False
         self.server_url = getattr(options, "server_url", None)
-        self.last_username = ""         # para no tener que escribirlo de nuevo
         self.last_online_char = None
+        # nombre del jugador: se elige al empezar (una sola vez) y vale para todos los modos
+        from .. import profile as prof
+        self.profile_path = getattr(options, "profile_path", None)
+        self.profile = prof.load(self.profile_path)
 
         # El proceso de simulación arranca ANTES de mostrar el menú; la
         # pantalla de arranque espera su READY sin bloquear la ventana.
@@ -137,14 +141,23 @@ class App:
         return MenuScreen(self)
 
     def first_screen(self):
-        """Después del arranque: el menú, salvo que el navegador se haya recargado
-        en medio de una partida online (ahí se vuelve a la sala o al partido)."""
+        """Después del arranque: el nombre (si todavía no lo eligió) y después el
+        menú. Si el navegador se recargó en medio del online, vuelve a la sala."""
+        if self.profile is None:
+            from .profile_screen import ProfileScreen
+            return ProfileScreen(self, first_run=True)
         if self.web:
             from ..online.client import saved_session
             if saved_session():
                 from .online_screens import OnlineHomeScreen
                 return OnlineHomeScreen(self)
         return self.home()
+
+    def set_profile(self, profile):
+        from .. import profile as prof
+        self.profile = profile
+        prof.save(profile, self.profile_path)
+        self.close_online()             # el online vuelve a entrar con el nombre nuevo
 
     def online(self):
         """Cliente de red (se crea la primera vez que se entra a Online)."""
@@ -194,6 +207,10 @@ class App:
         if self.show_debug:
             self.draw_debug(self.screen)
         pygame.display.flip()
+        if self.web and not self.first_frame_shown:
+            self.first_frame_shown = True
+            from .browser import hide_loading_screen
+            hide_loading_screen()
 
     def run(self):
         try:

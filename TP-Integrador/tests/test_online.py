@@ -215,23 +215,27 @@ class WireTest(unittest.TestCase):
 class ServerLobbyTest(unittest.TestCase):
     def test_names_rooms_passwords_and_bad_messages(self):
         with ServerThread() as srv:
-            a = Client(srv.url, "Ale")
+            a = Client(srv.url, "Ale", player_id="perfil-a")
             b = Client(srv.url)
-            b.send({"type": "hello", "username": "ale"})
-            self.assertEqual(b.wait("error")["code"], "nombre_en_uso")
-            b.send({"type": "hello", "username": "Bruno"})       # reintento en la misma conexión
-            b.wait("welcome")
+            b.send({"type": "hello", "username": "x"})
+            self.assertEqual(b.wait("error")["code"], "nombre_invalido")
+            b.send({"type": "hello", "username": "Ale", "player_id": "perfil-b"})   # mismo nombre: vale
+            wb = b.wait("welcome")
+            self.assertEqual(wb["username"], "Ale")
+            self.assertNotEqual(wb["tag"], a.welcome["tag"])        # los distingue la etiqueta
             a.send({"type": "create_room", "name": "Privada", "password": "1234"})
             rid = a.wait("room")["room"]
             rooms = b.wait("rooms", cond=lambda m: m["rooms"])["rooms"]
-            self.assertEqual((rooms[0]["owner"], rooms[0]["private"]), ("Ale", True))
+            self.assertEqual((rooms[0]["owner"], rooms[0]["private"]), (a.welcome["display"], True))
             b.send({"type": "join_room", "room": rid, "password": "0000"})
             self.assertEqual(b.wait("error")["code"], "clave_incorrecta")
             b.send_raw("{esto no es json")
             self.assertEqual(b.wait("error")["code"], "mensaje_invalido")
             b.send({"type": "input", "p": [True, False, -5, 0]})   # fuera de partido: se ignora
             b.send({"type": "join_room", "room": rid, "password": "1234"})
-            self.assertEqual(len(b.wait("room")["members"]), 2)
+            members = b.wait("room")["members"]
+            self.assertEqual([m["username"] for m in members], ["Ale", "Ale"])
+            self.assertEqual(len({(m["username"], m["tag"]) for m in members}), 2)
             for c in (a, b):
                 c.close()
 
@@ -283,10 +287,11 @@ class ServerMatchTest(unittest.TestCase):
             b.wait("state")
             a.send({"type": "abandon"})
             over = b.wait("match_over")
-            self.assertEqual((over["winner"], over["reason"], over["by_name"]), (sb["you"], W.END_FORFEIT, "Ale"))
+            self.assertEqual((over["winner"], over["reason"], over["by_name"]),
+                             (sb["you"], W.END_FORFEIT, a.welcome["display"]))
             b.wait("opponent_left")
             room = b.wait("room", cond=lambda m: m["state"] == "esperando")
-            self.assertEqual(room["owner"], "Bruno")              # la sala sigue abierta
+            self.assertEqual(room["owner"], b.welcome["display"])   # la sala sigue abierta
             a.wait("rooms")                                        # quien abandonó vuelve a la lista
             for c in (a, b):
                 c.close()
@@ -297,7 +302,7 @@ class ServerMatchTest(unittest.TestCase):
             b.wait("state", cond=lambda m: m["phase"] == "playing", timeout=10)
             a.kill()                                               # se corta la red de Ale
             opp = b.wait("opponent", cond=lambda m: not m["connected"])
-            self.assertEqual(opp["name"], "Ale")
+            self.assertEqual(opp["name"], a.welcome["display"])
             b.wait("state", cond=lambda m: m["paused"] and m["pause_reason"] == P.PAUSE_REASON_DISCONNECT)
             a2 = Client(srv.url)
             a2.send({"type": "hello", "username": "Ale", "token": a.token})
@@ -317,7 +322,7 @@ class ServerMatchTest(unittest.TestCase):
             over = b.wait("match_over", timeout=10)
             self.assertEqual((over["winner"], over["reason"]), (sb["you"], W.END_FORFEIT))
             b.wait("opponent_left")
-            c = Client(srv.url, "Ale")                             # el nombre quedó libre
+            c = Client(srv.url, "Ale")
             c.close()
             b.close()
 

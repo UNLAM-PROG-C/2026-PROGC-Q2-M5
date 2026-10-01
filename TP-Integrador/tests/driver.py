@@ -15,10 +15,24 @@ import pygame  # noqa: E402
 import helpers  # noqa: E402,F401  (agrega la raíz al path)
 
 
-def make_app(test_mode=True, seed=5, duration=None, server_url=None):
+def profile_file(name="Prueba", player_id=None):
+    """Perfil temporal para las pruebas (nunca se toca el del usuario).
+    Con name=None el archivo queda vacío: el juego pide el nombre al empezar."""
+    import tempfile
+    from fdc import profile as prof
+    path = os.path.join(tempfile.mkdtemp(prefix="fdc-perfil-"), "perfil.json")
+    if name:
+        prof.save(prof.Profile(name, player_id), path)
+    return path
+
+
+def make_app(test_mode=True, seed=5, duration=None, server_url=None, profile_name="Prueba", web=False):
     from fdc.ui.app import App
     opts = types.SimpleNamespace(test_mode=test_mode, seed=seed, no_audio=False, fullscreen=False,
-                                 debug_panel=True, duration=duration, server_url=server_url)
+                                 debug_panel=True, duration=duration,
+                                 # sin servidor salvo que la prueba lo levante (nunca uno real)
+                                 server_url=server_url or "ws://127.0.0.1:1/ws",
+                                 profile_path=profile_file(profile_name), web=web)
     return App(opts)
 
 

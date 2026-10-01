@@ -19,7 +19,7 @@ from ..config import PLAYER_COLORS
 from ..online import client as NC
 from ..online import wire as W
 from ..online.interp import Interpolator
-from ..online.lobby import ROOM_NAME_MAX, USERNAME_RE
+from ..online.lobby import ROOM_NAME_MAX
 from . import palette as C
 from . import pixelfont
 from .assets import draw_text, text_width, wrap
@@ -29,8 +29,6 @@ from .retro import bevel_box
 from .screens import BackButton, Menu, Screen, button, dim, footer, panel, title
 from .widgets import CheckBox, TextField
 
-NAME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-                       "ÁÉÍÓÚÜÑáéíóúüñ _.-")
 CONTROLS_HELP = "Moverse: A/D o flechas  -  Saltar: W o flecha arriba  -  Patear: Espacio o P  -  Pausa: Esc"
 ROOM_STATES = {"esperando": "esperando rival", "eligiendo": "eligiendo personajes", "jugando": "jugando"}
 ME_COLOR, RIVAL_COLOR = C.GOLD, C.BLUE        # en la sala todavía no hay lados
@@ -50,7 +48,7 @@ def status_chip(surf, net, t, bottom=False):
         txt, col = f"RECONECTANDO... {net.reconnect_left() or 0:.0f} s", C.RED
     elif net.connected:
         rtt = f"  {net.rtt * 1000:.0f} ms" if net.rtt is not None else ""
-        txt, col = f"{net.username}{rtt}", C.GREEN
+        txt, col = f"{net.display}{rtt}", C.GREEN
     elif net.status == NC.CONNECTING:
         txt, col = "CONECTANDO...", C.GOLD_DARK
     else:
@@ -85,8 +83,8 @@ def members(net):
     room = net.room
     if not room:
         return None, None
-    me = next((m for m in room["members"] if m["username"] == net.username), None)
-    rival = next((m for m in room["members"] if m["username"] != net.username), None)
+    me = next((m for m in room["members"] if net.is_me(m)), None)
+    rival = next((m for m in room["members"] if not net.is_me(m)), None)
     return me, rival
 
 
@@ -146,84 +144,71 @@ class OnlineScreen(Screen):
 
 
 # ---------------------------------------------------------------------------
-# Nombre de usuario
+# Entrada al online: se conecta con el nombre del perfil (elegido al empezar)
 # ---------------------------------------------------------------------------
 class OnlineHomeScreen(OnlineScreen):
     NEEDS_CONNECTION = False
 
     def __init__(self, app):
         super().__init__(app)
-        self.field = TextField((440, 318, 400, 56), "TU NOMBRE DE USUARIO", 16,
-                               allowed=lambda ch: ch in NAME_CHARS,
-                               value=getattr(app, "last_username", "") or "",
-                               placeholder="entre 3 y 16 letras o números")
-        self.field.focus(True)
-        self.enter_rect = pygame.Rect(0, 0, 280, 56)
-        self.enter_rect.center = (640, 430)
+        self.retry_rect = pygame.Rect(0, 0, 280, 56)
+        self.retry_rect.center = (640, 440)
         self.hover = False
-        self.waiting = False
+        self.failed = None
         saved = NC.saved_session()
         if saved and self.net.status == NC.IDLE:
-            # se recargó la página: se vuelve con el mismo token (sala y partido incluidos)
-            self.field.value = saved[0]
-            self.net.token = saved[1]
-            self.waiting = True
-            self.net.connect(saved[0])
+            self.net.token = saved[1]   # se recargó la página: vuelve a su sala y partido
+        self.connect()
+
+    def connect(self):
+        profile = self.app.profile
+        self.failed = None
+        self.net.connect(profile.name, profile.player_id)
 
     def back(self):
         self.app.close_online()
         from .screens import MultiplayerMenuScreen
         self.app.switch(MultiplayerMenuScreen(self.app))
 
-    def submit(self):
-        name = self.field.value.strip()
-        if not USERNAME_RE.match(name):
-            self.notify("El nombre debe tener entre 3 y 16 letras, números o espacios.")
-            self.app.audio.play("blocked")
-            return
-        self.app.last_username = name
-        self.waiting = True
-        self.app.audio.play("confirm")
-        self.net.connect(name)
-
     def handle_event(self, ev):
         if self.handle_back(ev):
             return
-        r = self.field.handle_event(ev)
-        if r == "submit":
-            self.submit()
-        if r:
+        if self.failed is None:
             return
         if ev.type == pygame.MOUSEMOTION:
-            self.hover = self.enter_rect.collidepoint(ev.pos)
-        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.enter_rect.collidepoint(ev.pos):
-            self.submit()
-        elif ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            self.submit()
+            self.hover = self.retry_rect.collidepoint(ev.pos)
+        elif ((ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.retry_rect.collidepoint(ev.pos))
+              or (ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE))):
+            self.app.audio.play("confirm")
+            self.connect()
 
     def on_net(self, msg):
         if msg["type"] == W.WELCOME:
             self.app.switch(RoomsScreen(self.app))
         elif msg["type"] == W.ERROR:
-            self.waiting = False
-            self.notify(msg["message"])
+            self.failed = msg["message"]
 
     def update(self, dt):
         super().update(dt)
-        if self.waiting and self.net.fatal:
-            self.waiting = False
-            self.notify(self.net.fatal)
+        if self.failed is None and self.net.fatal:
+            self.failed = self.net.fatal
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
         dim(surf, 130)
         title(surf, "JUGAR ONLINE", (640, 96), 64)
-        draw_text(surf, "Elegí un nombre: así te van a ver los demás en la lista de salas.", 16,
-                  (640, 160), C.INK, outline=C.WHITE)
-        panel(surf, pygame.Rect(380, 220, 520, 290))
-        self.field.draw(surf, self.t)
-        label = "CONECTANDO..." if self.waiting else "ENTRAR"
-        button(surf, self.enter_rect, label, self.hover, not self.waiting, 24, self.t)
+        box = panel(surf, pygame.Rect(330, 220, 620, 280))
+        name = self.app.profile.name
+        if self.failed is None:
+            draw_text(surf, f"Conectando como {name}...", 24, (640, box.top + 50), C.INK, outline=None)
+            self.app.ball_sprite.draw(surf, 640, box.top + 150 - abs(math.sin(self.t * 5)) * 40, 17, self.t * 400)
+            draw_text(surf, "Si otra persona usa tu mismo nombre, los distingue una etiqueta (#1234).", 16,
+                      (640, box.bottom - 30), C.INK_SOFT, outline=None)
+        else:
+            draw_text(surf, "No se pudo entrar al online", 24, (640, box.top + 44), C.RED, outline=None)
+            for k, ln in enumerate(wrap(self.failed, 16, box.width - 40)[:3]):
+                draw_text(surf, ln, 16, (640, box.top + 90 + k * 22), C.INK, outline=None)
+            button(surf, self.retry_rect, "REINTENTAR", self.hover, True, 24, self.t)
         info = pygame.Rect(0, 0, 1000, 104)
         info.midtop = (640, 546)
         inner = panel(surf, info)
@@ -276,7 +261,8 @@ class RoomsScreen(OnlineScreen):
             return
         self.app.audio.play("confirm")
         if room["private"]:
-            field = TextField((420, 360, 440, 56), f"CONTRASEÑA DE «{room['name']}»", 24, password=True)
+            field = TextField((420, 360, 440, 56), f"CONTRASEÑA DE «{room['name']}»", 24, password=True,
+                              sticky=True)
             field.focus(True)
             self.prompt = (room, field)
             return
@@ -359,7 +345,7 @@ class RoomsScreen(OnlineScreen):
         surf.blit(self.app.background, (0, 0))
         dim(surf, 140)
         title(surf, "SALAS", (640, 64), 56)
-        draw_text(surf, f"Hola, {self.net.username or ''}. Elegí una sala para unirte o creá la tuya.", 16,
+        draw_text(surf, f"Hola, {self.net.display or ''}. Elegí una sala para unirte o creá la tuya.", 16,
                   (640, 116), C.INK, outline=C.WHITE)
         inner = panel(surf, self.LIST.inflate(0, 36).move(0, -18))
         for txt, x in (("SALA", 30), ("CREADA POR", 400), ("JUGADORES", 650), ("ESTADO", 790)):
@@ -626,7 +612,7 @@ class RoomScreen(OnlineScreen):
         ped.midtop = (250, 376)
         bevel_box(surf, ped, C.STRUCT, shadow=True)
         self._player(surf, 250, cid, 1, ready, ME_COLOR)
-        self._tag(surf, 250, self.net.username or "", short_name(CHARACTERS_BY_ID[cid]), ME_COLOR)
+        self._tag(surf, 250, self.net.display or "", short_name(CHARACTERS_BY_ID[cid]), ME_COLOR)
         b = self.buttons()
         can = self.choosing()
         button(surf, b["prev"], "◄", self.hover == "prev", not ready, 24, self.t)
@@ -651,7 +637,7 @@ class RoomScreen(OnlineScreen):
                 self._player(surf, 1030, rc, -1, rival["ready"], RIVAL_COLOR)
             else:
                 draw_text(surf, "?", 120, (1030, 300), C.WHITE, kind="title", outline=C.INK, shadow=True)
-            self._tag(surf, 1030, rival["username"], sub, RIVAL_COLOR)
+            self._tag(surf, 1030, rival["display"], sub, RIVAL_COLOR)
             if rival["ready"]:
                 draw_text(surf, "¡LISTO!", 32, (860, 300), C.GREEN, kind="title", outline=C.INK, shadow=True)
         draw_text(surf, "VS", 72, (640, 280), C.WHITE, kind="title", outline=C.INK, shadow=True)
@@ -692,7 +678,7 @@ class OnlineMatchScreen(MatchScreen):
     def __init__(self, app, start):
         players = sorted(start["players"], key=lambda p: p["side"])
         self.start_msg = start
-        self.names = [p["username"] for p in players]
+        self.names = [p["display"] for p in players]
         self.you = start["you"]
         super().__init__(app, [p["character"] for p in players])
         self.net = app.online()
@@ -953,7 +939,7 @@ class OnlineResultScreen(OnlineScreen):
         super().__init__(app)
         players = sorted(start["players"], key=lambda p: p["side"])
         self.chars = [p["character"] for p in players]
-        self.names = [p["username"] for p in players]
+        self.names = [p["display"] for p in players]
         self.you = start["you"]
         self.over = over
         self.winner = over["winner"]
@@ -1062,9 +1048,9 @@ class OnlineResultScreen(OnlineScreen):
         elif rival["ready"] and me and me["ready"]:
             status = "¡Revancha! Sorteando los lados..."
         elif rival["ready"]:
-            status = f"{rival['username']} quiere la revancha"
+            status = f"{rival['display']} quiere la revancha"
         elif me and me["ready"]:
-            status = f"Esperando a {rival['username']}..."
+            status = f"Esperando a {rival['display']}..."
         else:
             status = "Revancha: mismos personajes y los lados se sortean de nuevo"
         lines = wrap(status, 16, 400)
