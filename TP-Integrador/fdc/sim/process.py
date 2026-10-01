@@ -109,7 +109,8 @@ class SimulationServer:
             chars = cmd.get("characters") or (self.match.characters if self.match else ("?", "?"))
             seed = cmd.get("seed", self.seed)
             # un partido nuevo es un objeto nuevo: no arrastra efectos ni estado viejo
-            self.match = Match(cmd["match"], seed=seed, characters=chars, duration=self.duration)
+            self.match = Match(cmd["match"], seed=seed, characters=chars, duration=self.duration,
+                               golden_goal=bool(cmd.get("golden_goal", False)))
             self.last_input_time = time.monotonic()
             log.info("%s partido #%s (%s vs %s, semilla %s)", ctype, self.match.id,
                      chars[0], chars[1], self.match.seed)

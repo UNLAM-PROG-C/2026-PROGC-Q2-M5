@@ -287,6 +287,42 @@ class ClockTest(unittest.TestCase):
         self.assertEqual(end["winner"], 0)
 
 
+class GoldenGoalTest(unittest.TestCase):
+    def test_tie_goes_to_golden_goal_and_next_goal_wins(self):
+        m = Match(1, seed=1, golden_goal=True)
+        m.phase, m.phase_left = P.PHASE_PLAYING, 0.0
+        m.powers.spawn_timer = 1e9
+        m.score = [1, 1]
+        m.clock = 0.05
+        ev = run(m, 0.2)
+        self.assertEqual(count(ev, P.EV_GOLDEN_GOAL), 1)
+        self.assertEqual(count(ev, P.EV_MATCH_END), 0)
+        self.assertTrue(m.golden)
+        self.assertEqual(m.phase, P.PHASE_COUNTDOWN)       # saque nuevo
+        run(m, MatchRules.GOLDEN_GOAL_COUNTDOWN + 5.0)
+        self.assertNotEqual(m.phase, P.PHASE_FINISHED)     # sin gol, no termina por tiempo
+        self.assertEqual(m.clock, 0.0)
+        g = m.goals[0]
+        m.players[0].x, m.players[1].x = 500.0, 800.0
+        m.ball.x, m.ball.y, m.ball.vx, m.ball.vy = g.mouth_x + 50, Arena.FLOOR_Y - 40, -700, 0
+        ev = run(m, 1.0)
+        self.assertEqual(count(ev, P.EV_GOAL), 1)
+        ev = run(m, MatchRules.GOAL_CELEBRATION + 0.2)
+        end = [e for e in ev if e[0] == P.EV_MATCH_END]
+        self.assertEqual(len(end), 1)
+        self.assertEqual(end[0][1]["winner"], 1)            # gol en el arco de J1 -> gana J2
+        self.assertEqual(m.score, [1, 2])
+
+    def test_without_golden_goal_tie_ends(self):
+        m = playing_match()
+        m.score = [2, 2]
+        m.clock = 0.05
+        ev = run(m, 0.2)
+        self.assertEqual(count(ev, P.EV_GOLDEN_GOAL), 0)
+        self.assertEqual(m.phase, P.PHASE_FINISHED)
+        self.assertIsNone(m.winner)
+
+
 class RobustnessTest(unittest.TestCase):
     def test_random_full_match_keeps_invariants(self):
         """Un partido completo con entradas pseudoaleatorias y poderes: nada se rompe."""

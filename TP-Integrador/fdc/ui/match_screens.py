@@ -178,18 +178,22 @@ class SelectScreen(Screen):
 # Partido
 # ---------------------------------------------------------------------------
 class MatchScreen(Screen):
+    """Partido. El Mundialito la extiende redefiniendo los métodos "gancho"
+    (labels, extra_payload, controls, pause_items, on_match_over); el modo
+    Multijugador Local usa los valores de esta clase."""
+    labels = PLAYER_LABELS
+
     def __init__(self, app, characters):
         super().__init__(app)
         self.chars = list(characters)
-        self.renderer = MatchRenderer(app, self.chars)
+        self.renderer = MatchRenderer(app, self.chars, self.labels)
         self.filter = P.StateFilter()
         self.state = None
         self.match_id = None
         self.waiting = None          # "start" | "restart" mientras falta la confirmación
         self.pause_state = None      # None | "requested" | "paused" | "resuming"
         self.pause_reason = None
-        self.pause_menu = Menu([("Continuar", self.resume), ("Reiniciar", self.restart),
-                                ("Menú principal", self.to_menu)], (640, 420), width=380)
+        self.pause_menu = Menu(self.pause_items(), (640, 420), width=380)
         self.end_info = None
         self.end_timer = 0.0
         self.toasts = []
@@ -220,6 +224,7 @@ class MatchScreen(Screen):
         self.app.fx.clear()
         self.toasts.clear()
         payload = {"match": self.match_id, "characters": self.chars}
+        payload.update(self.extra_payload())
         if self.app.options.seed is not None:
             payload["seed"] = self.app.options.seed
         cid = self.app.link.send_command(cmd, **payload)
@@ -231,6 +236,20 @@ class MatchScreen(Screen):
         if cid is not None:
             self.expected_cid[cid] = cmd
         return cid
+
+    # ------------------------------------------------------------------ ganchos
+    def pause_items(self):
+        return [("Continuar", self.resume), ("Reiniciar", self.restart), ("Menú principal", self.to_menu)]
+
+    def extra_payload(self):
+        return {}
+
+    def controls(self, active):
+        """Fotos de controles de los dos lugares (aquí: dos personas, un teclado)."""
+        return self.app.input.snapshot(active)
+
+    def on_match_over(self):
+        self.app.switch(ResultScreen(self.app, self.chars, self.end_info, self.state))
 
     # ------------------------------------------------------------------ órdenes
     def request_pause(self, reason=P.PAUSE_REASON_USER):
@@ -331,7 +350,10 @@ class MatchScreen(Screen):
     def _on_event(self, m):
         t = m["type"]
         au, fx, st = self.app.audio, self.app.fx, self.state
-        if t == P.EV_KICKOFF:
+        if t == P.EV_GOLDEN_GOAL:
+            self.renderer.golden_flash = 2.5
+            au.play("whistle")
+        elif t == P.EV_KICKOFF:
             self.renderer.kickoff_flash = 0.8
             au.play("go")
             au.play("whistle")
@@ -354,7 +376,7 @@ class MatchScreen(Screen):
             col = CATEGORY_COLORS[pdef.category]
             fx.sparkle(m["x"], m["y"], col)
             au.play({CATEGORY_BAD: "power_bad", CATEGORY_GLOBAL: "power_global"}.get(pdef.category, "power_good"))
-            who = PLAYER_LABELS[m["receptor"]] if m["receptor"] is not None else "Partido"
+            who = self.labels[m["receptor"]] if m["receptor"] is not None else "Partido"
             targets = ", ".join({"p0": "J1", "p1": "J2", "goal0": "arco de J1", "goal1": "arco de J2",
                                  "ball": "pelota"}.get(x, x) for x in m["targets"])
             txt = f"{who}: {pdef.name}" + (f"  (sobre {targets})" if targets else "")
@@ -413,7 +435,7 @@ class MatchScreen(Screen):
         # los controles viajan en cada cuadro (también sirven de latido para el watchdog)
         active = (st is not None and self.pause_state is None and not st["paused"]
                   and st["phase"] == P.PHASE_PLAYING)
-        self.app.link.send_input(self.app.input.snapshot(active))
+        self.app.link.send_input(self.controls(active))
         self.app.audio.crowd(st is not None and not st["paused"] and self.pause_state is None)
         if st and st["phase"] == P.PHASE_COUNTDOWN and not st["paused"]:
             n = math.ceil(st["phase_left"])
@@ -429,7 +451,7 @@ class MatchScreen(Screen):
         if self.end_info is not None:
             self.end_timer -= dt
             if self.end_timer <= 0:
-                self.app.switch(ResultScreen(self.app, self.chars, self.end_info, self.state))
+                self.on_match_over()
 
     # ------------------------------------------------------------------ dibujo
     def draw(self, surf):

@@ -83,6 +83,7 @@ class App:
         self.fx = Effects()
         self.input = InputTracker()
         self.last_characters = None
+        self.tournament = None          # Mundialito en curso (sólo en memoria)
         self.match_counter = 0
         self.show_debug = options.debug_panel
         self.running = True

@@ -11,7 +11,8 @@ import pygame
 
 from fdc.config import POWER_IDS
 from fdc.ui.match_screens import MatchScreen, ResultScreen, SelectScreen
-from fdc.ui.screens import ControlsScreen, LegendScreen, MenuScreen
+from fdc.ui.screens import (ControlsScreen, LegendScreen, MenuScreen, MultiplayerMenuScreen,
+                            PlayMenuScreen)
 
 
 class UISmokeTest(unittest.TestCase):
@@ -29,7 +30,18 @@ class UISmokeTest(unittest.TestCase):
             d.tap(pygame.K_RETURN)
             self.assertIsInstance(d.screen(), LegendScreen)
             d.tap(pygame.K_ESCAPE)
-            d.tap(pygame.K_RETURN)
+            d.tap(pygame.K_RETURN)                      # Jugar
+            self.assertIsInstance(d.screen(), PlayMenuScreen)
+            d.tap(pygame.K_s)
+            d.tap(pygame.K_RETURN)                      # Multijugador
+            self.assertIsInstance(d.screen(), MultiplayerMenuScreen)
+            d.tap(pygame.K_s)
+            d.tap(pygame.K_RETURN)                      # Online: módulo en desarrollo
+            self.assertIn("DESARROLLO", d.screen().notice[0])
+            d.tap(pygame.K_RETURN)                      # cierra el aviso
+            self.assertIsNone(d.screen().notice)
+            d.tap(pygame.K_w)
+            d.tap(pygame.K_RETURN)                      # Local: el juego de siempre
             self.assertIsInstance(d.screen(), SelectScreen)
 
             # ambos eligen el MISMO personaje (permitido)
@@ -108,6 +120,71 @@ class UISmokeTest(unittest.TestCase):
         report = app.link.shutdown_report
         self.assertEqual(report["method"], "ordenado")
         self.assertTrue(report["bye"])
+
+    def test_mundialito_flow(self):
+        from fdc.mundialito import HUMAN_SLOT, IN_PROGRESS
+        from fdc.ui.mundialito_screens import HubScreen, MundialitoMatchScreen, MundialitoResultScreen, PickScreen
+        app = driver.make_app(test_mode=True, seed=3, duration=3)
+        d = driver.Driver(app)
+        try:
+            d.until(lambda: isinstance(d.screen(), MenuScreen), 20, "menú")
+            d.tap(pygame.K_RETURN)                      # Jugar
+            d.tap(pygame.K_RETURN)                      # Mundialito
+            self.assertIsInstance(d.screen(), PickScreen)
+            d.tap(pygame.K_RIGHT)
+            d.tap(pygame.K_SPACE)                       # elige y confirma
+            self.assertIsInstance(d.screen(), HubScreen)
+            t = app.tournament
+            self.assertEqual(len(t.rivals), 6)
+            self.assertNotIn(t.player, t.rivals)
+            d.tap(pygame.K_RETURN)                      # Jugar Fecha 1
+            ms = d.screen()
+            self.assertIsInstance(ms, MundialitoMatchScreen)
+            self.assertEqual(ms.chars[HUMAN_SLOT], t.player)
+            d.until(lambda: ms.state is not None and ms.state["phase"] == "playing", 8, "juego")
+            # la persona controla el lugar de la derecha con cualquiera de los dos juegos de teclas
+            x0 = ms.state["players"][HUMAN_SLOT]["x"]
+            d.down(pygame.K_LEFT)
+            d.seconds(0.3)
+            d.up(pygame.K_LEFT)
+            d.down(pygame.K_a)
+            d.seconds(0.3)
+            d.up(pygame.K_a)
+            d.seconds(0.1)
+            self.assertLess(ms.state["players"][HUMAN_SLOT]["x"], x0 - 60)
+            # forzamos el resultado: gol de la persona y fin del partido corto
+            d.until(lambda: isinstance(d.screen(), MundialitoResultScreen), 60, "fin del partido")
+            rs = d.screen()
+            self.assertEqual(len(rs.t_.results), 1)
+            self.assertNotEqual(rs.t_.results[0][2], rs.t_.results[0][3])   # gol de oro: sin empates
+            if rs.won:
+                self.assertEqual(app.tournament.status, IN_PROGRESS)
+                d.tap(pygame.K_s)
+                d.tap(pygame.K_RETURN)                  # Menú principal: el progreso queda
+                self.assertIsInstance(d.screen(), MenuScreen)
+                d.tap(pygame.K_RETURN)
+                d.tap(pygame.K_RETURN)                  # Jugar > Mundialito: vuelve a la llave
+                self.assertIsInstance(d.screen(), HubScreen)
+                self.assertEqual(app.tournament.stage, 1)
+            else:
+                self.assertIsNone(app.tournament)       # eliminado: hay que empezar de nuevo
+                self.assertEqual(rs.t_.position, 7)
+            # abandonar desde la pausa de un partido descarta el Mundialito
+            if not isinstance(d.screen(), HubScreen):
+                d.tap(pygame.K_RETURN)                  # Empezar de nuevo
+                d.tap(pygame.K_SPACE)
+            d.tap(pygame.K_RETURN)                      # Jugar la etapa
+            ms = d.screen()
+            d.until(lambda: ms.state is not None, 5, "estado")
+            d.tap(pygame.K_ESCAPE)
+            d.until(lambda: ms.pause_state == "paused", 3, "pausa")
+            d.tap(pygame.K_s)
+            d.tap(pygame.K_RETURN)                      # Abandonar Mundialito
+            self.assertIsInstance(d.screen(), MenuScreen)
+            self.assertIsNone(app.tournament)
+        finally:
+            app.shutdown()
+        self.assertEqual(app.link.shutdown_report["method"], "ordenado")
 
     def test_crash_shows_error_screen_and_retry(self):
         from fdc.ui.screens import ErrorScreen

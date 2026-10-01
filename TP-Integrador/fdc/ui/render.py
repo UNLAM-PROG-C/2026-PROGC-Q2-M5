@@ -49,8 +49,9 @@ def timer_bar(surf, x, y, w, frac, color):
 
 
 class MatchRenderer:
-    def __init__(self, app, characters):
+    def __init__(self, app, characters, labels=PLAYER_LABELS):
         self.app = app
+        self.labels = tuple(labels)
         self.sprites = app.sprites
         self.ball_sprite = app.ball_sprite
         self.background = app.background
@@ -59,15 +60,18 @@ class MatchRenderer:
         self.trail = deque(maxlen=6)
         self.kickoff_flash = 0.0
         self.goal_banner = None      # (tiempo restante, datos del gol)
+        self.golden_flash = 0.0
 
     def reset(self):
         self.trail.clear()
         self.kickoff_flash = 0.0
+        self.golden_flash = 0.0
         self.goal_banner = None
 
     def update(self, dt):
         self.t += dt
         self.kickoff_flash = max(0.0, self.kickoff_flash - dt)
+        self.golden_flash = max(0.0, self.golden_flash - dt)
         if self.goal_banner:
             left, data = self.goal_banner
             self.goal_banner = (left - dt, data) if left - dt > 0 else None
@@ -77,7 +81,7 @@ class MatchRenderer:
         surf.blit(self.background, offset)
         goals = st["goals"]
         for side in (0, 1):
-            draw_goal_back(surf, side, goals[side])
+            draw_goal_back(surf, side, goals[side], self.labels)
         for b in st.get("bombs", []):
             self._bomb(surf, b)
         if st.get("pickup"):
@@ -154,7 +158,7 @@ class MatchRenderer:
         x = int(x) // 2 * 2
         pygame.draw.polygon(surf, C.INK, [(x - 10, y - 12), (x + 10, y - 12), (x, y + 2)])
         pygame.draw.polygon(surf, col, [(x - 6, y - 10), (x + 6, y - 10), (x, y - 2)])
-        lab = pixelfont.render(PLAYER_LABELS[i], 2, C.WHITE, outline=C.INK)
+        lab = pixelfont.render(self.labels[i], 2, C.WHITE, outline=C.INK)
         r = lab.get_rect(midbottom=(x, y - 12))
         surf.blit(lab, r)
         if last:
@@ -267,17 +271,21 @@ class MatchRenderer:
             sx = led_area.centerx - 118 if i == 0 else led_area.centerx + 118
             surf.blit(score, score.get_rect(center=(sx, led_area.centery - 4)))
         low = st["clock"] <= 10 and st["phase"] == P.PHASE_PLAYING and int(self.t * 4) % 2 == 0
-        clock = pixelfont.render_led(fmt_clock(st["clock"]), 6, C.LED_ON_2 if low else C.LED_ON, C.LED_OFF)
+        golden = st.get("golden")
+        clock = pixelfont.render_led("ORO" if golden else fmt_clock(st["clock"]), 6,
+                                     C.LED_ON_2 if (low or golden) else C.LED_ON, C.LED_OFF)
         surf.blit(clock, clock.get_rect(center=(led_area.centerx, led_area.centery - 6)))
         state_txt = {P.PHASE_COUNTDOWN: "PREPARADOS", P.PHASE_PLAYING: "EN JUEGO",
                      P.PHASE_GOAL: "GOL", P.PHASE_FINISHED: "FINAL"}[st["phase"]]
+        if st.get("golden") and st["phase"] in (P.PHASE_PLAYING, P.PHASE_COUNTDOWN):
+            state_txt = "GOL DE ORO"
         if st["paused"]:
             state_txt = "EN PAUSA"
         lab = scale_px(pixelfont.render(state_txt, 1, (180, 190, 200)))
         surf.blit(lab, lab.get_rect(center=(led_area.centerx, led_area.bottom - 10)))
         for i in (0, 1):                          # carteles con los nombres
             ch = CHARACTERS_BY_ID[self.chars[i]]
-            name = pixelfont.render(f"{PLAYER_LABELS[i]} {short_name(ch).upper()}", 2, C.WHITE, outline=C.INK)
+            name = pixelfont.render(f"{self.labels[i]} {short_name(ch).upper()}", 2, C.WHITE, outline=C.INK)
             r = name.get_rect()
             if i == 0:
                 r.topright = (board.left - 12, board.top + 8)
@@ -318,6 +326,9 @@ class MatchRenderer:
                       outline=C.INK, shadow=True)
         if self.kickoff_flash > 0:
             draw_text(surf, "¡YA!", 104, (640, 330), C.WHITE, kind="title", outline=C.INK, shadow=True)
+        if self.golden_flash > 0:
+            draw_text(surf, "¡GOL DE ORO!", 72, (640, 186), C.GOLD, kind="title", outline=C.INK, shadow=True)
+            draw_text(surf, "Empate: el próximo gol gana", 24, (640, 240), C.INK, outline=C.WHITE)
         if self.goal_banner:
             left, g = self.goal_banner
             col = PLAYER_COLORS[g["scorer"]]
@@ -329,7 +340,7 @@ class MatchRenderer:
             wob = 4 if int(self.t * 8) % 2 else 0
             draw_text(surf, "¡GOOOL!", 80, (640, 312 - wob), col, kind="title", outline=C.INK, shadow=True)
             ch = CHARACTERS_BY_ID[self.chars[g["scorer"]]]
-            sub = f"{PLAYER_LABELS[g['scorer']]} - {short_name(ch)}"
+            sub = f"{self.labels[g['scorer']]} - {short_name(ch)}"
             if g.get("own_goal"):
                 sub += "  (en contra)"
             draw_text(surf, sub, 24, (640, 368), C.INK, outline=None)

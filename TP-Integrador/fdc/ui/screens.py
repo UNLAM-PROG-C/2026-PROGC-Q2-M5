@@ -213,9 +213,8 @@ class BootScreen(Screen):
 class MenuScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
-        from .match_screens import SelectScreen
         self.menu = Menu([
-            ("Jugar", lambda: app.switch(SelectScreen(app))),
+            ("Jugar", lambda: app.switch(PlayMenuScreen(app))),
             ("Controles", lambda: app.switch(ControlsScreen(app))),
             ("Poderes", lambda: app.switch(LegendScreen(app))),
             ("Salir", app.quit),
@@ -255,6 +254,93 @@ class MenuScreen(Screen):
 
 
 # ---------------------------------------------------------------------------
+# Submenús: Jugar -> Mundialito / Multijugador -> Local / Online
+# ---------------------------------------------------------------------------
+class SubMenuScreen(Screen):
+    """Menú con título sobre el estadio. Esc vuelve al menú anterior."""
+    TITLE = ""
+    SUBTITLE = ""
+
+    def __init__(self, app, items):
+        super().__init__(app)
+        self.menu = Menu(items, (640, 420))
+        self.notice = None            # (texto, tiempo restante)
+
+    def back(self):
+        self.app.switch(MenuScreen(self.app))
+
+    def handle_event(self, ev):
+        if self.notice and ev.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+            self.notice = None        # cualquier tecla o clic cierra el aviso
+            return
+        if ev.type == pygame.KEYDOWN and ev.key in BACK_KEYS:
+            self.app.audio.play("back")
+            self.back()
+            return
+        self.menu.handle_event(ev, self.app.audio)
+
+    def update(self, dt):
+        super().update(dt)
+        self.menu.update(dt)
+        if self.notice:
+            txt, left = self.notice
+            self.notice = (txt, left - dt) if left - dt > 0 else None
+
+    def draw(self, surf):
+        surf.blit(self.app.background, (0, 0))
+        dim(surf, 90)
+        title(surf, self.TITLE, (640, 120), 64)
+        if self.SUBTITLE:
+            draw_text(surf, self.SUBTITLE, 16, (640, 176), C.INK, outline=C.WHITE)
+        self.menu.draw(surf)
+        if self.notice:
+            r = pygame.Rect(0, 0, 640, 170)
+            r.center = (640, 400)
+            inner = panel(surf, r)
+            title(surf, self.notice[0], (640, inner.top + 46), 40)
+            draw_text(surf, "Pronto vas a poder jugar contra otra persona por internet.", 16,
+                      (640, inner.top + 96), C.INK, outline=None)
+            draw_text(surf, "Tocá cualquier tecla para volver", 16, (640, inner.bottom - 16), C.INK_SOFT,
+                      outline=None)
+        footer(surf, "Esc: volver")
+
+
+class PlayMenuScreen(SubMenuScreen):
+    TITLE = "JUGAR"
+    SUBTITLE = "Mundialito: vos contra la computadora.  Multijugador: dos personas."
+
+    def __init__(self, app):
+        super().__init__(app, [("Mundialito", self.mundialito), ("Multijugador", self.multiplayer),
+                               ("Volver", self.back)])
+
+    def mundialito(self):
+        from .mundialito_screens import open_mundialito
+        open_mundialito(self.app)
+
+    def multiplayer(self):
+        self.app.switch(MultiplayerMenuScreen(self.app))
+
+
+class MultiplayerMenuScreen(SubMenuScreen):
+    TITLE = "MULTIJUGADOR"
+    SUBTITLE = "Local: dos personas en el mismo teclado."
+
+    def __init__(self, app):
+        super().__init__(app, [("Local", self.local), ("Online", self.online), ("Volver", self.back)])
+
+    def back(self):
+        self.app.switch(PlayMenuScreen(self.app))
+
+    def local(self):
+        from .match_screens import SelectScreen
+        self.app.switch(SelectScreen(self.app))
+
+    def online(self):
+        self.app.audio.play("blocked")
+        self.notice = ("MÓDULO EN DESARROLLO", 6.0)
+
+
+# ---------------------------------------------------------------------------
 # Controles
 # ---------------------------------------------------------------------------
 class ControlsScreen(Screen):
@@ -291,6 +377,7 @@ class ControlsScreen(Screen):
             "Menús: W/S o flechas arriba/abajo; Enter, Espacio o P para elegir (también con el mouse).",
             "Elegir personaje: J1 con A/D, confirma con Espacio y cancela con W; J2 con las flechas, "
             "P y flecha arriba. También se puede confirmar con el mouse.",
+            "Mundialito (1 jugador): jugás a la derecha y valen las dos combinaciones de teclas.",
             "Cabecear es tocar la pelota con la cabeza; la patada sale hacia donde mira el personaje.",
             "Aviso: muchos teclados no registran más de 3 o 4 teclas a la vez (\"ghosting\"). Si alguna "
             "combinación no responde es una limitación del teclado; las teclas se cambian en fdc/config.py.",

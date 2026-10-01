@@ -53,7 +53,28 @@ Las teclas se definen en `PLAYER_KEYS` (en `fdc/config.py`) y la pantalla **Cont
 
 ---
 
-## 3. Reglas
+## 3. Modos de juego y reglas
+
+```
+Jugar
+  Mundialito        1 jugador contra la computadora (sólo local)
+  Multijugador
+    Local           2 personas en el mismo teclado
+    Online          todavía no: muestra "Módulo en desarrollo"
+Controles / Poderes / Salir
+```
+
+### Mundialito (1 jugador)
+
+- **Personaje:** elegís el tuyo y enfrentás a los **otros 6**, uno por partido, en orden al azar. Las etapas son Fecha 1, Fecha 2 y Fecha 3 (fase de grupos), Cuartos de final, Semifinal y Final.
+- **Avance:** sólo se avanza **ganando**. Si el partido termina empatado se juega **gol de oro**: saque desde el centro y el primer gol gana.
+- **Eliminación:** si perdés, se muestra tu puesto final. Perder la Fecha 1 es el 7.º puesto, y así hasta perder la Final, que es el 2.º (subcampeón). Ganando las 6 etapas, sos **campeón del mundo**.
+- **Lado y teclas:** jugás a la **derecha** y valen las dos combinaciones de teclas (A/W/D + Espacio y flechas + P).
+- **Dificultad:** la computadora es cada vez más difícil (de "Muy fácil" en la Fecha 1 a "Leyenda" en la Final). Tiene las mismas capacidades físicas que vos; la dificultad sale del tiempo de reacción, los errores, la puntería del salto y cuánto defiende.
+- **Guardar o abandonar:** al **terminar** un partido podés ir al menú y jugar otra cosa; el Mundialito queda guardado mientras el juego esté abierto y se sigue desde *Jugar > Mundialito*. Ir al menú desde la **pausa** de un partido es **abandonar** y se pierde el progreso. En el Mundialito la pausa no tiene *Reiniciar*.
+- **Cómo juega la computadora** (`fdc/bot.py`): mira el último estado del partido, igual que la pantalla, y produce las mismas pulsaciones que el teclado. No agrega procesos ni hilos, y la simulación sigue siendo la única autoridad.
+
+### Multijugador local y reglas comunes
 
 - **Recorrido:** menú, selección independiente de personaje (pueden elegir el mismo), confirmación de ambos y partido con cuenta regresiva de 3 s.
 - **Duración:** 60 s de **tiempo efectivo**. El reloj se detiene en pausas, cuentas regresivas y celebraciones de gol.
@@ -229,7 +250,7 @@ Tampoco hay hilos, semáforos ni procesos decorativos: los únicos hilos extra s
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Son 66 pruebas y tardan unos 45 s. Usan sólo la biblioteca estándar (`unittest`).
+Son 75 pruebas y tardan unos 70 s. Usan sólo la biblioteca estándar (`unittest`).
 
 | Archivo | Qué prueba |
 |---|---|
@@ -238,7 +259,8 @@ Son 66 pruebas y tardan unos 45 s. Usan sólo la biblioteca estándar (`unittest
 | `test_powers.py` | Los 17 poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, aparición de 7 a 10 s y vencimiento a 6 s, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
 | `test_process.py` | **Procesos reales:** READY desde otro pid y sin pygame, iniciar, pausar (reloj congelado en los latidos), continuar, reiniciar (sólo se aceptan estados del partido nuevo, sin efectos), eventos de partidos anteriores, watchdog, cierre ordenado (`bye`, código 0), fallo informado, proceso muerto detectado, sin huérfanos si la interfaz muere, órdenes de prueba rechazadas sin `--prueba` |
 | `test_lobby.py` | Salas del futuro online (sin red): nombre de usuario, sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
-| `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba la pantalla de error y *Reintentar* |
+| `test_mundialito.py` | Torneo (los 6 rivales, avance, puestos al perder, campeón) y rival automático (no aprieta teclas fuera del juego, le gana a un jugador quieto, el nivel más alto le gana al más bajo). El gol de oro está en `test_match.py` |
+| `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, Jugar > Multijugador > Online ("en desarrollo") y Local, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba un Mundialito (elegir, jugar con las dos combinaciones de teclas, resultado, progreso guardado al ir al menú y abandono desde la pausa), la pantalla de error y *Reintentar* |
 
 Durante las pruebas se ven en la salida trazas de error y avisos que son esperados:
 
@@ -290,9 +312,12 @@ fdc/sim/match.py          partido: fases, reloj, goles, último toque, estado se
 fdc/sim/physics.py        pelota, jugadores (cabeza + botín), arcos, colisiones, subpasos
 fdc/sim/powers.py         objetos, efectos, reemplazo/renovación, bombas
 fdc/online/lobby.py       salas del futuro online (lógica pura, sin red)
+fdc/mundialito.py         torneo del Mundialito: etapas, avance, puestos, campeón
+fdc/bot.py                rival automático: mira el estado y genera pulsaciones (6 niveles)
 fdc/ui/app.py             ventana, bucle de cuadros, eventos, foco, panel F3, cierre
 fdc/ui/screens.py         arranque, menú, controles, leyenda, error, botones retro
 fdc/ui/match_screens.py   selección (teclado y mouse), partido (pausa, reinicio, prueba), resultado
+fdc/ui/mundialito_screens.py  elección, llave del torneo, partido contra la CPU, resultado y copa
 fdc/ui/render.py          dibujo del partido y del tablero LED a partir del estado
 fdc/ui/sprites.py         jugadores en pixel art: cabeza + botín animado, contorno J1/J2, retratos
 fdc/ui/characters.py      datos de los 7 personajes (nombre, selección, colores)
@@ -336,7 +361,7 @@ tests/                    pruebas (unittest) y el conductor de la interfaz sin v
 - **Pelota flotante:** radio 17, gravedad 850 px/s², resistencia del aire 1,0/s, velocidad máxima 1150 px/s.
 - **Patada:** potencia 920 px/s en ángulo alto (sube unos 205 px y pica a unos 440 px), recuperación de 0,32 s.
 - **Arco:** 250 px de alto y 112 de profundidad.
-- **Partido:** 60 s de tiempo efectivo.
+- **Partido:** 60 s de tiempo efectivo. En el Mundialito, gol de oro si hay empate.
 - **Ventana:** resolución lógica 1280 × 720, escalada con `pygame.SCALED` y píxeles nítidos.
 - **Colores de jugador:** naranja para J1 y rosa para J2.
 
@@ -359,12 +384,15 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 - **Salto aumentado:** con *Salto aumentado* se puede tocar el travesaño saltando desde el piso (es el efecto del poder).
 - **Pruebas de interfaz:** usan el driver `dummy` de SDL, así que verifican el flujo y el dibujo pero **no** reemplazan jugar con un teclado real.
 - **Online:** todavía no está implementado (ver la sección 12).
+- **Mundialito guardado sólo en memoria:** si se cierra el juego, el torneo en curso se pierde.
+- **Rival automático:** usa reglas simples (perseguir, cubrir el arco, saltar calculando la llegada de la pelota, patear de frente). Sus niveles se midieron entre computadoras; falta ajustarlos jugando contra personas.
 
 ### Verificación realizada y pendiente
 
 **Hecho y verificado:**
 
-- Las 66 pruebas automáticas pasan.
+- Las 75 pruebas automáticas pasan.
+- Se revisaron capturas de las pantallas nuevas: Jugar, Multijugador con el aviso de Online, elección del Mundialito, llave del torneo, partido contra la CPU con gol de oro, eliminado y campeón.
 - Se recorrió el juego completo sin ventana visible y se revisaron las capturas de cada pantalla.
 - La interfaz dibuja unos 59 cuadros por segundo con partido y poderes activos (driver `dummy`).
 - Se ejecutó `main.py` con ventana y audio reales durante unos segundos, antes del rediseño retro: arrancó sin errores y cerró en orden. De esa ventana no se pudo tomar captura, porque la terminal no tiene permiso de grabación de pantalla.

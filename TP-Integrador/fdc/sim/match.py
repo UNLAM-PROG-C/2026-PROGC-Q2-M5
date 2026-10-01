@@ -28,8 +28,11 @@ NET_DAMPING = 7.0   # 1/s: frenado de la red durante la celebración
 
 
 class Match:
-    def __init__(self, match_id, seed=None, characters=("?", "?"), duration=None):
+    def __init__(self, match_id, seed=None, characters=("?", "?"), duration=None, golden_goal=False):
         self.id = match_id
+        # gol de oro: si el tiempo termina empatado, el próximo gol gana (Mundialito)
+        self.golden_goal = golden_goal
+        self.golden = False
         self.seed = seed if seed is not None else random.randrange(2 ** 31)
         self.rng = random.Random(self.seed)
         # Los personajes sólo se guardan para el registro: la física usa
@@ -114,7 +117,10 @@ class Match:
                 self.ball.vx *= k
                 self.ball.vy *= k if self.ball.vy < 0 else 1.0
             if self.phase_left <= 0:
-                self._reset_after_goal()
+                if self.golden:
+                    self._finish()          # gol de oro: termina al acabar el festejo
+                else:
+                    self._reset_after_goal()
             return ev
 
         # --- juego efectivo
@@ -124,11 +130,21 @@ class Match:
         self._physics(dt, controls=True)
         self.powers.check_pickup(self, ev)
         self._check_goals(prev_x)
-        if self.phase == P.PHASE_PLAYING:
+        if self.phase == P.PHASE_PLAYING and not self.golden:
             self.clock = max(0.0, self.clock - dt)
             if self.clock <= 0:
-                self._finish()
+                if self.golden_goal and self.score[0] == self.score[1]:
+                    self._start_golden_goal()
+                else:
+                    self._finish()
         return ev
+
+    def _start_golden_goal(self):
+        """Empate al final: saque desde el centro y el primer gol define."""
+        self._reset_after_goal()
+        self.golden = True
+        self.phase_left = MatchRules.GOLDEN_GOAL_COUNTDOWN
+        self._events.append((P.EV_GOLDEN_GOAL, {"score": list(self.score)}))
 
     def _physics(self, dt, controls):
         ev = self._events
@@ -280,6 +296,7 @@ class Match:
             "type": P.MSG_STATE, "match": self.id, "seq": seq, "tick": self.tick,
             "phase": self.phase, "paused": self.paused, "pause_reason": self.pause_reason,
             "phase_left": self.phase_left, "clock": self.clock, "score": list(self.score),
+            "golden": self.golden,
             "last_touch": self.last_touch, "scorer": self.scorer, "winner": self.winner,
             "players": [{
                 "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy, "facing": p.facing,

@@ -64,6 +64,14 @@ class InputTracker:
             for k in h:
                 h[k] = False
 
+    def snapshot_single(self, active=True):
+        """Una sola persona usando CUALQUIERA de los dos juegos de teclas
+        (Mundialito): mantenidas combinadas y contadores sumados."""
+        h0, h1 = self.held[0], self.held[1]
+        left = active and (h0["left"] or h1["left"])
+        right = active and (h0["right"] or h1["right"])
+        return [left, right, self.jumps[0] + self.jumps[1], self.kicks[0] + self.kicks[1]]
+
     def snapshot(self, active=True):
         """[[izq, der, saltos, patadas], ...]; con active=False, sin movimiento."""
         out = []

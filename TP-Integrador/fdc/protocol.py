@@ -44,6 +44,7 @@ EV_BYE = "bye"
 EV_KICKOFF = "kickoff"
 EV_GOAL = "goal"
 EV_MATCH_END = "match_end"
+EV_GOLDEN_GOAL = "golden_goal"    # empate al terminar: el próximo gol gana
 EV_PAUSED = "paused"             # pausa decidida por la simulación (watchdog)
 EV_POWER_SPAWN = "power_spawn"
 EV_POWER = "power"               # activación de un poder

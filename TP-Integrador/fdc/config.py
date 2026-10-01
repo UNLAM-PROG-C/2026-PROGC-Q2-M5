@@ -151,6 +151,7 @@ class MatchRules:
     GOAL_COUNTDOWN = 2.0
     RESUME_COUNTDOWN = 2.0
     GOAL_CELEBRATION = 2.3
+    GOLDEN_GOAL_COUNTDOWN = 3.0  # saque del gol de oro
     INPUT_WATCHDOG = 0.6     # sin controles de la interfaz por este tiempo -> pausa
 
 
