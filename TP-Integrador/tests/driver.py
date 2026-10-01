@@ -15,10 +15,10 @@ import pygame  # noqa: E402
 import helpers  # noqa: E402,F401  (agrega la raíz al path)
 
 
-def make_app(test_mode=True, seed=5, duration=None):
+def make_app(test_mode=True, seed=5, duration=None, server_url=None):
     from fdc.ui.app import App
     opts = types.SimpleNamespace(test_mode=test_mode, seed=seed, no_audio=False, fullscreen=False,
-                                 debug_panel=True, duration=duration)
+                                 debug_panel=True, duration=duration, server_url=server_url)
     return App(opts)
 
 
@@ -26,6 +26,7 @@ class Driver:
     def __init__(self, app, shots_dir=None):
         self.app = app
         self.shots_dir = shots_dir
+        self.each_frame = None      # p. ej. leer los mensajes de un rival de prueba
 
     def frames(self, n=1):
         for _ in range(n):
@@ -35,6 +36,8 @@ class Driver:
         t0 = time.monotonic()
         while not cond():
             self.app.frame()
+            if self.each_frame:
+                self.each_frame()
             if time.monotonic() - t0 > timeout:
                 raise AssertionError(f"tiempo agotado esperando {what}")
 

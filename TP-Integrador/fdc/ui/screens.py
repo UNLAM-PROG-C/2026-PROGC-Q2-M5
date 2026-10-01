@@ -41,6 +41,9 @@ class Screen:
     def on_link(self, msgs, state):
         pass
 
+    def on_net(self, msg):
+        """Mensaje del servidor online (de a uno, en orden)."""
+
     def on_focus_lost(self):
         pass
 
@@ -219,19 +222,21 @@ class BootScreen(Screen):
         super().update(dt)
         if self.to_warm:                   # retratos, uno por cuadro: la ventana responde
             self.app.sprites.portrait(self.to_warm.pop(0))
-        elif self.app.link.ready:
-            self.app.switch(MenuScreen(self.app))
+        elif self.app.link is None or self.app.link.ready:
+            self.app.switch(self.app.home())
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
         dim(surf, 150)
         draw_logo(surf, (640, 230), 1.0, self.t)
-        waiting = not self.app.link.ready
+        link = self.app.link
+        waiting = link is not None and not link.ready
         msg = "Iniciando el proceso de simulación..." if waiting else "Preparando personajes..."
         draw_text(surf, msg, 24, (640, 420), C.INK, outline=C.WHITE)
         self.app.ball_sprite.draw(surf, 640, 480 - abs(math.sin(self.t * 5)) * 30, 17, self.t * 400)
-        draw_text(surf, f"Esperando la confirmación READY ({self.t:.1f} s de {IPC.READY_TIMEOUT:.0f} s)"
-                  if waiting else "Simulación lista", 16, (640, 540), C.INK_SOFT, outline=None)
+        if link is not None:
+            draw_text(surf, f"Esperando la confirmación READY ({self.t:.1f} s de {IPC.READY_TIMEOUT:.0f} s)"
+                      if waiting else "Simulación lista", 16, (640, 540), C.INK_SOFT, outline=None)
 
 
 # ---------------------------------------------------------------------------
@@ -291,15 +296,11 @@ class SubMenuScreen(Screen):
     def __init__(self, app, items):
         super().__init__(app)
         self.menu = Menu(items, (640, 420))
-        self.notice = None            # (texto, tiempo restante)
 
     def back(self):
         self.app.switch(MenuScreen(self.app))
 
     def handle_event(self, ev):
-        if self.notice and ev.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-            self.notice = None        # cualquier tecla o clic cierra el aviso
-            return
         if ev.type == pygame.KEYDOWN and ev.key in BACK_KEYS:
             self.app.audio.play("back")
             self.back()
@@ -309,9 +310,6 @@ class SubMenuScreen(Screen):
     def update(self, dt):
         super().update(dt)
         self.menu.update(dt)
-        if self.notice:
-            txt, left = self.notice
-            self.notice = (txt, left - dt) if left - dt > 0 else None
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
@@ -320,15 +318,6 @@ class SubMenuScreen(Screen):
         if self.SUBTITLE:
             draw_text(surf, self.SUBTITLE, 16, (640, 176), C.INK, outline=C.WHITE)
         self.menu.draw(surf)
-        if self.notice:
-            r = pygame.Rect(0, 0, 640, 170)
-            r.center = (640, 400)
-            inner = panel(surf, r)
-            title(surf, self.notice[0], (640, inner.top + 46), 40)
-            draw_text(surf, "Pronto vas a poder jugar contra otra persona por internet.", 16,
-                      (640, inner.top + 96), C.INK, outline=None)
-            draw_text(surf, "Tocá cualquier tecla para volver", 16, (640, inner.bottom - 16), C.INK_SOFT,
-                      outline=None)
         footer(surf, "Esc: volver")
 
 
@@ -350,7 +339,7 @@ class PlayMenuScreen(SubMenuScreen):
 
 class MultiplayerMenuScreen(SubMenuScreen):
     TITLE = "MULTIJUGADOR"
-    SUBTITLE = "Local: dos personas en el mismo teclado."
+    SUBTITLE = "Local: dos personas en el mismo teclado.  Online: cada uno desde su casa."
 
     def __init__(self, app):
         super().__init__(app, [("Local", self.local), ("Online", self.online), ("Volver", self.back)])
@@ -363,8 +352,8 @@ class MultiplayerMenuScreen(SubMenuScreen):
         self.app.switch(SelectScreen(self.app))
 
     def online(self):
-        self.app.audio.play("blocked")
-        self.notice = ("MÓDULO EN DESARROLLO", 6.0)
+        from .online_screens import OnlineHomeScreen
+        self.app.switch(OnlineHomeScreen(self.app))
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +368,7 @@ class ControlsScreen(Screen):
 
     def back(self):
         self.app.audio.play("back")
-        self.app.switch(MenuScreen(self.app))
+        self.app.switch(self.app.home())
 
     def handle_event(self, ev):
         if self.back_button.handle_event(ev):
@@ -406,12 +395,11 @@ class ControlsScreen(Screen):
         info.midtop = (640, 428)
         inner = panel(surf, info)
         lines = [
-            f"{key_label(PAUSE_KEY)}: pausa (continuar, reiniciar o volver al menú).  {key_label(DEBUG_PANEL_KEY)}: "
-            f"panel de depuración.  {key_label(FULLSCREEN_KEY)}: pantalla completa.  {key_label(MUTE_KEY)}: silencio.",
+            f"{key_label(PAUSE_KEY)}: pausa  -  {key_label(DEBUG_PANEL_KEY)}: panel de depuración  -  "
+            f"{key_label(FULLSCREEN_KEY)}: pantalla completa  -  {key_label(MUTE_KEY)}: silencio.",
             "Menús: W/S o flechas arriba/abajo; Enter, Espacio o P para elegir (también con el mouse).",
-            "Elegir personaje: J1 con A/D, confirma con Espacio y cancela con W; J2 con las flechas, "
-            "P y flecha arriba. También se puede confirmar con el mouse.",
-            "Mundialito (1 jugador): jugás a la derecha y valen las dos combinaciones de teclas.",
+            "Elegir personaje: J1 con A/D y Espacio (W cancela); J2 con flechas y P (flecha arriba cancela).",
+            "Mundialito y Online: valen las dos combinaciones. Online, Esc pide pausa (tras el próximo gol).",
             "Cabecear es tocar la pelota con la cabeza; la patada sale hacia donde mira el personaje.",
             "Aviso: muchos teclados no registran más de 3 o 4 teclas a la vez (\"ghosting\"). Si alguna "
             "combinación no responde es una limitación del teclado; las teclas se cambian en fdc/config.py.",
@@ -436,7 +424,7 @@ class LegendScreen(Screen):
 
     def back(self):
         self.app.audio.play("back")
-        self.app.switch(MenuScreen(self.app))
+        self.app.switch(self.app.home())
 
     def handle_event(self, ev):
         if self.back_button.handle_event(ev):

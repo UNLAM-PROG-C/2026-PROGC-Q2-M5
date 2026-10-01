@@ -1,90 +1,162 @@
-# Modo online (1 contra 1 en salas): diseño y preparación
+# Modo online (1 contra 1 en salas)
 
-Esta versión es **local** (dos personas, un teclado). El online **no está implementado todavía**, pero el código ya está organizado para agregarlo sin rehacer el juego. Este documento explica qué quedó preparado y cómo seguir.
+Dos personas juegan desde **sus casas**, cada una en su **navegador**, contra un **servidor propio** (la NAS). La versión de escritorio también puede jugar online (*Jugar > Multijugador > Online*), útil para probar.
 
-## Reglas acordadas
+## Reglas
 
-1. Al entrar, cada persona escribe su **nombre de usuario**. No hay cuentas.
-2. Se puede **crear una sala libre o con contraseña**.
-3. Todos ven la **lista de salas** con el nombre de quien la creó, y pueden unirse. Si la sala tiene contraseña, hay que escribirla.
-4. Una sala es siempre **1 contra 1**.
-5. Con 2 personas en la sala, cada una **elige su personaje** (pueden repetirlo) y confirma.
-6. El sistema **asigna los lados automáticamente** (izquierda o derecha) y empieza el partido.
-7. Se juega desde un **navegador**, en dos casas distintas, contra un servidor propio (NAS) con dominio.
+1. **Nombre de usuario:** al entrar, cada persona escribe uno (de 3 a 16 letras, números o espacios). No hay cuentas ni contraseñas de usuario. Dos personas conectadas no pueden usar el mismo nombre.
+2. **Salas:** se puede **crear una sala libre o con contraseña**. La lista muestra el nombre de cada sala, quién la creó, un candado si es privada, cuántos hay (máximo 2) y su estado. Se actualiza sola.
+3. **Elegir personaje:** con 2 personas en la sala, cada una elige personaje (pueden repetirlo) y toca **¡LISTO!**. Cuando los dos están listos, el **servidor sortea los lados** y empieza el partido. Al arrancar se muestra "JUGÁS A LA IZQUIERDA" (o derecha).
+4. **Partido:** son las mismas reglas que el local: 60 s, los 17 poderes y el **empate vale**. Cada persona juega con **cualquiera de las dos combinaciones de teclas**: A/W/D + Espacio o flechas + P.
+5. **Pausa:** la puede pedir cualquiera (`Esc` o **II PAUSA**), sin que el otro tenga que aceptar.
+   - **No corta la jugada:** se activa recién **después del próximo gol** (a favor o en contra), cuando la pelota vuelve al centro.
+   - **Aviso:** mientras tanto, debajo del marcador se lee, chiquito, "*usuario* pidió la pausa".
+   - **Reanudar:** con la pausa activa, el partido sigue cuando **los dos tocan "Estoy listo"** o, si no, **a los 30 s**.
+6. **Desconexión:** si a alguien se le corta la conexión, el partido se pausa para los dos.
+   - **Aviso:** el rival ve "*usuario* perdió la conexión" con una cuenta de **30 s**.
+   - **Si vuelve a tiempo:** el partido sigue. La reconexión es automática y también funciona si se recarga la página.
+   - **Si no vuelve:** **gana el que se quedó**, por abandono.
+7. **Abandonar:** el botón **ABANDONAR** (con confirmación) da el partido por perdido y saca a esa persona de la sala.
+8. **Revancha:** la sala **queda abierta**. *Revancha* usa los mismos personajes y **los lados se sortean de nuevo**. *Cambiar personaje* vuelve a la sala. Si el rival se fue, se puede esperar a otro.
 
-## Qué ya está preparado en el código
+## Arquitectura
 
-| Pieza | Dónde | Por qué sirve para el online |
+```
+ Casa A: navegador ──┐                          NAS (Windows)
+   (pygbag)          │  https + wss   ┌───────────────────────────────────────────────────┐
+                     ├── dominio ────►│ Caddy (TLS, Let's Encrypt) ─► servidor.py :8765    │
+ Casa B: navegador ──┘                │                                │                   │
+                                      │   proceso SERVIDOR (asyncio, un hilo)              │
+                                      │     ├─ por conexión: tarea lectora + escritora     │
+                                      │     ├─ Lobby: usuarios y salas (lógica pura)       │
+                                      │     ├─ sala 1: puente 60 Hz ◄─colas─► proceso SIM  │
+                                      │     └─ sala 2: puente 60 Hz ◄─colas─► proceso SIM  │
+                                      └───────────────────────────────────────────────────┘
+```
+
+El servidor **sirve la página del juego** (`build/web`) y el **WebSocket `/ws`** en el mismo puerto.
+
+### Dónde está la concurrencia
+
+| Pieza | Mecanismo | Para qué |
 |---|---|---|
-| Simulación pura y autoritativa | `fdc/sim/match.py` | No sabe de ventanas ni de colas: recibe controles, avanza a paso fijo y devuelve estados y eventos. El servidor puede correr **una por sala** sin cambios. |
-| Proceso de simulación | `fdc/sim/process.py` | El mismo patrón (un proceso por partido, con colas) sirve en el servidor: **un proceso por sala en juego**. Así cada sala usa su propio núcleo de la NAS y una sala colgada no afecta a las demás. |
-| Protocolo por mensajes | `fdc/protocol.py` | Controles, órdenes, estados y eventos ya son diccionarios simples. Llevan identificador de partido (`match`), número de actualización (`seq`), identificador de evento (`eid`) y confirmaciones (`ack`). Se pueden mandar como JSON por WebSocket. |
-| Controles con contadores | `PressCounter` | Por red se pierden o se juntan paquetes. Como saltos y patadas viajan como contadores acumulados, la última foto que llega alcanza para no perder pulsaciones. |
-| Contrato de enlace | `fdc/link.py` (`MatchLink`) | Las pantallas sólo usan `start`, `send_command`, `send_input`, `poll`, `check_health` y `stop`. Hoy lo implementa `SimLink` (proceso local). Un `NetLink` (WebSocket) implementaría lo mismo y el resto de la interfaz no cambia. |
-| **Salas (ya implementado y probado)** | `fdc/online/lobby.py`, `tests/test_lobby.py` | Nombre de usuario, crear sala libre o con contraseña, lista de salas con su creador, unirse, límite de 2, elegir personaje, confirmar, lados al azar, revancha y desconexiones. Es lógica pura: recibe un mensaje de una conexión y devuelve qué mandar y a quién. |
+| Servidor (`fdc/online/server.py`) | **Un bucle `asyncio`** en un solo hilo | Atiende todas las conexiones sin bloquearse. Sólo ese bucle toca el `Lobby` y las sesiones, así que **no hacen falta locks**. |
+| Cada conexión | **Una tarea lectora y otra escritora** | La escritora vacía una cola propia. Los estados son **reemplazables** (si el navegador va lento, se manda sólo el último). El resto se entrega en orden y, si se acumulan más de 400, se corta esa conexión. Así un cliente lento no frena a nadie más. |
+| Cada sala en juego | **Un proceso de simulación** (`multiprocessing`, *spawn*) | Es **el mismo** de la versión local (`simulation_main`, vía `SimLink`), con sus colas acotadas, ACK, número de partido, watchdog y `Event` de cierre. Una sala trabada no afecta a las otras, y cada una puede usar otro núcleo. |
+| Puente de la sala (`RoomRunner`) | **Tarea `asyncio` a 60 Hz** | Junta los controles de los dos navegadores y los manda al proceso. Reenvía los eventos y unos **30 estados por segundo**, y lleva la pausa pedida, los "listo", el plazo de 30 s y las desconexiones. |
+| Lanzar o cerrar un proceso | **Hilo del ejecutor** (`run_in_executor`) | `Process.start()` y el cierre coordinado pueden tardar: se hacen fuera del bucle para no congelar a los demás. |
+| Cliente de escritorio (`ThreadTransport`) | **Hilo lector + cola acotada** | El hilo queda bloqueado en la red (no gasta CPU). La interfaz vacía la cola sin bloquear en cada cuadro. |
+| Cliente web (`BrowserTransport`) | **Un solo hilo** (el navegador no tiene hilos ni procesos) | El WebSocket de JavaScript deja lo que llega en un arreglo, y Python lo retira una vez por cuadro. El bucle es asíncrono: cada cuadro le devuelve el control al navegador. |
 
-### Mensajes de las salas (`Lobby.handle(conexión, mensaje)`)
+**Teclas en el navegador** (`fdc/ui/browser.py`). En Chrome, `Esc` "detiene la carga" de la página y eso congelaba el WebSocket: el partido dejaba de actualizarse justo al pedir la pausa. Ahora la página anula la acción del navegador para `Esc`, `F3` (Buscar), `Tab` (saca el foco) y las flechas (desplazan la página). El evento igual llega al juego.
 
-| Cliente → servidor | Respuesta o aviso |
+**Por qué el servidor es la autoridad.** La simulación del servidor decide todo: posiciones, goles, poderes y azar. El navegador sólo manda **controles** y **pedidos** (pausa, listo, abandonar). El servidor sabe qué lado tiene cada conexión, así que nadie puede mover al otro jugador ni hacer trampa con la física.
+
+### Mensajes (JSON por WebSocket, ver `fdc/online/wire.py`)
+
+Por la red va **JSON**, **nunca `pickle`**, porque `pickle` permite ejecutar código ajeno. El servidor valida cada mensaje: que sea JSON, su tipo, sus campos y que los contadores sean enteros no negativos. También pone un tamaño máximo de 2 KB y un máximo de 150 mensajes por segundo por conexión.
+
+| Cliente → servidor | Respuesta o efecto |
 |---|---|
-| `{"type": "hello", "username": "Ale"}` | `welcome` y `rooms`, o `error` (`nombre_invalido` o `nombre_en_uso`) |
-| `{"type": "list_rooms"}` | `rooms`: sala, nombre, creador, si es privada, jugadores y estado. Nunca incluye la contraseña. |
-| `{"type": "create_room", "name": "Picadito", "password": "opcional"}` | `room` a quien la creó, más `rooms` actualizado a quienes miran la lista |
-| `{"type": "join_room", "room": 3, "password": "..."}` | `room` a ambos, o `error` (`sala_llena`, `clave_incorrecta` o `sala_inexistente`) |
-| `{"type": "choose_character", "character": "messi"}` | `room` actualizado a ambos |
-| `{"type": "ready"}` | Cuando confirman los dos: `match_start` a cada uno, con `players` (lado, usuario, personaje) y `you` (su lado) |
-| `{"type": "leave_room"}` o conexión cortada | `opponent_left` a quien queda, que pasa a ser el dueño de la sala |
+| `hello {username, token?}` | `welcome {username, token, restored}` + `rooms`, o `error` (`nombre_invalido`, `nombre_en_uso`). Con el `token` se **recupera la sesión** (sala y partido) tras un corte. |
+| `list_rooms`, `create_room {name, password?}`, `join_room {room, password?}`, `leave_room` | `rooms` (lista) o `room` (detalle de la sala). Errores: `sala_llena`, `clave_incorrecta`, `sala_inexistente`, `demasiadas_salas`. |
+| `choose_character {character}`, `ready {ready}` | `room` a los dos. Con ambos listos: `match_start {match, players, you}` a cada uno. |
+| `input {p: [izq, der, saltos, patadas]}` | Foto de controles **reemplazable**. Saltos y patadas viajan como **contadores acumulados**, así que no se pierde ninguna pulsación aunque se pierdan fotos. Se manda sólo cuando cambia, más un latido cada 0,25 s. |
+| `pause_request` / `pause_ready` | `pause_info {status: pedida/activa/ninguna, by_name, left, ready}` a los dos. |
+| `abandon` | `match_over {reason: "abandono", winner, by_name}`; quien abandona vuelve a la lista. |
+| `ping {t}` | `pong {t}`: la latencia que se ve arriba a la derecha y en F3. |
 
-Las contraseñas de sala se guardan como hash PBKDF2 con sal y se comparan en tiempo constante. No son cuentas de usuario: sólo protegen la entrada a la sala.
+Del servidor también llegan:
 
-## Arquitectura propuesta
+- `state`: la foto del partido, con `match` y `seq` para descartar las viejas;
+- `ev {e}`: un evento del partido (gol, poder, rebote...), con `eid` para no procesarlo dos veces;
+- `opponent {connected, left}`: si el rival perdió la conexión y cuánto le queda para volver;
+- `match_over {reason: "tiempo" | "abandono" | "error"}`: el final del partido.
 
+### Latencia
+
+- **Suavizado:** el navegador dibuja entre las dos últimas fotos (`fdc/online/interp.py`), así el movimiento se ve suave aunque lleguen 30 por segundo. Es sólo presentación.
+- **Demora:** los controles tardan lo que tarda la red (entre dos casas, normalmente 20 a 80 ms). No hay predicción del lado del cliente: es lo más simple y justo, porque nadie ve una versión distinta del partido. Ver "Limitaciones" en el README.
+
+## Probarlo en la computadora
+
+```bash
+.venv/bin/python -m pip install -r requirements-online.txt   # una sola vez: websockets y pygbag
+.venv/bin/python tools/construir_web.py                      # compila el cliente web en build/web
+.venv/bin/python servidor.py                                  # http://localhost:8765
 ```
- Casa A: navegador ─┐                        NAS (Docker)
-                    │   https / wss   ┌────────────────────────────────────────────┐
-                    ├──── dominio ───►│ proxy inverso (TLS, Let's Encrypt)         │
- Casa B: navegador ─┘                 │   /     -> archivos del cliente web        │
-                                      │   /ws   -> servidor del juego (asyncio)    │
-                                      │             ├─ Lobby (salas)               │
-                                      │             ├─ sala 1 -> proceso Match     │
-                                      │             └─ sala 2 -> proceso Match     │
-                                      └────────────────────────────────────────────┘
+
+- **Navegador:** abrí <http://localhost:8765> en **dos ventanas** (o dos navegadores), elegí nombres distintos, creá una sala con una y unite con la otra. La primera vez hay que hacer clic en la página para que arranque, porque el navegador exige un clic para habilitar el sonido.
+- **Escritorio:** `main.py` también juega online. Por defecto usa `ws://localhost:8765/ws`; se cambia con `--servidor URL` o con la variable `FDC_SERVIDOR`.
+- **Opciones del servidor:**
+  - `--puerto`;
+  - `--host`: 127.0.0.1 para aceptar sólo conexiones locales;
+  - `--duracion S`: partidos cortos para probar;
+  - `--gracia S`: los segundos para volver tras un corte.
+- **Estado y registros:** <http://localhost:8765/estado> muestra cuántas salas y conexiones hay. El registro queda en `logs/servidor.log`.
+
+## Ponerlo en la NAS (Windows)
+
+### 1. Instalar
+
+1. Instalá **Python 3.13** desde python.org y marcá *Add python.exe to PATH*.
+2. Copiá la carpeta del proyecto, o cloná el repo con `git clone`.
+3. En una terminal (PowerShell), dentro de la carpeta:
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt -r requirements-online.txt
+.venv\Scripts\python tools\construir_web.py
+.venv\Scripts\python servidor.py
 ```
 
-**Servidor.** Python con `asyncio` y la librería `websockets` (o `aiohttp`), en un contenedor Docker en la NAS.
-- **Conexiones:** un bucle de eventos las atiende y pasa cada mensaje a `Lobby.handle`.
-- **Partido:** con el `match_start`, lanza el proceso de simulación de esa sala (`simulation_main`, con las mismas colas).
-- **Controles:** los recibe de cada navegador (`input`). Como el servidor sabe qué lado tiene cada conexión, los traduce al jugador 0 o 1.
-- **Estados y eventos:** los reenvía a los dos navegadores. Los estados se pueden bajar a unos 30 por segundo para ahorrar ancho de banda; la física sigue a 120 Hz.
-- **Cierre:** cuando llega `match_end`, llama a `Lobby.finish_match` (revancha) y cierra el proceso de la sala con el mismo cierre coordinado que ya usa `SimLink.stop()`.
+- **Dependencias:** el servidor sólo necesita `websockets` (no carga pygame). `pygame` y `pygbag` hacen falta únicamente para compilar el cliente web. También se puede compilar en la Mac y copiar la carpeta `build\web`.
+- **Python en el navegador:** la página descarga el intérprete (WebAssembly) del CDN de pygame-web (`pygame-web.github.io`), así que los jugadores necesitan internet. La NAS sólo sirve el juego (unos 240 KB) y el WebSocket.
+- **Prueba en la red de tu casa:** desde otra compu, abrí `http://IP-DE-LA-NAS:8765`. Si no abre, permití Python en el Firewall de Windows (puerto 8765, red privada).
 
-**Cliente web.** Hay dos caminos:
-1. **pygbag** (pygame compilado a WebAssembly). Reutiliza las pantallas, los sprites y el dibujo actuales. Hay que:
-   - hacer asíncrono el bucle principal (`await asyncio.sleep(0)` en cada cuadro);
-   - reemplazar `SimLink` por un `NetLink` que use el WebSocket del navegador;
-   - agregar pantallas nuevas de nombre, lista de salas y sala.
+### 2. Que arranque solo (sin dejar una sesión abierta)
 
-   En el navegador no hay `multiprocessing`, pero tampoco hace falta, porque la simulación corre en el servidor.
-2. **Cliente JavaScript con Canvas.** Es más trabajo de interfaz, pero no depende de pygbag. Usaría los mismos sprites (`assets/personajes/*.png`) y los mismos mensajes JSON.
+Con el **Programador de tareas** de Windows:
 
-Recomendación: empezar con un prototipo en pygbag, porque se aprovecha casi toda la interfaz.
+1. Creá una tarea con el desencadenador **Al iniciar el sistema**.
+2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `servidor.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`.
+3. En *General*, marcá **Ejecutar tanto si el usuario inició sesión como si no**.
+4. En *Configuración*, elegí **Si la tarea no se ejecuta, reiniciar cada 1 minuto**.
 
-**Cuidados de red**
-- **Nunca usar `pickle` por la red:** permite ejecutar código ajeno. Por la red va JSON, y el servidor valida cada mensaje.
-- **Autoridad del servidor:** decide todo (posiciones, goles, poderes, azar), igual que hoy la simulación. Así un cliente no puede hacer trampa.
-- **Latencia:** entre dos casas es normal tener entre 30 y 100 ms. Conviene que el cliente web **interpole** entre los dos últimos estados (unos 100 ms de colchón). Es sólo presentación y no cambia la regla de que el servidor decide.
-- **Pausa:** en el online no conviene la pausa libre. Se puede reemplazar por "pedir pausa y que el rival acepte", o quitarla.
-- **Desconexiones:** esperar unos 10 s a que la persona vuelva a entrar. Si no vuelve, dar el partido por terminado. El `watchdog` de controles que ya existe detecta cuando dejan de llegar controles.
+Con `--host 127.0.0.1` el juego sólo acepta conexiones de la propia NAS: desde afuera se entra únicamente por Caddy, con HTTPS.
 
-**Puesta en marcha en la NAS**
-- **Contenedor:** Docker con `python:3.13-slim`, el servidor y los archivos del cliente web, con reinicio automático.
-- **Proxy inverso:** puede ser el de la propia NAS, Nginx Proxy Manager, Caddy o Traefik. Debe tener certificado de Let's Encrypt para el dominio y soportar la actualización a WebSocket en `/ws`.
-- **Router:** redirigir el puerto 443 a la NAS. Si la IP pública cambia, usar DNS dinámico.
-- **Registros y límites:** mantener los registros por proceso (como hoy) y agregar límites de mensajes por conexión y de salas por IP.
+### 3. Dominio y HTTPS
 
-## Próximos pasos sugeridos
+El navegador exige **HTTPS/WSS** fuera de la red local. Lo más simple es **Caddy**: un solo `.exe` que saca y renueva los certificados de Let's Encrypt automáticamente y deja pasar el WebSocket sin configuración extra.
 
-1. Servidor WebSocket mínimo que use `Lobby`, con pruebas que simulen conexiones.
-2. Ejecutor de sala: puente entre la conexión y el proceso `simulation_main` de cada sala, con el lado asignado a cada conexión.
-3. `NetLink` en el cliente, más las pantallas de usuario, lista de salas (con candado para las privadas) y sala (personajes y lado asignado).
-4. Versión web con pygbag y despliegue en la NAS con el dominio.
+1. **DNS:** en tu proveedor del dominio, creá un registro **A** (por ejemplo, `futbol.tudominio.com`) apuntando a la **IP pública** de tu casa. Si tu IP cambia, usá **DNS dinámico**: muchos proveedores y routers lo traen, y si no, DuckDNS o similar.
+2. **Router:** redirigí los puertos **80 y 443** (TCP) a la IP de la NAS. Conviene fijarle una IP a la NAS en el router (reserva DHCP).
+3. **Caddy:** bajá `caddy.exe` de caddyserver.com y creá un archivo `Caddyfile` al lado:
+
+   ```
+   futbol.tudominio.com {
+       reverse_proxy 127.0.0.1:8765
+   }
+   ```
+
+   Probalo con `caddy run`. Para que arranque solo, usá el mismo Programador de tareas, con el programa `caddy.exe` y los argumentos `run --config Caddyfile`.
+4. **Firewall de Windows:** permití la entrada en los puertos 80 y 443 a `caddy.exe`.
+5. **Listo:** las dos casas entran a `https://futbol.tudominio.com`.
+
+**Si tu proveedor usa CGNAT** (la IP "WAN" del router no coincide con la que muestra *¿cuál es mi IP?*), abrir puertos no funciona. Hay dos salidas:
+
+- pedirle al proveedor una IP pública;
+- usar **Cloudflare Tunnel** (`cloudflared` para Windows, gratuito). El túnel sale desde la NAS hacia Cloudflare, así que no hace falta abrir puertos. Soporta WebSocket y el dominio tiene que estar en Cloudflare. En ese caso Caddy no hace falta: el túnel apunta a `http://127.0.0.1:8765`.
+
+### 4. Actualizar
+
+```powershell
+git pull
+.venv\Scripts\python tools\construir_web.py
+```
+
+Después reiniciá la tarea del servidor. Las salas viven en memoria: reiniciar el servidor las cierra.
+
+### Docker (opcional)
+
+Si preferís un contenedor (Docker Desktop con WSL2 en Windows): imagen `python:3.13-slim`, `pip install websockets`, copiar el proyecto y la carpeta `build/web`, `CMD ["python", "servidor.py"]` y exponer el 8765. Con la tarea programada alcanza; Docker no es necesario.

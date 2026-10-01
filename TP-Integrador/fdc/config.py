@@ -256,6 +256,31 @@ class IPC:
     JOIN_TIMEOUT = 2.0          # espera de fin del proceso antes de forzar
     MAX_EVENTS_PER_FRAME = 400
 
+
+# ---------------------------------------------------------------------------
+# Online (servidor de salas + navegador). Ver docs/ONLINE.md
+# ---------------------------------------------------------------------------
+class Online:
+    PORT = 8765
+    WS_PATH = "/ws"
+    # servidor por defecto para la versión de escritorio (la web usa el mismo
+    # sitio desde el que se cargó); se cambia con --servidor o FDC_SERVIDOR
+    SERVER_URL = os.environ.get("FDC_SERVIDOR", "ws://localhost:8765/ws")
+    RECONNECT_GRACE = 30.0      # s para volver antes de perder por abandono
+    PAUSE_MAX = 30.0            # s que dura como máximo una pausa pedida
+    PUMP_HZ = 60                # ciclo del puente sala <-> proceso de simulación
+    STATE_HZ = 30               # estados por segundo hacia cada navegador
+    PING_EVERY = 2.0            # el cliente mide la latencia cada tanto
+    MAX_MESSAGE_BYTES = 2048    # tamaño máximo de un mensaje de un cliente
+    MAX_MESSAGES_PER_SEC = 150  # más que esto se considera abuso y se corta
+    MAX_CONNECTIONS = 64
+    MAX_ROOMS = 16              # cada sala en juego usa un proceso de simulación
+    OUTBOX_LIMIT = 400          # mensajes confiables sin enviar -> cliente demasiado lento
+    CLIENT_INBOX = 512          # cola de entrada del cliente de escritorio
+    HELLO_TIMEOUT = 10.0        # s para presentarse después de conectar
+    RETRY_EVERY = 2.0           # el cliente reintenta reconectar cada tanto
+
+
 # ---------------------------------------------------------------------------
 # Rutas opcionales para reemplazar recursos generados por archivos propios
 # ---------------------------------------------------------------------------

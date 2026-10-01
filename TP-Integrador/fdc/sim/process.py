@@ -117,7 +117,13 @@ class SimulationServer:
             ack(True, f"semilla {self.match.seed}")
             self.publish_state()
         elif ctype == P.CMD_PAUSE:
-            ok = self.match is not None and self.match.pause(cmd.get("reason", P.PAUSE_REASON_USER))
+            if self.match is None:
+                ok = False
+            elif cmd.get("after_goal"):
+                # online: queda pendiente hasta después del próximo gol
+                ok = self.match.request_pause_after_goal(cmd.get("by"))
+            else:
+                ok = self.match.pause(cmd.get("reason", P.PAUSE_REASON_USER))
             ack(ok, "" if ok else "no hay partido en curso")
             if ok:
                 self.publish_state()

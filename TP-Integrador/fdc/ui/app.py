@@ -2,9 +2,13 @@
 
 Todo el manejo de eventos de pygame ocurre en ESTE hilo (el que creó la
 ventana), como indica la documentación de pygame.event. La interfaz nunca se
-bloquea esperando a la simulación: en cada cuadro lee lo que haya llegado
-(get_nowait) y dibuja el último estado válido. El ritmo lo marca
-clock.tick(60), que duerme entre cuadros (no hay espera activa).
+bloquea esperando a la simulación ni a la red: en cada cuadro lee lo que haya
+llegado (get_nowait) y dibuja el último estado válido. El ritmo lo marca
+FrameLimiter, que duerme entre cuadros (no hay espera activa).
+
+En el navegador (pygbag) no hay procesos: la aplicación arranca directamente
+en el modo online (la simulación corre en el servidor) y el bucle es
+asíncrono: cada cuadro le devuelve el control al navegador.
 """
 import logging
 import os
@@ -16,7 +20,6 @@ import pygame
 
 from ..config import (DEBUG_PANEL_KEY, FULLSCREEN_KEY, GAME_NAME, LOGICAL_HEIGHT, LOGICAL_WIDTH,
                       MUTE_KEY, PHYSICS_HZ, UI_FPS)
-from ..ipc import SimLink
 from .assets import clear_caches, draw_text
 from . import palette as C
 from . import pixelfont
@@ -38,7 +41,8 @@ class FrameLimiter:
     no es una espera activa.
     """
 
-    def __init__(self, fps):
+    def __init__(self, fps, sleep=True):
+        self.sleep = sleep        # en el navegador el ritmo lo marca el propio navegador
         self.period = 1.0 / fps
         self.deadline = time.perf_counter()
         self.last = self.deadline
@@ -48,7 +52,7 @@ class FrameLimiter:
         self.deadline += self.period
         now = time.perf_counter()
         remaining = self.deadline - now
-        if remaining > 0:
+        if remaining > 0 and self.sleep:
             time.sleep(remaining)
         else:
             self.deadline = now        # cuadro atrasado: no intentar "recuperar"
@@ -67,14 +71,21 @@ class FrameLimiter:
 class App:
     def __init__(self, options):
         self.options = options
+        self.web = bool(getattr(options, "web", False))   # versión de navegador (pygbag)
         pygame.mixer.pre_init(22050, -16, 1, 512)
         pygame.init()
         pygame.display.set_caption(GAME_NAME)
-        flags = pygame.SCALED | pygame.RESIZABLE   # escala conservando la proporción
-        if options.fullscreen:
-            flags |= pygame.FULLSCREEN
+        if self.web:
+            flags = 0                                  # el navegador escala el lienzo
+        else:
+            flags = pygame.SCALED | pygame.RESIZABLE   # escala conservando la proporción
+            if options.fullscreen:
+                flags |= pygame.FULLSCREEN
         self.screen = pygame.display.set_mode((LOGICAL_WIDTH, LOGICAL_HEIGHT), flags)
-        self.clock = FrameLimiter(UI_FPS)
+        self.clock = FrameLimiter(UI_FPS, sleep=not self.web)
+        if self.web:
+            from .browser import install_key_guard
+            install_key_guard()         # Esc, F3, Tab y flechas no disparan acciones del navegador
         self.audio = Audio(enabled=not options.no_audio)
         self.sprites = CharacterSprites()
         self.ball_sprite = BallSprite()
@@ -88,12 +99,20 @@ class App:
         self.show_debug = options.debug_panel
         self.running = True
         self.keys = {k: key_code(k) for k in (DEBUG_PANEL_KEY, FULLSCREEN_KEY, MUTE_KEY)}
+        self.net = None                 # conexión con el servidor online (al entrar a Online)
+        self.server_url = getattr(options, "server_url", None)
+        self.last_username = ""         # para no tener que escribirlo de nuevo
+        self.last_online_char = None
 
         # El proceso de simulación arranca ANTES de mostrar el menú; la
         # pantalla de arranque espera su READY sin bloquear la ventana.
-        self.link = SimLink(test_mode=options.test_mode, seed=options.seed,
-                            duration=getattr(options, "duration", None))
-        self.link.start()
+        # (En el navegador no hay proceso local: se juega sólo online.)
+        self.link = None
+        if not self.web:
+            from ..ipc import SimLink   # acá y no arriba: en el navegador no hay multiprocessing
+            self.link = SimLink(test_mode=options.test_mode, seed=options.seed,
+                                duration=getattr(options, "duration", None))
+            self.link.start()
         self.current = BootScreen(self)
         self.current.enter()
 
@@ -107,6 +126,26 @@ class App:
         self.current.leave()
         self.current = screen
         screen.enter()
+
+    def home(self):
+        """Pantalla inicial: el menú principal, o el ingreso al online en el navegador."""
+        if self.web:
+            from .online_screens import OnlineHomeScreen
+            return OnlineHomeScreen(self)
+        from .screens import MenuScreen
+        return MenuScreen(self)
+
+    def online(self):
+        """Cliente de red (se crea la primera vez que se entra a Online)."""
+        if self.net is None:
+            from ..online.client import NetClient
+            self.net = NetClient(self.server_url)
+        return self.net
+
+    def close_online(self):
+        if self.net is not None:
+            self.net.close()
+            self.net = None
 
     def next_match_id(self):
         self.match_counter += 1
@@ -128,11 +167,17 @@ class App:
             self.handle_event(ev)
             if not self.running:
                 return
-        msgs, state = self.link.poll()
-        self.current.on_link(msgs, state)
-        err = self.link.check_health()
-        if err and not isinstance(self.current, ErrorScreen):
-            self.switch(ErrorScreen(self, err, self.link.error_detail))
+        if self.link is not None:
+            msgs, state = self.link.poll()
+            self.current.on_link(msgs, state)
+            err = self.link.check_health()
+            if err and not isinstance(self.current, ErrorScreen):
+                self.switch(ErrorScreen(self, err, self.link.error_detail))
+        if self.net is not None:
+            # de a uno: si un mensaje cambia de pantalla, los siguientes ya
+            # los recibe la pantalla nueva (no se pierde ninguno)
+            for msg in self.net.poll():
+                self.current.on_net(msg)
         self.current.update(dt)
         self.current.draw(self.screen)
         if self.show_debug:
@@ -145,6 +190,16 @@ class App:
                 self.frame()
         except KeyboardInterrupt:
             log.info("interrupción desde la terminal: cerrando ordenadamente")
+        finally:
+            self.shutdown()
+
+    async def run_async(self):
+        """Bucle del navegador: cada cuadro le devuelve el control (sin dormir)."""
+        import asyncio
+        try:
+            while self.running:
+                self.frame()
+                await asyncio.sleep(0)
         finally:
             self.shutdown()
 
@@ -162,7 +217,8 @@ class App:
                 self.show_debug = not self.show_debug
                 return
             if ev.key == self.keys[FULLSCREEN_KEY]:
-                pygame.display.toggle_fullscreen()
+                if not self.web:
+                    pygame.display.toggle_fullscreen()
                 return
             if ev.key == self.keys[MUTE_KEY]:
                 self.audio.toggle_mute()
@@ -175,29 +231,44 @@ class App:
             self.audio.crowd(False)
         except pygame.error:
             pass
-        report = self.link.stop()
-        log.info("cierre completo: %s", report)
+        self.close_online()
+        if self.link is not None:
+            report = self.link.stop()
+            log.info("cierre completo: %s", report)
         clear_caches()
         pygame.quit()
 
     # ------------------------------------------------------------------ panel F3
     def draw_debug(self, surf):
-        li = self.link.debug_lines()
         si = self.current.debug_info()
-        info = self.link.ready_info or {}
         yes = lambda v: "sí" if v else "no"  # noqa: E731
         clock = f"{si['clock']:.2f} s" if si.get("clock") is not None else "-"
-        lines = [
-            ("PANEL DE DEPURACIÓN (F3)", C.GOLD),
-            (f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} ({'viva' if li['alive'] else 'detenida'}), "
-             f"pygame en SIM: {yes(info.get('pygame_loaded'))}", None),
+        lines = [("PANEL DE DEPURACIÓN (F3)", C.GOLD)]
+        if self.link is not None:
+            li = self.link.debug_lines()
+            info = self.link.ready_info or {}
+            lines.append((f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} "
+                          f"({'viva' if li['alive'] else 'detenida'}), "
+                          f"pygame en SIM: {yes(info.get('pygame_loaded'))}", None))
+        lines += [
             (f"Pantalla {type(self.current).__name__}  |  partido #{si.get('match', '-')}  |  "
              f"fase {si.get('phase', '-')}", None),
             (f"Pausa SIM: {yes(si.get('paused'))}  |  pausa UI: {si.get('ui_pause', '-')}  |  reloj {clock}", None),
             (f"Actualización seq {si.get('seq', '-')}  |  tick {si.get('tick', '-')}", None),
-            (f"Último confirmado: {li['confirmed']}", None),
-            (f"Órdenes sin confirmar: {li['pending']}  |  controles: {li['inputs']}", None),
-            (f"Recibidos: {li['received']}", None),
+        ]
+        if self.link is not None:
+            lines += [
+                (f"Último confirmado: {li['confirmed']}", None),
+                (f"Órdenes sin confirmar: {li['pending']}  |  controles: {li['inputs']}", None),
+                (f"Recibidos: {li['received']}", None),
+            ]
+        if self.net is not None:
+            ni = self.net.debug_lines()
+            lines += [
+                (f"Online: {ni['status']} como {ni['user']}  |  latencia {ni['rtt']}  |  {ni['url']}", None),
+                (f"Mensajes: {ni['traffic']}", None),
+            ]
+        lines += [
             (f"Estados ignorados: {si.get('filtered', '-')}", None),
             (f"SIM reemplazó {si.get('sim_dropped', 0)} estados  |  eventos cosméticos perdidos "
              f"{si.get('cosmetic_dropped', 0)}  |  eventos viejos {si.get('ignored_events', 0)}", None),

@@ -58,6 +58,7 @@ class MatchRenderer:
         self.kickoff_flash = 0.0
         self.goal_banner = None      # (tiempo restante, datos del gol)
         self.golden_flash = 0.0
+        self.center_note = None      # texto chico debajo del marcador (online: "X pidió la pausa")
 
     def who(self, i, side_if_same=True):
         """Nombre del personaje (el lado y el color ya identifican a cada jugador).
@@ -304,8 +305,15 @@ class MatchRenderer:
             self._hud_effect(surf, e, (board.left - 222, board.top + 46 + k * 46))
         for k, e in enumerate(cols[1]):
             self._hud_effect(surf, e, (board.right + 12, board.top + 46 + k * 46))
+        top = board.bottom + 12
+        if self.center_note:
+            note = pygame.Rect(0, 0, pixelfont.text_width(self.center_note, 2) + 20, 26)
+            note.midtop = (board.centerx, board.bottom + 10)
+            inner = bevel_box(surf, note, C.CREAM, shadow=False)
+            draw_text(surf, self.center_note, 16, inner.center, C.INK, outline=None)
+            top = note.bottom + 8
         for k, e in enumerate(cols["c"]):
-            self._hud_effect(surf, e, (board.centerx - 105, board.bottom + 12 + k * 46))
+            self._hud_effect(surf, e, (board.centerx - 105, top + k * 46))
 
     def _hud_effect(self, surf, e, topleft):
         pdef = POWERS_BY_ID[e["power"]]

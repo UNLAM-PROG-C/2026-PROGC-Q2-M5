@@ -11,6 +11,7 @@ import pygame
 
 from fdc.config import POWER_IDS
 from fdc.ui.match_screens import MatchScreen, ResultScreen, SelectScreen
+from fdc.ui.online_screens import OnlineHomeScreen
 from fdc.ui.screens import (ControlsScreen, LegendScreen, MenuScreen, MultiplayerMenuScreen,
                             PlayMenuScreen)
 
@@ -36,11 +37,11 @@ class UISmokeTest(unittest.TestCase):
             d.tap(pygame.K_RETURN)                      # Multijugador
             self.assertIsInstance(d.screen(), MultiplayerMenuScreen)
             d.tap(pygame.K_s)
-            d.tap(pygame.K_RETURN)                      # Online: módulo en desarrollo
-            self.assertIn("DESARROLLO", d.screen().notice[0])
-            d.tap(pygame.K_RETURN)                      # cierra el aviso
-            self.assertIsNone(d.screen().notice)
-            d.tap(pygame.K_w)
+            d.tap(pygame.K_RETURN)                      # Online: pide el nombre de usuario
+            self.assertIsInstance(d.screen(), OnlineHomeScreen)
+            d.tap(pygame.K_ESCAPE)                      # volver sin conectarse
+            self.assertIsInstance(d.screen(), MultiplayerMenuScreen)
+            self.assertIsNone(app.net)
             d.tap(pygame.K_RETURN)                      # Local: el juego de siempre
             self.assertIsInstance(d.screen(), SelectScreen)
 

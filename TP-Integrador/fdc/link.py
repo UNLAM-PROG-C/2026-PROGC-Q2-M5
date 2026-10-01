@@ -1,12 +1,14 @@
 """Contrato entre la interfaz y "algo que simula el partido".
 
-La interfaz (fdc/ui) sólo usa estos métodos y atributos. Hoy los implementa
-SimLink (fdc/ipc.py): un proceso local comunicado por colas. Para el modo
-online alcanza con otra implementación (p. ej. NetLink sobre WebSocket) que
-hable con la sala del servidor usando los MISMOS mensajes de fdc/protocol.py:
-las pantallas, el dibujo y el sonido no cambian.
+Las pantallas locales (Multijugador local y Mundialito) sólo usan estos
+métodos y atributos. Los implementa SimLink (fdc/ipc.py): un proceso de
+simulación comunicado por colas. El servidor online usa el mismo SimLink, uno
+por sala en juego.
 
-Ver docs/ONLINE.md.
+El partido online no pasa por este contrato: su pantalla (OnlineMatchScreen)
+habla con NetClient (fdc/online/client.py), que además maneja salas, pausa
+pedida, "listo" y reconexión. Los estados y eventos que dibuja son los mismos
+de fdc/protocol.py. Ver docs/ONLINE.md.
 """
 from abc import ABC, abstractmethod
 

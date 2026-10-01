@@ -1,4 +1,4 @@
-"""Salas para el futuro modo online (1 contra 1). Lógica pura, SIN red.
+"""Salas del modo online (1 contra 1). Lógica pura, SIN red.
 
 Este módulo implementa las reglas acordadas para el online:
   * al entrar, cada persona elige un nombre de usuario (sin cuentas);
@@ -9,9 +9,9 @@ Este módulo implementa las reglas acordadas para el online:
     arranca el partido.
 
 No abre sockets ni conoce el transporte: recibe mensajes (diccionarios que se
-pueden mandar como JSON) de una conexión identificada y devuelve la lista de
-mensajes a enviar, con sus destinatarios. Un servidor WebSocket futuro sólo
-tiene que enrutar lo que entra y lo que sale (ver docs/ONLINE.md).
+pueden mandar como JSON) de una sesión identificada y devuelve la lista de
+mensajes a enviar, con sus destinatarios. El servidor (fdc/online/server.py)
+sólo enruta lo que entra y lo que sale.
 """
 import hashlib
 import hmac
@@ -20,12 +20,14 @@ import os
 import random
 import re
 
-from ..config import CHARACTER_IDS
+from ..config import CHARACTER_IDS, Online
 
 MAX_PLAYERS = 2
 USERNAME_RE = re.compile(r"^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ _.-]{3,16}$")
 ROOM_NAME_MAX = 24
-PBKDF2_ROUNDS = 100_000
+# contraseña de una sala (no de una cuenta): alcanza con esto y el hash tarda
+# unos pocos ms, así no frena el bucle del servidor que atiende a todos
+PBKDF2_ROUNDS = 20_000
 
 # estados de una sala
 WAITING = "esperando"      # hay 1 persona
@@ -55,10 +57,11 @@ class Member:
         self.character = None
         self.ready = False
         self.side = None
+        self.connected = True       # False mientras se espera que vuelva a conectarse
 
     def public(self):
         return {"username": self.username, "character": self.character, "ready": self.ready,
-                "side": self.side}
+                "side": self.side, "connected": self.connected}
 
 
 class Room:
@@ -100,8 +103,9 @@ class Room:
 class Lobby:
     """Estado de usuarios y salas. Un único hilo/tarea debe llamar a handle()."""
 
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, max_rooms=Online.MAX_ROOMS):
         self.rng = rng or random.Random()
+        self.max_rooms = max_rooms
         self.users = {}                    # conn -> nombre de usuario
         self.rooms = {}                    # id -> Room
         self.room_of = {}                  # conn -> id de sala
@@ -130,6 +134,28 @@ class Lobby:
         out = self._leave(conn, {}) if conn in self.room_of else []
         self.users.pop(conn, None)
         return out
+
+    def set_connected(self, conn, connected):
+        """La conexión se cortó (o volvió) pero la sesión sigue reservada:
+        el rival lo ve en la sala y no se puede arrancar sin él."""
+        room = self.rooms.get(self.room_of.get(conn))
+        me = room.member(conn) if room else None
+        if me is None or me.connected == connected:
+            return []
+        me.connected = connected
+        if not connected:
+            me.ready = False
+        return self._room_update(room)
+
+    def room_of_conn(self, conn):
+        return self.rooms.get(self.room_of.get(conn))
+
+    def resync(self, conn):
+        """Mensajes para que una sesión que se reconectó vea dónde estaba."""
+        room = self.room_of_conn(conn)
+        if room is None:
+            return [([conn], self._rooms_msg())]
+        return [([conn], {"type": "room", **room.detail()})]
 
     # ------------------------------------------------------------------ usuarios y salas
     def _hello(self, conn, msg):
@@ -162,6 +188,8 @@ class Lobby:
     def _create(self, conn, msg):
         if conn in self.room_of:
             raise LobbyError("ya_en_sala", "Ya estás en una sala.")
+        if len(self.rooms) >= self.max_rooms:
+            raise LobbyError("demasiadas_salas", "El servidor está lleno: probá más tarde.")
         owner = self.users[conn]
         name = (msg.get("name") or f"Sala de {owner}").strip()[:ROOM_NAME_MAX]
         password = msg.get("password") or None
@@ -231,7 +259,8 @@ class Lobby:
             raise LobbyError("sin_personaje", "Primero elegí un personaje.")
         me.ready = bool(msg.get("ready", True))
         out = self._room_update(room)
-        if len(room.members) == MAX_PLAYERS and all(m.ready for m in room.members):
+        if (len(room.members) == MAX_PLAYERS and all(m.ready for m in room.members)
+                and all(m.connected for m in room.members)):
             out += self._start(room)
         return out
 

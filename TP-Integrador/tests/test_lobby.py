@@ -1,4 +1,4 @@
-"""Salas del futuro modo online (lógica pura, sin red)."""
+"""Salas del modo online (lógica pura, sin red)."""
 import random
 import unittest
 

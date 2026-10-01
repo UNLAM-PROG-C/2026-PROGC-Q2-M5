@@ -68,6 +68,8 @@ PHASE_FINISHED = "finished"
 PAUSE_REASON_USER = "usuario"
 PAUSE_REASON_FOCUS = "foco"
 PAUSE_REASON_WATCHDOG = "sin_controles"
+PAUSE_REASON_REQUEST = "pedida"          # online: pedida por un jugador, se activa tras un gol
+PAUSE_REASON_DISCONNECT = "desconexion"  # online: un jugador perdió la conexión
 
 
 # ---------------------------------------------------------------------------

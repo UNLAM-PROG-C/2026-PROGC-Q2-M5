@@ -2,7 +2,7 @@
 
 Esta clase no sabe nada de procesos ni de colas: recibe controles, avanza con
 paso fijo y devuelve eventos. Por eso se puede probar directamente (tests) y
-en el futuro podría correr en un servidor online sin cambios.
+corre igual en el proceso local y en los procesos de sala del servidor online.
 
 Fases:  countdown -> playing -> goal -> countdown -> playing ... -> finished
 La pausa es una bandera aparte: congela cualquier fase.
@@ -49,6 +49,8 @@ class Match:
         self.phase_left = MatchRules.KICKOFF_COUNTDOWN
         self.paused = False
         self.pause_reason = None
+        self.pause_pending = None   # online: lado que pidió pausa (se activa tras el próximo gol)
+        self.pause_by = None        # lado que pidió la pausa activa
         self.last_touch = None
         self.scorer = None
         self.winner = None
@@ -80,11 +82,21 @@ class Match:
         self.pending_kick = [False, False]
         return True
 
+    def request_pause_after_goal(self, by):
+        """Online: la pausa pedida no corta una jugada; se activa cuando,
+        después del próximo gol (a favor o en contra), se vuelve al centro."""
+        if self.phase == P.PHASE_FINISHED:
+            return False
+        if self.pause_pending is None:
+            self.pause_pending = by
+        return True
+
     def resume(self):
         if not self.paused:
             return False
         self.paused = False
         self.pause_reason = None
+        self.pause_by = None
         if self.phase == P.PHASE_PLAYING:
             self.phase = P.PHASE_COUNTDOWN
             self.phase_left = MatchRules.RESUME_COUNTDOWN
@@ -121,6 +133,11 @@ class Match:
                     self._finish()          # gol de oro: termina al acabar el festejo
                 else:
                     self._reset_after_goal()
+                    if self.pause_pending is not None:
+                        by, self.pause_pending = self.pause_pending, None
+                        self.pause(P.PAUSE_REASON_REQUEST)
+                        self.pause_by = by
+                        ev.append((P.EV_PAUSED, {"reason": P.PAUSE_REASON_REQUEST, "by": by}))
             return ev
 
         # --- juego efectivo
@@ -295,6 +312,7 @@ class Match:
         state = {
             "type": P.MSG_STATE, "match": self.id, "seq": seq, "tick": self.tick,
             "phase": self.phase, "paused": self.paused, "pause_reason": self.pause_reason,
+            "pause_pending": self.pause_pending, "pause_by": self.pause_by,
             "phase_left": self.phase_left, "clock": self.clock, "score": list(self.score),
             "golden": self.golden,
             "last_touch": self.last_touch, "scorer": self.scorer, "winner": self.winner,
