@@ -34,10 +34,10 @@ Ejemplo para la defensa: `.venv/bin/python main.py --prueba --depuracion --semil
 ```bash
 .venv/bin/python -m pip install -r requirements-online.txt   # una vez: websockets y pygbag
 .venv/bin/python tools/construir_web.py                      # compila el cliente web (build/web)
-.venv/bin/python servidor.py                                  # servidor + página en http://localhost:8765
+.venv/bin/python servidor.py                                  # servidor + página en http://127.0.0.1:8765
 ```
 
-- **Jugar:** abrí <http://localhost:8765> en dos navegadores, o usá *Jugar > Multijugador > Online* en `main.py`.
+- **Jugar:** abrí <http://127.0.0.1:8765> en dos navegadores, o usá *Jugar > Multijugador > Online* en `main.py`.
 - **Otro servidor:** `main.py --servidor wss://tu-dominio/ws` (o la variable `FDC_SERVIDOR`).
 - **NAS con Windows:** la puesta en marcha, con dominio y HTTPS, está en [docs/ONLINE.md](docs/ONLINE.md).
 

@@ -25,6 +25,7 @@ import logging
 import mimetypes
 import os
 import secrets
+import socket
 import sys
 import time
 from pathlib import Path
@@ -372,6 +373,14 @@ class GameServer:
         path = request.path.split("?", 1)[0]
         if path == Online.WS_PATH:
             return None                                   # sigue el saludo WebSocket
+        host = request.headers.get("Host", "")
+        if host.split(":")[0].lower() == "localhost":
+            # pygbag trata a "localhost:8..." como SU servidor de desarrollo y
+            # busca sus paquetes en localhost:8000: el juego no arranca. La
+            # misma computadora como 127.0.0.1 no tiene ese problema.
+            port = host.split(":")[1] if ":" in host else str(self.port)
+            return Response(302, "Found", Headers([("Location", f"http://127.0.0.1:{port}{request.path}"),
+                                                   ("Content-Length", "0")]), b"")
         if path == "/estado":
             body = (f"salas {len(self.lobby.rooms)}, en juego {len(self.runners)}, "
                     f"conexiones {self.connections}\n")
@@ -600,13 +609,28 @@ class GameServer:
         async with serve(self.handler, host, port, process_request=self.http,
                          max_size=Online.MAX_MESSAGE_BYTES, ping_interval=5, ping_timeout=10) as srv:
             self.port = srv.sockets[0].getsockname()[1]
-            log.info("servidor listo en http://%s:%s (WebSocket en %s)", host, self.port, Online.WS_PATH)
+            log.info("servidor listo. Para jugar abrí en el navegador: %s", "  o  ".join(self.urls(host)))
             if started is not None:
                 started()
             try:
                 await self.stopped.wait()
             finally:
                 await self.close_all()
+
+    def urls(self, host):
+        """Direcciones para abrir el juego (0.0.0.0 no sirve como dirección del navegador)."""
+        if host not in ("0.0.0.0", "", "::"):
+            return [f"http://{host}:{self.port}"]
+        out = [f"http://127.0.0.1:{self.port}"]
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.connect(("192.0.2.1", 9))          # no envía nada: sólo elige la interfaz de red
+                lan = probe.getsockname()[0]
+            if not lan.startswith("127."):
+                out.append(f"http://{lan}:{self.port} (desde otra compu de tu red)")
+        except OSError:
+            pass
+        return out
 
     def request_stop(self):
         if self.stopped is not None:

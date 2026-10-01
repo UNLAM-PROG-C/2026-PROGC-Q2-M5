@@ -83,17 +83,18 @@ Del servidor también llegan:
 ```bash
 .venv/bin/python -m pip install -r requirements-online.txt   # una sola vez: websockets y pygbag
 .venv/bin/python tools/construir_web.py                      # compila el cliente web en build/web
-.venv/bin/python servidor.py                                  # http://localhost:8765
+.venv/bin/python servidor.py                                  # http://127.0.0.1:8765
 ```
 
-- **Navegador:** abrí <http://localhost:8765> en **dos ventanas** (o dos navegadores), elegí nombres distintos, creá una sala con una y unite con la otra. La primera vez hay que hacer clic en la página para que arranque, porque el navegador exige un clic para habilitar el sonido.
+- **Navegador:** abrí <http://127.0.0.1:8765> en **dos ventanas** (o dos navegadores), elegí nombres distintos, creá una sala con una y unite con la otra. La primera vez hay que hacer clic en la página para que arranque, porque el navegador exige un clic para habilitar el sonido.
+- **`localhost`:** si se escribe `localhost:8765`, el servidor redirige a `127.0.0.1:8765`. pygbag trata a las páginas servidas desde `localhost:8...` como su propio servidor de desarrollo y busca sus paquetes en `localhost:8000`, y ahí el juego no arranca.
 - **Escritorio:** `main.py` también juega online. Por defecto usa `ws://localhost:8765/ws`; se cambia con `--servidor URL` o con la variable `FDC_SERVIDOR`.
 - **Opciones del servidor:**
   - `--puerto`;
   - `--host`: 127.0.0.1 para aceptar sólo conexiones locales;
   - `--duracion S`: partidos cortos para probar;
   - `--gracia S`: los segundos para volver tras un corte.
-- **Estado y registros:** <http://localhost:8765/estado> muestra cuántas salas y conexiones hay. El registro queda en `logs/servidor.log`.
+- **Estado y registros:** <http://127.0.0.1:8765/estado> muestra cuántas salas y conexiones hay. El registro queda en `logs/servidor.log`.
 
 ## Ponerlo en la NAS (Windows)
 

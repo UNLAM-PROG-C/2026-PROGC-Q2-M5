@@ -88,7 +88,7 @@ def main():
     shutil.copytree(os.path.join(STAGE, "build", "web"), OUT)
     size = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
     print(f"listo: {OUT} ({size / 1024:.0f} KB). Para probar: .venv/bin/python servidor.py "
-          f"y abrir http://localhost:8765")
+          f"y abrir http://127.0.0.1:8765")
     return 0
 
 

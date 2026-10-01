@@ -1,4 +1,5 @@
 """Modo online: servidor real con conexiones WebSocket reales y lógica de sala."""
+import http.client
 import os
 import tempfile
 import time
@@ -247,6 +248,12 @@ class ServerLobbyTest(unittest.TestCase):
                     urllib.request.urlopen(base + "/../../config.py")
                 with urllib.request.urlopen(base + "/estado") as r:
                     self.assertIn(b"salas 0", r.read())
+                # pygbag no arranca servido desde "localhost:8...": se redirige a 127.0.0.1
+                conn = http.client.HTTPConnection("127.0.0.1", srv.server.port, timeout=5)
+                conn.request("GET", "/", headers={"Host": f"localhost:{srv.server.port}"})
+                r = conn.getresponse()
+                self.assertEqual((r.status, r.getheader("Location")), (302, f"http://127.0.0.1:{srv.server.port}/"))
+                conn.close()
 
 
 class ServerMatchTest(unittest.TestCase):
