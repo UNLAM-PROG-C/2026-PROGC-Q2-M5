@@ -244,8 +244,10 @@ class RoomsScreen(OnlineScreen):
         return self.net.rooms
 
     def back(self):
+        """Sale del online: corta la conexión y vuelve a Multijugador (Local / Online)."""
         self.app.close_online()
-        self.app.switch(OnlineHomeScreen(self.app))
+        from .screens import MultiplayerMenuScreen
+        self.app.switch(MultiplayerMenuScreen(self.app))
 
     def row_rect(self, k):
         return pygame.Rect(self.LIST.left + 8, self.LIST.top + 8 + k * self.ROW_H, self.LIST.width - 16,

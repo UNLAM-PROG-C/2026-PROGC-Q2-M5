@@ -18,7 +18,7 @@ from online_helpers import Client, ServerThread
 from fdc.online import wire as W
 from fdc.ui.online_screens import (CreateRoomScreen, OnlineMatchScreen, OnlineResultScreen,
                                    RoomScreen, RoomsScreen)
-from fdc.ui.screens import BackButton, MenuScreen
+from fdc.ui.screens import BackButton, MenuScreen, MultiplayerMenuScreen
 
 SHOTS = os.environ.get("FDC_CAPTURAS")
 
@@ -96,6 +96,11 @@ class OnlineUITest(unittest.TestCase):
                 d.shot("online_5_resultado")
                 d.post(pygame.MOUSEBUTTONDOWN, pos=BackButton.RECT.center, button=1)
                 d.until(lambda: isinstance(d.screen(), RoomsScreen), 5, "volver a la lista")
+                # "Volver" desde la lista sale del online (no vuelve a entrar solo)
+                d.post(pygame.MOUSEBUTTONDOWN, pos=BackButton.RECT.center, button=1)
+                d.frames(30)
+                self.assertIsInstance(d.screen(), MultiplayerMenuScreen)
+                self.assertIsNone(app.net)
             finally:
                 if rival is not None:
                     rival.close()
