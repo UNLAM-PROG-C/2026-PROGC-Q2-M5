@@ -186,6 +186,41 @@ class UISmokeTest(unittest.TestCase):
             app.shutdown()
         self.assertEqual(app.link.shutdown_report["method"], "ordenado")
 
+    def test_back_buttons(self):
+        from fdc.ui.match_screens import MatchScreen, SelectScreen
+        from fdc.ui.mundialito_screens import HubScreen, PickScreen
+        from fdc.ui.screens import BackButton
+        app = driver.make_app(test_mode=False, seed=2)
+        d = driver.Driver(app)
+        back = BackButton.RECT.center
+
+        def click(pos):
+            d.post(pygame.MOUSEBUTTONDOWN, pos=pos, button=1)
+            d.frames(2)
+        try:
+            d.until(lambda: isinstance(d.screen(), MenuScreen), 20, "menú")
+            for screen_cls, expected in ((ControlsScreen, MenuScreen), (LegendScreen, MenuScreen),
+                                         (SelectScreen, MultiplayerMenuScreen), (PickScreen, PlayMenuScreen)):
+                app.switch(screen_cls(app))
+                d.frames(2)
+                click(back)
+                self.assertIsInstance(d.screen(), expected, screen_cls.__name__)
+            # llave del Mundialito: volver no pierde el progreso
+            app.switch(PickScreen(app))
+            d.tap(pygame.K_SPACE)
+            self.assertIsInstance(d.screen(), HubScreen)
+            click(back)
+            self.assertIsInstance(d.screen(), PlayMenuScreen)
+            self.assertIsNotNone(app.tournament)
+            # en el partido, el botón de la esquina pide la pausa
+            app.switch(MatchScreen(app, ["messi", "pele"]))
+            ms = d.screen()
+            d.until(lambda: ms.state is not None, 5, "estado")
+            click(back)
+            d.until(lambda: ms.pause_state == "paused", 3, "pausa por botón")
+        finally:
+            app.shutdown()
+
     def test_crash_shows_error_screen_and_retry(self):
         from fdc.ui.screens import ErrorScreen
         app = driver.make_app(test_mode=True, seed=1)

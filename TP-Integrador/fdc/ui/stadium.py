@@ -9,7 +9,7 @@ import random
 
 import pygame
 
-from ..config import Arena, GAME_NAME, PLAYER_COLORS, PLAYER_LABELS
+from ..config import Arena, GAME_NAME, PLAYER_COLORS
 from . import art, pixelfont
 from . import palette as C
 from .assets import load_override_image
@@ -147,7 +147,7 @@ def _goal_x(side):
     return mouth, x0, x1
 
 
-def draw_goal_back(surf, side, height, labels=PLAYER_LABELS):
+def draw_goal_back(surf, side, height):
     """Red, poste trasero y bandera del dueño (detrás de jugadores y pelota)."""
     mouth, x0, x1 = _goal_x(side)
     top = int(goal_bar_y(height) - HALF_BAR)
@@ -173,8 +173,6 @@ def draw_goal_back(surf, side, height, labels=PLAYER_LABELS):
     pts = [(fx, fy), (fx + d * 30, fy + 9), (fx, fy + 18)]
     pygame.draw.polygon(surf, col, pts)
     pygame.draw.polygon(surf, C.INK, pts, PX)
-    lab = pixelfont.render(labels[side], 1, C.WHITE, outline=C.INK)
-    surf.blit(lab, lab.get_rect(center=(fx + d * 11, fy + 9)))
 
 
 def draw_goal_front(surf, side, height, highlight=None):

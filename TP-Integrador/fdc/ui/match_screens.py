@@ -14,7 +14,8 @@ from .characters import CHARACTER_IDS, CHARACTERS_BY_ID, short_name
 from .icons import power_icon
 from .input import key_code, key_label
 from .render import MatchRenderer
-from .screens import BACK_KEYS, Menu, MenuScreen, Screen, button, dim, footer, panel, title
+from .screens import (BACK_KEYS, BackButton, Menu, MenuScreen, MultiplayerMenuScreen, Screen, button, dim,
+                      footer, panel, title)
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +32,11 @@ class SelectScreen(Screen):
         self.both_ready_t = None
         self.keys = [{a: key_code(n) for a, n in PLAYER_KEYS[i].items()} for i in (0, 1)]
         self.hover = None
+        self.back_button = BackButton(self.back)
+
+    def back(self):
+        self.app.audio.play("back")
+        self.app.switch(MultiplayerMenuScreen(self.app))
 
     # ------------------------------------------------------------------ geometría
     def card_rect(self, k):
@@ -57,10 +63,11 @@ class SelectScreen(Screen):
         self.app.audio.play("confirm" if self.ready[i] else "back")
 
     def handle_event(self, ev):
+        if self.back_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN:
             if ev.key in BACK_KEYS:
-                self.app.audio.play("back")
-                self.app.switch(MenuScreen(self.app))
+                self.back()
                 return
             for i in (0, 1):
                 k = self.keys[i]
@@ -172,6 +179,7 @@ class SelectScreen(Screen):
         if all(self.ready):
             draw_text(surf, "¡A LA CANCHA!", 40, (640, 360), C.GOLD, kind="title", outline=C.INK, shadow=True)
         footer(surf, "Esc: volver  -  Mouse: botones de cada jugador; clic izquierdo en una tarjeta elige J1, derecho J2")
+        self.back_button.draw(surf, self.t)
 
 
 # ---------------------------------------------------------------------------
@@ -179,14 +187,13 @@ class SelectScreen(Screen):
 # ---------------------------------------------------------------------------
 class MatchScreen(Screen):
     """Partido. El Mundialito la extiende redefiniendo los métodos "gancho"
-    (labels, extra_payload, controls, pause_items, on_match_over); el modo
+    (extra_payload, controls, pause_items, on_match_over); el modo
     Multijugador Local usa los valores de esta clase."""
-    labels = PLAYER_LABELS
 
     def __init__(self, app, characters):
         super().__init__(app)
         self.chars = list(characters)
-        self.renderer = MatchRenderer(app, self.chars, self.labels)
+        self.renderer = MatchRenderer(app, self.chars)
         self.filter = P.StateFilter()
         self.state = None
         self.match_id = None
@@ -201,6 +208,7 @@ class MatchScreen(Screen):
         self.ignored_events = 0
         self.test_sel = 0
         self.expected_cid = {}
+        self.pause_button = BackButton(self.request_pause, "II PAUSA")
 
     # ------------------------------------------------------------------ ciclo
     def enter(self):
@@ -281,6 +289,9 @@ class MatchScreen(Screen):
 
     # ------------------------------------------------------------------ entrada
     def handle_event(self, ev):
+        self.pause_button.visible = self.pause_state is None and self.state is not None
+        if self.pause_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
                 if self.pause_state is None:
@@ -376,9 +387,11 @@ class MatchScreen(Screen):
             col = CATEGORY_COLORS[pdef.category]
             fx.sparkle(m["x"], m["y"], col)
             au.play({CATEGORY_BAD: "power_bad", CATEGORY_GLOBAL: "power_global"}.get(pdef.category, "power_good"))
-            who = self.labels[m["receptor"]] if m["receptor"] is not None else "Partido"
-            targets = ", ".join({"p0": "J1", "p1": "J2", "goal0": "arco de J1", "goal1": "arco de J2",
-                                 "ball": "pelota"}.get(x, x) for x in m["targets"])
+            name = self.renderer.who
+            who = name(m["receptor"]) if m["receptor"] is not None else "Partido"
+            targets = ", ".join({"p0": name(0), "p1": name(1), "goal0": f"arco de {name(0)}",
+                                 "goal1": f"arco de {name(1)}", "ball": "pelota"}.get(x, x)
+                                for x in m["targets"])
             txt = f"{who}: {pdef.name}" + (f"  (sobre {targets})" if targets else "")
             self.toast(txt, col, m["power"])
         elif t == P.EV_POWER_SPAWN:
@@ -473,6 +486,8 @@ class MatchScreen(Screen):
             title(surf, "¡FINAL DEL PARTIDO!", (640, 330), 56, C.WHITE)
         if self.app.options.test_mode:
             self._draw_test_panel(surf)
+        self.pause_button.visible = self.pause_state is None and self.end_info is None
+        self.pause_button.draw(surf, self.t)
         if self.pause_state is not None:
             self._draw_pause(surf)
 
@@ -500,7 +515,7 @@ class MatchScreen(Screen):
         surf.blit(power_icon(power, 44), (inner.left + 6, inner.top + 6))
         draw_text(surf, f"MODO PRUEBA - {pdef.name}", 16, (inner.left + 60, inner.top + 8), C.INK,
                   anchor="topleft", outline=None)
-        draw_text(surf, "F5/F6 elegir  F7 generar objeto  F8 dar a J1  F9 dar a J2  F12 fallo SIM", 16,
+        draw_text(surf, "F5/F6 elegir  F7 generar  F8 dar al de la izq.  F9 al de la der.  F12 fallo", 16,
                   (inner.left + 60, inner.top + 32), C.INK, anchor="topleft", outline=None)
 
     def _draw_pause(self, surf):
@@ -550,6 +565,13 @@ class ResultScreen(Screen):
         self.app.audio.crowd(False)
         self.app.fx.clear()
 
+    def name(self, i):
+        """Nombre del personaje; si ambos eligieron el mismo, se aclara el lado."""
+        n = short_name(CHARACTERS_BY_ID[self.chars[i]])
+        if self.chars[0] == self.chars[1]:
+            n += " (izq.)" if i == 0 else " (der.)"
+        return n
+
     def rematch(self):
         self.app.switch(MatchScreen(self.app, self.chars))
 
@@ -586,17 +608,13 @@ class ResultScreen(Screen):
                 ang, bob = 0, (-1 if (self.t * 1.6 + i * 0.5) % 2 < 1 else 0)
             img, (fx, fy) = sp.player(cid, f, ang, bob, PLAYER_COLORS[i], False, 2.4 if win else 1.8)
             surf.blit(img, (x - fx, 470 - fy))
-            ch = CHARACTERS_BY_ID[cid]
-            draw_text(surf, f"{PLAYER_LABELS[i]} - {short_name(ch)}", 24, (x, 500), PLAYER_COLORS[i], outline=C.INK)
+            draw_text(surf, self.name(i), 24, (x, 500), PLAYER_COLORS[i], outline=C.INK)
         self.app.fx.draw(surf)
         if self.winner is None:
             head, col = "¡EMPATE!", C.WHITE
         else:
-            head, col = f"¡GANÓ {PLAYER_LABELS[self.winner]}!", PLAYER_COLORS[self.winner]
-        title(surf, head, (640, 80), 64, col)
-        if self.winner is not None:
-            draw_text(surf, short_name(CHARACTERS_BY_ID[self.chars[self.winner]]), 24, (640, 136), C.INK,
-                      outline=C.WHITE)
+            head, col = f"¡GANÓ {self.name(self.winner).upper()}!", PLAYER_COLORS[self.winner]
+        title(surf, head, (640, 80), 56, col)
         box = pygame.Rect(0, 0, 300, 110)
         box.center = (640, 290)
         pygame.draw.rect(surf, C.INK, box.move(6, 6))

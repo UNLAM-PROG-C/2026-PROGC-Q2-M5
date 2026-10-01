@@ -21,9 +21,8 @@ from .assets import draw_text
 from .characters import CHARACTER_IDS, CHARACTERS_BY_ID, short_name
 from .match_screens import MatchScreen
 from .retro import bevel_box
-from .screens import BACK_KEYS, Menu, MenuScreen, Screen, button, dim, footer, panel, title
+from .screens import BACK_KEYS, BackButton, Menu, MenuScreen, Screen, button, dim, footer, panel, title
 
-LABELS = ("CPU", "VOS")          # la persona juega a la derecha (lugar 1)
 
 
 def open_mundialito(app):
@@ -72,6 +71,12 @@ class PickScreen(Screen):
         self.ok_rect = pygame.Rect(0, 0, 220, 48)
         self.ok_rect.center = (1030, 426)
         self.hover_ok = False
+        self.back_button = BackButton(self.back)
+
+    def back(self):
+        from .screens import PlayMenuScreen
+        self.app.audio.play("back")
+        self.app.switch(PlayMenuScreen(self.app))
 
     def card_rect(self, k):
         total = len(CHARACTER_IDS) * self.CARD_W + (len(CHARACTER_IDS) - 1) * self.GAP
@@ -88,11 +93,11 @@ class PickScreen(Screen):
         self.app.switch(HubScreen(self.app))
 
     def handle_event(self, ev):
+        if self.back_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN:
             if ev.key in BACK_KEYS:
-                from .screens import PlayMenuScreen
-                self.app.audio.play("back")
-                self.app.switch(PlayMenuScreen(self.app))
+                self.back()
             elif ev.key in (pygame.K_a, pygame.K_LEFT):
                 self.move(-1)
             elif ev.key in (pygame.K_d, pygame.K_RIGHT):
@@ -152,6 +157,7 @@ class PickScreen(Screen):
             if k == self.cursor:
                 pygame.draw.rect(surf, PLAYER_COLORS[HUMAN_SLOT], rr.inflate(12, 12), 6)
         footer(surf, "A/D o flechas: elegir  -  Espacio, P o Enter: confirmar  -  Esc: volver  -  Mouse: clic")
+        self.back_button.draw(surf, self.t)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +169,13 @@ class HubScreen(Screen):
         t = app.tournament
         self.menu = Menu([(f"Jugar {t.stage_name}", self.play), ("Menú principal", self.to_menu),
                           ("Abandonar Mundialito", self.abandon)], (640, 560), width=420, height=50, gap=10)
+        self.back_button = BackButton(self.back)
+
+    def back(self):
+        """Vuelve a "Jugar" (el progreso queda guardado)."""
+        from .screens import PlayMenuScreen
+        self.app.audio.play("back")
+        self.app.switch(PlayMenuScreen(self.app))
 
     def play(self):
         self.app.switch(MundialitoMatchScreen(self.app, self.app.tournament))
@@ -175,9 +188,10 @@ class HubScreen(Screen):
         self.app.switch(MenuScreen(self.app))
 
     def handle_event(self, ev):
+        if self.back_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN and ev.key in BACK_KEYS:
-            self.app.audio.play("back")
-            self.to_menu()
+            self.back()
             return
         self.menu.handle_event(ev, self.app.audio)
 
@@ -223,15 +237,14 @@ class HubScreen(Screen):
                 draw_text(surf, "PRÓXIMO", 16, (inner.centerx, inner.bottom - 14), C.RED, outline=C.WHITE)
         draw_trophy(surf, (1196, 560), 2)
         self.menu.draw(surf)
-        footer(surf, "Ir al menú guarda tu progreso.  Abandonar lo descarta.")
+        footer(surf, "Volver o ir al menú guarda tu progreso.  Abandonar lo descarta.")
+        self.back_button.draw(surf, self.t)
 
 
 # ---------------------------------------------------------------------------
 # Partido del Mundialito
 # ---------------------------------------------------------------------------
 class MundialitoMatchScreen(MatchScreen):
-    labels = LABELS
-
     def __init__(self, app, tournament):
         self.tournament = tournament
         chars = [None, None]
@@ -353,8 +366,8 @@ class MundialitoResultScreen(Screen):
             pygame.draw.rect(surf, C.LED_BG, led)
             sc = pixelfont.render_led(f"{theirs}-{mine}", 9, C.LED_ON, C.LED_OFF)
             surf.blit(sc, sc.get_rect(center=led.center))
-            draw_text(surf, f"{stage}: CPU {short_name(CHARACTERS_BY_ID[rival])} {theirs} - {mine} VOS", 24,
-                      (640, 330), C.INK, outline=C.WHITE)
+            draw_text(surf, f"{stage}: {short_name(CHARACTERS_BY_ID[rival])} {theirs} - {mine} "
+                            f"{short_name(CHARACTERS_BY_ID[t.player])}", 24, (640, 330), C.INK, outline=C.WHITE)
             if self.won:
                 draw_text(surf, f"Pasás a {t.stage_name} contra {short_name(CHARACTERS_BY_ID[t.rival])}", 24,
                           (640, 380), C.INK, outline=C.WHITE)
@@ -371,7 +384,7 @@ class MundialitoResultScreen(Screen):
                             if happy else (0, 0))
                 img, (fx, fy) = self.app.sprites.player(cid, f, ang, bob, PLAYER_COLORS[slot], False, 1.8)
                 surf.blit(img, (x - fx, 470 - fy))
-                draw_text(surf, LABELS[slot], 24, (x, 494), PLAYER_COLORS[slot], outline=C.INK)
+                draw_text(surf, short_name(CHARACTERS_BY_ID[cid]), 24, (x, 494), PLAYER_COLORS[slot], outline=C.INK)
         self.app.fx.draw(surf)
         self.menu.draw(surf)
         if t.status not in (CHAMPION, ELIMINATED):

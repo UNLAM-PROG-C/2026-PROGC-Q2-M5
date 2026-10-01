@@ -10,8 +10,7 @@ from collections import deque
 import pygame
 
 from .. import protocol as P
-from ..config import (CATEGORY_COLORS, PLAYER_COLORS, PLAYER_LABELS, POWERS_BY_ID,
-                      PlayerSpec, PowerRules)
+from ..config import CATEGORY_COLORS, PLAYER_COLORS, POWERS_BY_ID, PlayerSpec, PowerRules
 from . import palette as C
 from . import pixelfont
 from .assets import draw_text
@@ -20,7 +19,6 @@ from .icons import power_icon
 from .retro import bevel_box, scale_px
 from .stadium import FLOOR, draw_goal_back, draw_goal_front, draw_shadow
 
-TARGET_LABELS = {"p0": "J1", "p1": "J2", "goal0": "ARCO J1", "goal1": "ARCO J2", "ball": "PELOTA"}
 
 
 def fmt_clock(secs):
@@ -49,9 +47,8 @@ def timer_bar(surf, x, y, w, frac, color):
 
 
 class MatchRenderer:
-    def __init__(self, app, characters, labels=PLAYER_LABELS):
+    def __init__(self, app, characters):
         self.app = app
-        self.labels = tuple(labels)
         self.sprites = app.sprites
         self.ball_sprite = app.ball_sprite
         self.background = app.background
@@ -61,6 +58,14 @@ class MatchRenderer:
         self.kickoff_flash = 0.0
         self.goal_banner = None      # (tiempo restante, datos del gol)
         self.golden_flash = 0.0
+
+    def who(self, i, side_if_same=True):
+        """Nombre del personaje (el lado y el color ya identifican a cada jugador).
+        Si los dos eligieron el mismo, se aclara el lado."""
+        name = short_name(CHARACTERS_BY_ID[self.chars[i]])
+        if side_if_same and self.chars[0] == self.chars[1]:
+            name += " (izq.)" if i == 0 else " (der.)"
+        return name
 
     def reset(self):
         self.trail.clear()
@@ -81,7 +86,7 @@ class MatchRenderer:
         surf.blit(self.background, offset)
         goals = st["goals"]
         for side in (0, 1):
-            draw_goal_back(surf, side, goals[side], self.labels)
+            draw_goal_back(surf, side, goals[side])
         for b in st.get("bombs", []):
             self._bomb(surf, b)
         if st.get("pickup"):
@@ -156,14 +161,11 @@ class MatchRenderer:
     def _indicator(self, surf, x, y, i, last):
         col = PLAYER_COLORS[i]
         x = int(x) // 2 * 2
-        pygame.draw.polygon(surf, C.INK, [(x - 10, y - 12), (x + 10, y - 12), (x, y + 2)])
-        pygame.draw.polygon(surf, col, [(x - 6, y - 10), (x + 6, y - 10), (x, y - 2)])
-        lab = pixelfont.render(self.labels[i], 2, C.WHITE, outline=C.INK)
-        r = lab.get_rect(midbottom=(x, y - 12))
-        surf.blit(lab, r)
-        if last:
+        pygame.draw.polygon(surf, C.INK, [(x - 12, y - 16), (x + 12, y - 16), (x, y + 2)])
+        pygame.draw.polygon(surf, col, [(x - 8, y - 14), (x + 8, y - 14), (x, y - 2)])
+        if last:                                   # último toque: pelotita junto a la flecha
             ball = self.ball_sprite.frame(10, 0)
-            surf.blit(ball, ball.get_rect(midleft=(r.right + 4, r.centery)))
+            surf.blit(ball, ball.get_rect(midleft=(x + 16, y - 8)))
 
     def _mini_effect(self, surf, e, center):
         icon = power_icon(e["power"], 28)
@@ -285,7 +287,7 @@ class MatchRenderer:
         surf.blit(lab, lab.get_rect(center=(led_area.centerx, led_area.bottom - 10)))
         for i in (0, 1):                          # carteles con los nombres
             ch = CHARACTERS_BY_ID[self.chars[i]]
-            name = pixelfont.render(f"{self.labels[i]} {short_name(ch).upper()}", 2, C.WHITE, outline=C.INK)
+            name = pixelfont.render(short_name(ch).upper(), 2, C.WHITE, outline=C.INK)
             r = name.get_rect()
             if i == 0:
                 r.topright = (board.left - 12, board.top + 8)
@@ -299,18 +301,21 @@ class MatchRenderer:
             t = e["target"]
             cols[0 if t in ("p0", "goal0") else 1 if t in ("p1", "goal1") else "c"].append(e)
         for k, e in enumerate(cols[0]):
-            self._hud_effect(surf, e, (board.left - 190, board.top + 46 + k * 46))
+            self._hud_effect(surf, e, (board.left - 222, board.top + 46 + k * 46))
         for k, e in enumerate(cols[1]):
             self._hud_effect(surf, e, (board.right + 12, board.top + 46 + k * 46))
         for k, e in enumerate(cols["c"]):
-            self._hud_effect(surf, e, (board.centerx - 89, board.bottom + 12 + k * 46))
+            self._hud_effect(surf, e, (board.centerx - 105, board.bottom + 12 + k * 46))
 
     def _hud_effect(self, surf, e, topleft):
         pdef = POWERS_BY_ID[e["power"]]
         col = CATEGORY_COLORS[pdef.category]
-        inner = bevel_box(surf, pygame.Rect(topleft, (178, 40)), C.CREAM)
+        inner = bevel_box(surf, pygame.Rect(topleft, (210, 40)), C.CREAM)
         surf.blit(power_icon(e["power"], 28), (inner.left + 2, inner.top + 2))
-        draw_text(surf, TARGET_LABELS.get(e["target"], ""), 16, (inner.left + 36, inner.top + 4),
+        tgt = e["target"]
+        label = ("PELOTA" if tgt == "ball" else "ARCO" if tgt.startswith("goal")
+                 else self.who(int(tgt[1]), side_if_same=False).upper())
+        draw_text(surf, label, 16, (inner.left + 36, inner.top + 4),
                   C.INK, anchor="topleft", outline=None)
         draw_text(surf, f"{max(0.0, e['left']):.1f}s", 16, (inner.right - 4, inner.top + 4), col,
                   anchor="topright", outline=C.INK)
@@ -339,8 +344,7 @@ class MatchRenderer:
             pygame.draw.rect(surf, col, (0, band.bottom - 12, 1280, 6))
             wob = 4 if int(self.t * 8) % 2 else 0
             draw_text(surf, "¡GOOOL!", 80, (640, 312 - wob), col, kind="title", outline=C.INK, shadow=True)
-            ch = CHARACTERS_BY_ID[self.chars[g["scorer"]]]
-            sub = f"{self.labels[g['scorer']]} - {short_name(ch)}"
+            sub = self.who(g["scorer"])
             if g.get("own_goal"):
                 sub += "  (en contra)"
             draw_text(surf, sub, 24, (640, 368), C.INK, outline=None)

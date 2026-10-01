@@ -44,8 +44,11 @@ Los personajes son los sprites en pixel art de `assets/originales/`, convertidos
 
 - **Menús:** `W`/`S` o `↑`/`↓` para moverse; `Enter`, `Espacio` o `P` para elegir (también con el mouse).
 - **Selección de personaje:** J1 elige con `A`/`D`, confirma con `Espacio` y cancela con `W`. J2 usa `←`/`→`, confirma con `P` y cancela con `↑`. **Con el mouse**, cada jugador tiene sus botones `◄` `OK` `►` (el `OK` pasa a `CANCELAR` al confirmar). Además, clic izquierdo en una tarjeta la elige para J1 y clic derecho para J2.
+- **Volver:** todas las pantallas tienen un botón **◄ VOLVER** arriba a la izquierda (también `Esc`). En el partido, ese lugar lo ocupa **II PAUSA**, que abre la pausa con sus opciones para salir.
 - **Generales:** `F3` abre el panel de depuración, `F11` alterna la pantalla completa y `M` silencia el sonido.
-- **Modo de prueba:** `F5`/`F6` eligen un poder, `F7` genera el objeto, `F8`/`F9` activan el poder para J1 o J2, y `F12` provoca un fallo en la simulación.
+- **Modo de prueba:** `F5`/`F6` eligen un poder, `F7` genera el objeto, `F8`/`F9` activan el poder para el jugador de la izquierda o el de la derecha, y `F12` provoca un fallo en la simulación.
+
+En el partido cada jugador se identifica por su **lado y su color** (naranja a la izquierda, rosa a la derecha). El tablero, los avisos y los resultados muestran sólo el nombre del personaje; si los dos eligieron el mismo, se aclara "(izq.)" o "(der.)". J1 y J2 sólo aparecen en la selección de personajes, para indicar qué teclas usa cada uno.
 
 Las teclas se definen en `PLAYER_KEYS` (en `fdc/config.py`) y la pantalla **Controles** del juego las muestra a partir de esa configuración.
 
@@ -250,7 +253,7 @@ Tampoco hay hilos, semáforos ni procesos decorativos: los únicos hilos extra s
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Son 75 pruebas y tardan unos 70 s. Usan sólo la biblioteca estándar (`unittest`).
+Son 76 pruebas y tardan unos 70 s. Usan sólo la biblioteca estándar (`unittest`).
 
 | Archivo | Qué prueba |
 |---|---|
@@ -391,7 +394,7 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 
 **Hecho y verificado:**
 
-- Las 75 pruebas automáticas pasan.
+- Las 76 pruebas automáticas pasan.
 - Se revisaron capturas de las pantallas nuevas: Jugar, Multijugador con el aviso de Online, elección del Mundialito, llave del torneo, partido contra la CPU con gol de oro, eliminado y campeón.
 - Se recorrió el juego completo sin ventana visible y se revisaron las capturas de cada pantalla.
 - La interfaz dibuja unos 59 cuadros por segundo con partido y poderes activos (driver `dummy`).

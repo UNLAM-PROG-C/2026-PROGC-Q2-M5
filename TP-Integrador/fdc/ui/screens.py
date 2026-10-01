@@ -71,6 +71,33 @@ def button(surf, rect, label, active=False, enabled=True, size=24, t=0.0):
         draw_text(surf, "►", size, (r.left - 22, r.centery), C.INK, outline=C.WHITE)
 
 
+class BackButton:
+    """Botón "◄ VOLVER" de la esquina superior izquierda (mouse). Esc hace lo mismo."""
+    RECT = pygame.Rect(16, 12, 176, 44)
+
+    def __init__(self, action, label="◄ VOLVER", rect=None):
+        self.action = action
+        self.label = label
+        self.rect = pygame.Rect(rect or self.RECT)
+        self.hover = False
+        self.visible = True
+
+    def handle_event(self, ev):
+        """True si el evento fue un clic en el botón (ya ejecutó la acción)."""
+        if not self.visible:
+            return False
+        if ev.type == pygame.MOUSEMOTION:
+            self.hover = self.rect.collidepoint(ev.pos)
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.rect.collidepoint(ev.pos):
+            self.action()
+            return True
+        return False
+
+    def draw(self, surf, t=0.0):
+        if self.visible:
+            button(surf, self.rect, self.label, self.hover, True, 16, t)
+
+
 class Menu:
     """Lista vertical de botones. Teclado (ambos jugadores) y mouse."""
 
@@ -346,12 +373,19 @@ class MultiplayerMenuScreen(SubMenuScreen):
 class ControlsScreen(Screen):
     ACTION_NAMES = (("left", "Izquierda"), ("right", "Derecha"), ("jump", "Saltar"), ("kick", "Patear"))
 
+    def __init__(self, app):
+        super().__init__(app)
+        self.back_button = BackButton(self.back)
+
+    def back(self):
+        self.app.audio.play("back")
+        self.app.switch(MenuScreen(self.app))
+
     def handle_event(self, ev):
+        if self.back_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN and (ev.key in BACK_KEYS or ev.key in OK_KEYS):
-            self.app.audio.play("back")
-            self.app.switch(MenuScreen(self.app))
-        elif ev.type == pygame.MOUSEBUTTONDOWN:
-            self.app.switch(MenuScreen(self.app))
+            self.back()
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
@@ -389,18 +423,26 @@ class ControlsScreen(Screen):
                 y += 24
             y += 6
         footer(surf, "Esc o Enter: volver")
+        self.back_button.draw(surf, self.t)
 
 
 # ---------------------------------------------------------------------------
 # Leyenda de poderes
 # ---------------------------------------------------------------------------
 class LegendScreen(Screen):
+    def __init__(self, app):
+        super().__init__(app)
+        self.back_button = BackButton(self.back)
+
+    def back(self):
+        self.app.audio.play("back")
+        self.app.switch(MenuScreen(self.app))
+
     def handle_event(self, ev):
+        if self.back_button.handle_event(ev):
+            return
         if ev.type == pygame.KEYDOWN and (ev.key in BACK_KEYS or ev.key in OK_KEYS):
-            self.app.audio.play("back")
-            self.app.switch(MenuScreen(self.app))
-        elif ev.type == pygame.MOUSEBUTTONDOWN:
-            self.app.switch(MenuScreen(self.app))
+            self.back()
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
@@ -428,6 +470,7 @@ class LegendScreen(Screen):
             draw_text(surf, dur, 16, (inner.right - 10, inner.top + 6), CATEGORY_COLORS[p.category],
                       anchor="topright", outline=C.INK)
         footer(surf, "Esc o Enter: volver  -  Repetir un poder renueva su duración; uno opuesto lo reemplaza")
+        self.back_button.draw(surf, self.t)
 
 
 # ---------------------------------------------------------------------------
