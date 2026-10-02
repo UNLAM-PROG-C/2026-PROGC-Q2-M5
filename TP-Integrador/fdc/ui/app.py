@@ -300,6 +300,17 @@ class App:
                 (f"Online: {ni['status']} como {ni['user']}  |  latencia {ni['rtt']}  |  {ni['url']}", None),
                 (f"Mensajes: {ni['traffic']}", None),
             ]
+            ri = self.net.room_info
+            if ri:                           # la sala vista desde el servidor (llega una vez por segundo)
+                ack = f"{ri['ack_ms']:.1f} ms" if ri.get("ack_ms") is not None else "-"
+                lines += [
+                    (f"Servidor pid {ri['server_pid']}  |  sala {ri['room']}: proceso de simulación pid "
+                     f"{ri['sim_pid']} ({'vivo' if ri['sim_alive'] else 'detenido'})  |  partido #{ri['match']}",
+                     C.GOLD),
+                    (f"La sala manda {ri['states_per_s']:.0f} estados/s  |  recibe {ri['inputs_per_s']:.0f} "
+                     f"fotos de controles/s  |  último ACK {ack}  |  sin confirmar {ri['pending_acks']}  |  "
+                     f"pausa: {', '.join(ri['hold']) or '-'}", None),
+                ]
         lines += [
             (f"Estados ignorados: {si.get('filtered', '-')}", None),
             (f"SIM reemplazó {si.get('sim_dropped', 0)} estados  |  eventos cosméticos perdidos "

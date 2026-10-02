@@ -1,5 +1,7 @@
 """Modo online: servidor real con conexiones WebSocket reales y lógica de sala."""
+import base64
 import http.client
+import json
 import os
 import tempfile
 import time
@@ -27,9 +29,13 @@ from fdc.sim.match import Match
 class FakeLink:
     ready = True
     sim_pid = None
+    alive = True
+    proc = None
+    last_confirmed = None
 
     def __init__(self):
         self.cmds, self.events, self.state, self.inputs = [], [], None, None
+        self.pending = {}
 
     def start(self):
         pass
@@ -248,16 +254,49 @@ class ServerLobbyTest(unittest.TestCase):
                 with urllib.request.urlopen(base + "/") as r:
                     self.assertIn(b"hola", r.read())
                     self.assertIn("text/html", r.headers["Content-Type"])
-                with self.assertRaises(urllib.error.HTTPError):
+                with self.assertRaises(urllib.error.HTTPError) as err:
                     urllib.request.urlopen(base + "/../../config.py")
-                with urllib.request.urlopen(base + "/estado") as r:
-                    self.assertIn(b"salas 0", r.read())
+                err.exception.close()
                 # pygbag no arranca servido desde "localhost:8...": se redirige a 127.0.0.1
                 conn = http.client.HTTPConnection("127.0.0.1", srv.server.port, timeout=5)
                 conn.request("GET", "/", headers={"Host": f"localhost:{srv.server.port}"})
                 r = conn.getresponse()
                 self.assertEqual((r.status, r.getheader("Location")), (302, f"http://127.0.0.1:{srv.server.port}/"))
+                r.read()
+                r.close()
                 conn.close()
+
+    def test_panel_public_and_protected(self):
+        with ServerThread(panel_password="secreta") as srv:
+            base = f"http://127.0.0.1:{srv.server.port}"
+            with urllib.request.urlopen(base + "/estado") as r:
+                self.assertIn("Panel del servidor", r.read().decode("utf-8"))
+            a = Client(srv.url, "Ale")
+            a.send({"type": "create_room", "name": "Secreta"})
+            a.wait("room")
+            with urllib.request.urlopen(base + "/estado.json") as r:
+                data = json.loads(r.read())
+            self.assertEqual((data["vista"], data["conexiones"], len(data["salas"])), ("publica", 1, 1))
+            self.assertIn("principal (bucle asyncio)", data["hilos"])
+            self.assertNotIn("Ale", json.dumps(data))                 # la vista pública no muestra nombres
+            self.assertNotIn("Secreta", json.dumps(data))
+            with self.assertRaises(urllib.error.HTTPError) as err:   # sin contraseña: 401
+                urllib.request.urlopen(base + "/estado/completo.json")
+            self.assertEqual(err.exception.code, 401)
+            err.exception.close()
+            req = urllib.request.Request(base + "/estado/completo.json", headers={
+                "Authorization": "Basic " + base64.b64encode(b"panel:secreta").decode()})
+            with urllib.request.urlopen(req) as r:
+                full = json.loads(r.read())
+            self.assertEqual(full["vista"], "completa")
+            self.assertEqual(full["salas"][0]["nombre"], "Secreta")
+            self.assertTrue(full["jugadores"][0]["nombre"].startswith("Ale #"))
+            a.close()
+        with ServerThread() as srv:                                    # sin contraseña configurada
+            with self.assertRaises(urllib.error.HTTPError) as err:
+                urllib.request.urlopen(f"http://127.0.0.1:{srv.server.port}/estado/completo")
+            self.assertEqual(err.exception.code, 404)
+            err.exception.close()
 
 
 class ServerMatchTest(unittest.TestCase):
@@ -267,6 +306,9 @@ class ServerMatchTest(unittest.TestCase):
             self.assertEqual({sa["you"], sb["you"]}, {0, 1})     # lados asignados por el sistema
             st = a.wait("state", cond=lambda m: m["match"] == sa["match"])
             self.assertIn("players", st)
+            info = a.wait("sala_info", timeout=5)                   # para el panel F3 del partido
+            self.assertIsNotNone(info["sim_pid"])
+            self.assertNotEqual(info["sim_pid"], info["server_pid"])  # la sala corre en otro proceso
             for _ in range(20):
                 a.send({"type": "input", "p": [False, True, 0, 0]})
                 time.sleep(0.02)

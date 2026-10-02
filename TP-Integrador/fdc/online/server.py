@@ -1,6 +1,6 @@
 """Servidor del modo online: salas 1 contra 1 por WebSocket.
 
-Concurrencia (ver docs/ONLINE.md):
+Concurrencia (ver docs/CONCURRENCIA.md):
   * UN proceso servidor con un bucle asyncio. Atiende todas las conexiones:
     por cada una hay una corrutina que LEE y otra que ESCRIBE. Sólo este bucle
     toca el Lobby y las sesiones, así que no hacen falta locks.
@@ -13,20 +13,29 @@ Concurrencia (ver docs/ONLINE.md):
   * Lanzar o cerrar un proceso puede bloquear: se hace en un hilo del
     ejecutor (run_in_executor) para no frenar el bucle.
 
-Además sirve los archivos del cliente web (build/web, generado con
-tools/construir_web.py) en el mismo puerto: el navegador abre la página y se
-conecta por WebSocket a /ws.
+Además sirve, en el mismo puerto:
+  * los archivos del cliente web (build/web, generado con tools/construir_web.py);
+  * el PANEL del servidor (/estado): procesos, hilos, tareas, salas y tráfico
+    en vivo, para ver la concurrencia mientras se juega. La vista completa
+    (/estado/completo, con nombres) pide contraseña.
 """
 import argparse
 import asyncio
+import base64
+import binascii
 import collections
+import hmac
+import http
 import itertools
+import json
 import logging
 import mimetypes
 import os
+import platform
 import secrets
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -39,13 +48,48 @@ from .. import protocol as P
 from ..config import LOG_DIR, ROOT_DIR, Online
 from ..ipc import SimLink
 from . import wire as W
-from .lobby import PLAYING, Lobby
+from .lobby import MAX_PLAYERS, PLAYING, Lobby
 
 log = logging.getLogger("fdc.server")
 
 DEFAULT_WEB_DIR = os.path.join(ROOT_DIR, "build", "web")
+PANEL_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.html")
+JSON_SUFFIX = ".json"                     # /estado.json: los datos que lee la página del panel
+ALL_INTERFACES = ("0.0.0.0", "", "::")    # escuchar en todas: no sirve como dirección del navegador
+LOOPBACK = "127.0.0.1"
+# dirección de documentación (RFC 5737) y un puerto cualquiera: "conectar" un
+# socket UDP no envía nada, sólo sirve para saber qué IP de la red local usa la compu
+LAN_PROBE = ("192.0.2.1", 9)
+MS_PER_SECOND = 1000
+NO_SCORE = [0, 0]                         # marcador si el partido terminó antes del primer estado
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("application/octet-stream", ".apk")
+
+# Cómo se muestran en el panel las tareas asyncio y los hilos del servidor
+TASK_KINDS = {
+    "Server.conn_handler": "lectora (una por conexión)",
+    "Session._write_loop": "escritora (una por conexión)",
+    "Connection.keepalive": "keepalive / ping (una por conexión)",
+    "RoomRunner._pump": "puente de sala (60 Hz, una por sala en juego)",
+    "GameServer._expire_later": "plazo de reconexión (una por desconectado)",
+    "GameServer._stats_loop": "estadísticas del panel",
+    "GameServer.run": "principal del servidor",
+}
+THREAD_KINDS = {
+    "MainThread": "principal (bucle asyncio)",
+    "QueueFeederThread": "alimentador de cola (multiprocessing)",
+    "asyncio": "ejecutor (lanzar/cerrar procesos, leer archivos)",
+}
+
+
+def _task_kind(task):
+    name = getattr(task.get_coro(), "__qualname__", "")
+    return TASK_KINDS.get(name, "otras (librería websockets)")
+
+
+def _thread_kind(thread):
+    base = thread.name.split("_")[0].split("-")[0]
+    return THREAD_KINDS.get(base, "otros")
 
 
 # ---------------------------------------------------------------------------
@@ -54,9 +98,9 @@ mimetypes.add_type("application/octet-stream", ".apk")
 class Session:
     _ids = itertools.count(1)
 
-    def __init__(self):
+    def __init__(self, traffic):
         self.id = f"s{next(self._ids)}"
-        self.token = secrets.token_urlsafe(18)     # para volver después de un corte
+        self.token = secrets.token_urlsafe(Online.TOKEN_BYTES)   # para volver después de un corte
         self.username = None                      # para mostrar y registrar: "Ale #4821"
         self.identity = {}                        # username, tag y display (del Lobby)
         self.ws = None
@@ -66,6 +110,7 @@ class Session:
         self.writer = None
         self.expire_task = None
         self.dropped_states = 0
+        self.traffic = traffic                    # contadores del servidor (para el panel)
 
     # ------------------------------------------------------------------ envío
     def send(self, msg):
@@ -83,11 +128,12 @@ class Session:
         if replaceable:
             if self.state_text is not None:
                 self.dropped_states += 1
+                self.traffic["estados reemplazados"] += 1
             self.state_text = text
         else:
             if len(self.queue) >= Online.OUTBOX_LIMIT:
                 log.warning("%s no lee sus mensajes: se corta la conexión", self.username)
-                asyncio.ensure_future(self.ws.close(1008, "cliente demasiado lento"))
+                asyncio.ensure_future(self.ws.close(W.CLOSE_POLICY, "cliente demasiado lento"))
                 return
             self.queue.append(text)
         self.wake.set()
@@ -112,9 +158,11 @@ class Session:
                 self.wake.clear()
                 while self.queue:
                     await ws.send(self.queue.popleft())
+                    self.traffic["mensajes enviados"] += 1
                 if self.state_text is not None:
                     text, self.state_text = self.state_text, None
                     await ws.send(text)
+                    self.traffic["estados enviados"] += 1
         except ConnectionClosed:
             pass
 
@@ -128,14 +176,19 @@ class RoomRunner:
         self.room_id = room_id
         self.link = SimLink(log_to_file=server.sim_logs, duration=server.duration, seed=server.seed)
         self.link_started = False
+        self.ready_logged = False
         self.task = None
         self.closed = False
+        self.created_at = time.monotonic()
+        self.counts = collections.Counter()      # estados, eventos y controles desde el último aviso
+        self.rates = {}                          # lo mismo, por segundo (panel y F3)
+        self.last_info = self.created_at
         self._reset_match()
 
     def _reset_match(self):
         self.match = None            # {"id", "sids", "names", "chars", "start_msgs"}
         self.start_pending = False
-        self.inputs = [[False, False, 0, 0], [False, False, 0, 0]]
+        self.inputs = [[False, False, 0, 0] for _ in range(MAX_PLAYERS)]
         self.last_state = None
         self.sent_seq = -1
         self.last_state_sent = 0.0
@@ -153,6 +206,7 @@ class RoomRunner:
             self.link_started = True
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.link.start)
+            self.server.log_process(self.room_id, "proceso de simulación lanzado", self.link.proc.pid)
             self.task = asyncio.create_task(self._pump())
         log.info("sala %s: partido #%s %s (%s) vs %s (%s)", self.room_id, match_id,
                  names[0], chars[0], names[1], chars[1])
@@ -162,9 +216,13 @@ class RoomRunner:
         if self.task is not None:
             self.task.cancel()
         if self.link_started:
+            pid = self.link.sim_pid or (self.link.proc.pid if self.link.proc else None)
             loop = asyncio.get_running_loop()
             report = await loop.run_in_executor(None, self.link.stop)
             log.info("sala %s: proceso de simulación cerrado %s", self.room_id, report)
+            if report:
+                detail = f"cierre {report['method']}, BYE {'sí' if report['bye'] else 'no'}"
+                self.server.log_process(self.room_id, "proceso de simulación cerrado", pid, detail)
 
     async def _pump(self):
         period = 1.0 / Online.PUMP_HZ
@@ -180,6 +238,9 @@ class RoomRunner:
     # ------------------------------------------------------------------ puente
     def tick(self, now):
         msgs, state = self.link.poll()          # sin bloquear
+        if self.link.ready and not self.ready_logged:
+            self.ready_logged = True
+            self.server.log_process(self.room_id, "simulación lista (READY)", self.link.sim_pid)
         err = self.link.check_health()
         if err:
             self._fail(err)
@@ -199,20 +260,31 @@ class RoomRunner:
                 return
             if t == P.EV_PAUSED and ev.get("reason") == P.PAUSE_REASON_REQUEST:
                 self._pause_started(ev.get("by"), now)
+            self.counts["eventos"] += 1
             self.broadcast({"type": W.EVENT, "e": ev})
         if state is not None and state.get("match") == m["id"]:
             self.last_state = state
         st = self.last_state
         if (st is not None and st["seq"] != self.sent_seq
-                and now - self.last_state_sent >= 1.0 / Online.STATE_HZ - 0.004):
+                and now - self.last_state_sent >= 1.0 / Online.STATE_HZ - Online.STATE_SEND_SLACK):
             self.sent_seq = st["seq"]
             self.last_state_sent = now
+            self.counts["estados"] += 1
             self.broadcast_text(W.encode(W.compact_state(st)), replaceable=True)
         # los controles van en cada vuelta: también son el "latido" del watchdog
         self.link.send_input(self.inputs)
         p = self.pause
         if p and p["status"] == W.PAUSE_ACTIVE and (all(p["ready"]) or now >= p["deadline"]):
             self._end_pause()
+        if now - self.last_info >= Online.ROOM_INFO_EVERY:
+            self._update_rates(now)
+            self.broadcast(self.room_info())        # datos de la sala para el panel F3 de cada jugador
+
+    def _update_rates(self, now):
+        elapsed = max(now - self.last_info, Online.STATE_SEND_SLACK)
+        self.rates = {k: v / elapsed for k, v in self.counts.items()}
+        self.counts.clear()
+        self.last_info = now
 
     def side_of(self, sid):
         if self.match is None or sid not in self.match["sids"]:
@@ -228,16 +300,45 @@ class RoomRunner:
             if s is not None:
                 s.send_text(text, replaceable)
 
+    # ------------------------------------------------------------------ información (panel y F3)
+    def _ack_ms(self):
+        lc = self.link.last_confirmed
+        return None if not lc or lc.get("rtt") is None else lc["rtt"] * MS_PER_SECOND
+
+    def room_info(self):
+        """Lo que ve cada jugador en su panel F3: la sala vista desde el servidor."""
+        return {"type": W.ROOM_INFO, "room": self.room_id, "server_pid": os.getpid(),
+                "sim_pid": self.link.sim_pid, "sim_alive": self.link.alive,
+                "match": self.match["id"] if self.match else None,
+                "states_per_s": self.rates.get("estados", 0.0),
+                "inputs_per_s": self.rates.get("controles", 0.0),
+                "ack_ms": self._ack_ms(), "pending_acks": len(self.link.pending),
+                "hold": sorted(self.hold)}
+
+    def panel_info(self, now):
+        st = self.last_state or {}
+        return {"pid": self.link.sim_pid, "viva": self.link.alive, "lista": self.link.ready,
+                "partido": self.match["id"] if self.match else None,
+                "fase": st.get("phase"), "reloj": st.get("clock"), "marcador": st.get("score"),
+                "seq": st.get("seq"), "estados_por_s": self.rates.get("estados", 0.0),
+                "eventos_por_s": self.rates.get("eventos", 0.0),
+                "controles_por_s": self.rates.get("controles", 0.0),
+                "ack_ms": self._ack_ms(), "ordenes_sin_confirmar": len(self.link.pending),
+                "pausa": sorted(self.hold) or ([self.pause["status"]] if self.pause else []),
+                "desconectados": len(self.away), "activa_hace": now - self.created_at}
+
     # ------------------------------------------------------------------ jugadores
     def set_input(self, side, p):
         self.inputs[side] = p
+        self.counts["controles"] += 1
 
     def request_pause(self, side):
         st = self.last_state
         if self.match is None or self.pause is not None or st is None or st["phase"] == P.PHASE_FINISHED:
             return
         self.link.send_command(P.CMD_PAUSE, after_goal=True, by=side, reason=P.PAUSE_REASON_REQUEST)
-        self.pause = {"status": W.PAUSE_PENDING, "by": side, "deadline": None, "ready": [False, False]}
+        self.pause = {"status": W.PAUSE_PENDING, "by": side, "deadline": None,
+                      "ready": [False] * MAX_PLAYERS}
         self._send_pause_info()
 
     def pause_ready(self, side):
@@ -249,7 +350,7 @@ class RoomRunner:
     def _pause_started(self, by, now):
         prev = self.pause or {}
         self.pause = {"status": W.PAUSE_ACTIVE, "by": by if by is not None else prev.get("by"),
-                      "deadline": now + self.server.pause_max, "ready": [False, False]}
+                      "deadline": now + self.server.pause_max, "ready": [False] * MAX_PLAYERS}
         self.hold.add(P.PAUSE_REASON_REQUEST)
         self._send_pause_info()
 
@@ -318,7 +419,7 @@ class RoomRunner:
         m = self.match
         if m is None:
             return
-        score = list(self.last_state["score"]) if self.last_state else [0, 0]
+        score = list(self.last_state["score"]) if self.last_state else list(NO_SCORE)
         self.link.send_command(P.CMD_END)
         log.info("sala %s: %s abandonó el partido #%s", self.room_id, m["names"][side], m["id"])
         self._finish(W.END_FORFEIT, 1 - side, score, by=side)
@@ -332,14 +433,12 @@ class RoomRunner:
 
     def _fail(self, err):
         log.error("sala %s: falló la simulación: %s", self.room_id, err)
+        self.server.log_process(self.room_id, "falló la simulación", self.link.sim_pid, err)
         if self.match is not None:
-            self._finish(W.END_ERROR, None, list(self.last_state["score"]) if self.last_state else [0, 0])
+            self._finish(W.END_ERROR, None,
+                         list(self.last_state["score"]) if self.last_state else list(NO_SCORE))
         # la próxima partida usa un puente y un proceso nuevos
         self.server.drop_runner(self.room_id, self)
-
-    def debug(self):
-        return {"room": self.room_id, "match": self.match and self.match["id"], "pid": self.link.sim_pid,
-                "hold": sorted(self.hold)}
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +446,8 @@ class RoomRunner:
 # ---------------------------------------------------------------------------
 class GameServer:
     def __init__(self, web_dir=DEFAULT_WEB_DIR, duration=None, grace=Online.RECONNECT_GRACE,
-                 pause_max=Online.PAUSE_MAX, seed=None, rng=None, sim_logs=True):
+                 pause_max=Online.PAUSE_MAX, seed=None, rng=None, sim_logs=True,
+                 panel_password=Online.PANEL_PASSWORD):
         self.lobby = Lobby(rng)
         self.web_dir = Path(web_dir).resolve() if web_dir else None
         self.duration = duration
@@ -355,6 +455,7 @@ class GameServer:
         self.pause_max = pause_max
         self.seed = seed
         self.sim_logs = sim_logs
+        self.panel_password = panel_password or ""
         self.sessions = {}           # id -> Session con nombre
         self.tokens = {}             # token -> Session
         self.runners = {}            # sala -> RoomRunner
@@ -362,6 +463,10 @@ class GameServer:
         self.tasks = set()           # tareas sueltas (referencia para que no se pierdan)
         self.port = None
         self.stopped = None
+        self.started_at = time.monotonic()
+        self.traffic = collections.Counter()      # mensajes y estados (totales, para el panel)
+        self.rates = {}                           # lo mismo, por segundo
+        self.process_log = collections.deque(maxlen=Online.PANEL_LOG_SIZE)
 
     def spawn(self, coro):
         task = asyncio.create_task(coro)
@@ -369,7 +474,12 @@ class GameServer:
         task.add_done_callback(self.tasks.discard)
         return task
 
-    # ------------------------------------------------------------------ HTTP (archivos del cliente)
+    def log_process(self, room_id, what, pid, detail=""):
+        """Registro de procesos para el panel (sin nombres de jugadores)."""
+        self.process_log.appendleft({"hora": time.strftime("%H:%M:%S"), "sala": room_id, "evento": what,
+                                     "pid": pid, "detalle": detail})
+
+    # ------------------------------------------------------------------ HTTP
     async def http(self, connection, request):
         path = request.path.split("?", 1)[0]
         if path == Online.WS_PATH:
@@ -380,46 +490,114 @@ class GameServer:
             # busca sus paquetes en localhost:8000: el juego no arranca. La
             # misma computadora como 127.0.0.1 no tiene ese problema.
             port = host.split(":")[1] if ":" in host else str(self.port)
-            return Response(302, "Found", Headers([("Location", f"http://127.0.0.1:{port}{request.path}"),
-                                                   ("Content-Length", "0")]), b"")
-        if path == "/estado":
-            body = (f"salas {len(self.lobby.rooms)}, en juego {len(self.runners)}, "
-                    f"conexiones {self.connections}\n")
-            return connection.respond(200, body)
+            return _response(http.HTTPStatus.FOUND, b"", extra=[("Location", f"http://{LOOPBACK}:{port}{request.path}")])
+        if path in (Online.PANEL_PATH, Online.PANEL_PATH + JSON_SUFFIX):
+            return self._panel(path, full=False)
+        if path in (Online.PANEL_FULL_PATH, Online.PANEL_FULL_PATH + JSON_SUFFIX):
+            if not self.panel_password:
+                return connection.respond(http.HTTPStatus.NOT_FOUND,
+                                          "La vista completa del panel está desactivada: iniciá el servidor "
+                                          "con --clave-panel CLAVE (o la variable FDC_CLAVE_PANEL).\n")
+            if not self._authorized(request):
+                return _response(http.HTTPStatus.UNAUTHORIZED, "Hace falta la contraseña del panel.\n".encode(),
+                                 extra=[("WWW-Authenticate", 'Basic realm="Panel de Futbol De Cabeza", '
+                                                             'charset="UTF-8"')])
+            return self._panel(path, full=True)
         return await asyncio.to_thread(self._static, connection, path)
+
+    def _authorized(self, request):
+        """Autenticación HTTP básica: sólo se controla la contraseña (el usuario da igual)."""
+        scheme, _, value = request.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "basic":
+            return False
+        try:
+            _, _, password = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
+        except (binascii.Error, UnicodeDecodeError):
+            return False
+        return hmac.compare_digest(password.encode("utf-8"), self.panel_password.encode("utf-8"))
+
+    def _panel(self, path, full):
+        if path.endswith(JSON_SUFFIX):
+            body = json.dumps(self.panel_data(full), ensure_ascii=False).encode("utf-8")
+            return _response(http.HTTPStatus.OK, body, "application/json; charset=utf-8")
+        with open(PANEL_PAGE, "rb") as fh:
+            return _response(http.HTTPStatus.OK, fh.read(), "text/html; charset=utf-8")
 
     def _static(self, connection, path):
         if self.web_dir is None or not (self.web_dir / "index.html").is_file():
-            return connection.respond(404, "El cliente web no está compilado. Ejecutá: "
-                                           "python tools/construir_web.py\n")
+            return connection.respond(http.HTTPStatus.NOT_FOUND, "El cliente web no está compilado. Ejecutá: "
+                                                                "python tools/construir_web.py\n")
         if path.endswith("/"):
             path += "index.html"
         target = (self.web_dir / path.lstrip("/")).resolve()
         if self.web_dir not in target.parents or not target.is_file():
-            return connection.respond(404, "No existe.\n")
-        body = target.read_bytes()
+            return connection.respond(http.HTTPStatus.NOT_FOUND, "No existe.\n")
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/javascript":
             ctype += "; charset=utf-8"
-        headers = Headers([("Content-Type", ctype), ("Content-Length", str(len(body))),
-                           ("Cache-Control", "no-cache")])
-        return Response(200, "OK", headers, body)
+        return _response(http.HTTPStatus.OK, target.read_bytes(), ctype)
+
+    # ------------------------------------------------------------------ panel
+    def panel_data(self, full):
+        """Foto del servidor para el panel. La vista pública no incluye nombres."""
+        now = time.monotonic()
+        rooms = []
+        for room in sorted(self.lobby.rooms.values(), key=lambda r: r.id):
+            info = {"sala": room.id, "estado": room.state, "jugadores": len(room.members),
+                    "privada": room.private}
+            runner = self.runners.get(room.id)
+            if runner is not None:
+                info["simulacion"] = runner.panel_info(now)
+            if full:
+                info.update(nombre=room.name, creador=room.owner,
+                            miembros=[m.public() for m in room.members])
+            rooms.append(info)
+        data = {
+            "vista": "completa" if full else "publica",
+            "servidor": {"pid": os.getpid(), "activo_hace": now - self.started_at,
+                         "python": platform.python_version(), "sistema": platform.system(),
+                         "nucleos": os.cpu_count()},
+            "conexiones": self.connections, "sesiones": len(self.sessions),
+            "esperando_reconexion": sum(1 for s in self.sessions.values() if s.ws is None),
+            "procesos_de_sala": len(self.runners),
+            "tareas": dict(collections.Counter(_task_kind(t) for t in asyncio.all_tasks())),
+            "hilos": dict(collections.Counter(_thread_kind(t) for t in threading.enumerate())),
+            "trafico_por_s": self.rates,
+            "salas": rooms,
+            "registro": list(self.process_log),
+        }
+        if full:
+            data["jugadores"] = [{"nombre": s.username, "conectado": s.ws is not None,
+                                  "mensajes_pendientes": len(s.queue), "estados_reemplazados": s.dropped_states}
+                                 for s in self.sessions.values()]
+        return data
+
+    async def _stats_loop(self):
+        """Mensajes por segundo para el panel (una medición por PANEL_REFRESH)."""
+        previous, last = collections.Counter(), time.monotonic()
+        while True:
+            await asyncio.sleep(Online.PANEL_REFRESH)
+            now = time.monotonic()
+            elapsed = now - last
+            self.rates = {k: (v - previous[k]) / elapsed for k, v in self.traffic.items()}
+            previous, last = collections.Counter(self.traffic), now
 
     # ------------------------------------------------------------------ conexiones
     async def handler(self, ws):
         if self.connections >= Online.MAX_CONNECTIONS:
-            await ws.close(1013, "servidor lleno")
+            await ws.close(W.CLOSE_TRY_AGAIN, "servidor lleno")
             return
         self.connections += 1
         session = None
         stamps = collections.deque()
         try:
             deadline = time.monotonic() + Online.HELLO_TIMEOUT
-            pending = Session()
+            pending = Session(self.traffic)
             pending.attach(ws)
             while session is None:                        # presentación (con tiempo límite)
-                raw = await asyncio.wait_for(ws.recv(), max(0.1, deadline - time.monotonic()))
-                deadline = time.monotonic() + Online.HELLO_TIMEOUT   # está probando nombres: se espera
+                wait = max(Online.HELLO_MIN_WAIT, deadline - time.monotonic())
+                raw = await asyncio.wait_for(ws.recv(), wait)
+                deadline = time.monotonic() + Online.HELLO_TIMEOUT   # está probando: se le da más tiempo
                 msg = self._decode(pending, raw, stamps)
                 if msg is None:
                     continue
@@ -446,11 +624,12 @@ class GameServer:
     def _decode(self, session, raw, stamps):
         now = time.monotonic()
         stamps.append(now)
-        while stamps and now - stamps[0] > 1.0:
+        self.traffic["mensajes recibidos"] += 1
+        while stamps and now - stamps[0] > Online.RATE_WINDOW:
             stamps.popleft()
         if len(stamps) > Online.MAX_MESSAGES_PER_SEC:
             log.warning("demasiados mensajes de %s: se corta", session.username or "?")
-            asyncio.ensure_future(session.ws.close(1008, "demasiados mensajes"))
+            asyncio.ensure_future(session.ws.close(W.CLOSE_POLICY, "demasiados mensajes"))
             return None
         try:
             return W.decode(raw, W.CLIENT_TYPES)
@@ -465,7 +644,7 @@ class GameServer:
         if old is not None:
             # vuelve alguien que se había cortado: recupera nombre, sala y partido
             if old.ws is not None and old.ws is not ws:
-                asyncio.ensure_future(old.ws.close(4000, "sesión abierta en otro lado"))
+                asyncio.ensure_future(old.ws.close(W.CLOSE_REPLACED, "sesión abierta en otro lado"))
             if old.expire_task is not None:
                 old.expire_task.cancel()
                 old.expire_task = None
@@ -556,19 +735,19 @@ class GameServer:
         room = self.lobby.rooms[room_id]
         any_msg = next(iter(msgs.values()))
         players = sorted(any_msg["players"], key=lambda p: p["side"])
-        sids = [None, None]
+        sids = [None] * MAX_PLAYERS
         for m in room.members:
             sids[m.side] = m.conn
         runner = self.runners.get(room_id)
         if runner is None:
             runner = self.runners[room_id] = RoomRunner(self, room_id)
         self.spawn(runner.begin(any_msg["match"], sids, [p["display"] for p in players],
-                                [p["character"] for p in players], [msgs[0], msgs[1]]))
+                                [p["character"] for p in players], [msgs[side] for side in range(MAX_PLAYERS)]))
 
     def room_changed(self, room_id):
         """Si la sala quedó con menos de 2 personas, su proceso ya no hace falta."""
         room = self.lobby.rooms.get(room_id)
-        if room is None or len(room.members) < 2:
+        if room is None or len(room.members) < MAX_PLAYERS:
             runner = self.runners.get(room_id)
             if runner is not None:
                 self.drop_runner(room_id, runner)
@@ -607,27 +786,31 @@ class GameServer:
         log.info("%s no volvió: se liberó su lugar", s.username)
 
     # ------------------------------------------------------------------ arranque y cierre
-    async def run(self, host="0.0.0.0", port=Online.PORT, started=None):
+    async def run(self, host=ALL_INTERFACES[0], port=Online.PORT, started=None):
         self.stopped = asyncio.Event()
+        stats = asyncio.create_task(self._stats_loop())
         async with serve(self.handler, host, port, process_request=self.http,
-                         max_size=Online.MAX_MESSAGE_BYTES, ping_interval=5, ping_timeout=10) as srv:
+                         max_size=Online.MAX_MESSAGE_BYTES, ping_interval=Online.KEEPALIVE_EVERY,
+                         ping_timeout=Online.KEEPALIVE_TIMEOUT) as srv:
             self.port = srv.sockets[0].getsockname()[1]
             log.info("servidor listo. Para jugar abrí en el navegador: %s", "  o  ".join(self.urls(host)))
+            log.info("panel del servidor: %s%s", self.urls(host)[0], Online.PANEL_PATH)
             if started is not None:
                 started()
             try:
                 await self.stopped.wait()
             finally:
+                stats.cancel()
                 await self.close_all()
 
     def urls(self, host):
         """Direcciones para abrir el juego (0.0.0.0 no sirve como dirección del navegador)."""
-        if host not in ("0.0.0.0", "", "::"):
+        if host not in ALL_INTERFACES:
             return [f"http://{host}:{self.port}"]
-        out = [f"http://127.0.0.1:{self.port}"]
+        out = [f"http://{LOOPBACK}:{self.port}"]
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-                probe.connect(("192.0.2.1", 9))          # no envía nada: sólo elige la interfaz de red
+                probe.connect(LAN_PROBE)                  # no envía nada: sólo elige la interfaz de red
                 lan = probe.getsockname()[0]
             if not lan.startswith("127."):
                 out.append(f"http://{lan}:{self.port} (desde otra compu de tu red)")
@@ -651,8 +834,14 @@ class GameServer:
         # salas que ya se estaban cerrando o arrancando: se espera a que terminen
         pending = [t for t in self.tasks if not t.done()]
         if pending:
-            await asyncio.wait(pending, timeout=10)
+            await asyncio.wait(pending, timeout=Online.SHUTDOWN_TASKS_WAIT)
         log.info("servidor cerrado (%d salas en juego cerradas)", len(runners))
+
+
+def _response(status, body, ctype="text/plain; charset=utf-8", extra=()):
+    headers = Headers([("Content-Type", ctype), ("Content-Length", str(len(body))),
+                       ("Cache-Control", "no-cache"), ("Connection", "close"), *extra])
+    return Response(status.value, status.phrase, headers, body)
 
 
 def setup_logging():
@@ -669,19 +858,23 @@ def setup_logging():
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Servidor online de Futbol De Cabeza (salas 1 contra 1).")
-    p.add_argument("--host", default="0.0.0.0", help="interfaz donde escuchar (0.0.0.0 = todas)")
+    p.add_argument("--host", default=ALL_INTERFACES[0], help="interfaz donde escuchar (0.0.0.0 = todas)")
     p.add_argument("--puerto", type=int, default=Online.PORT)
     p.add_argument("--web", default=DEFAULT_WEB_DIR, help="carpeta del cliente web compilado")
     p.add_argument("--duracion", type=float, default=None, help="duración de los partidos (s)")
     p.add_argument("--gracia", type=float, default=Online.RECONNECT_GRACE,
                    help="segundos para volver tras un corte antes de perder por abandono")
+    p.add_argument("--clave-panel", default=Online.PANEL_PASSWORD,
+                   help="contraseña de la vista completa del panel (/estado/completo); "
+                        "también la variable FDC_CLAVE_PANEL. Sin contraseña, sólo hay vista pública")
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(argv)
     setup_logging()
-    server = GameServer(web_dir=args.web, duration=args.duracion, grace=args.gracia)
+    server = GameServer(web_dir=args.web, duration=args.duracion, grace=args.gracia,
+                        panel_password=args.clave_panel)
     try:
         asyncio.run(server.run(args.host, args.puerto))
     except KeyboardInterrupt:

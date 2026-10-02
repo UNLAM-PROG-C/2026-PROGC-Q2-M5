@@ -31,6 +31,9 @@ Servidor -> cliente
     pause_info {status, by, left, ready}  pausa pedida / activa / terminada
     opponent {connected, left}      el rival perdió la conexión (o volvió)
     match_over {score, winner, reason, by}
+    sala_info {...}                 una vez por segundo durante el partido: datos de la
+                                    sala en el servidor (pid de su proceso, estados por
+                                    segundo, tiempo de los ACK...) para el panel F3
     pong {t}
 """
 import json
@@ -58,7 +61,13 @@ EVENT = "ev"
 PAUSE_INFO = "pause_info"
 OPPONENT = "opponent"
 MATCH_OVER = "match_over"
+ROOM_INFO = "sala_info"
 PONG = "pong"
+
+# códigos de cierre del WebSocket (RFC 6455; de 4000 a 4999 son propios)
+CLOSE_POLICY = 1008           # violó las reglas: demasiados mensajes o no lee lo que se le manda
+CLOSE_TRY_AGAIN = 1013        # servidor lleno: conviene probar más tarde
+CLOSE_REPLACED = 4000         # su sesión se abrió en otra ventana
 
 # estados de la pausa online (pause_info.status)
 PAUSE_PENDING = "pedida"      # alguien la pidió: se activa tras el próximo gol

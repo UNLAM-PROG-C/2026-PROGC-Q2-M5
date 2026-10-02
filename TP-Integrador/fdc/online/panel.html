@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel del servidor - Futbol De Cabeza</title>
+<style>
+  :root {
+    --ink: #2b2d42; --ink-soft: #545a78; --cream: #fff8e7; --cream-dark: #ecdebe;
+    --gold: #ffd23f; --gold-dark: #dea01e; --sky: #96cdee; --grass: #8ece60;
+    --red: #e45746; --green: #50b464; --blue: #4682dc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; color: var(--ink); background: var(--sky);
+    background-image: linear-gradient(var(--sky) 0 60%, var(--grass) 60%);
+    font: 15px/1.4 "Courier New", ui-monospace, monospace; min-height: 100vh;
+  }
+  h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: 1px; text-transform: uppercase;
+       color: var(--gold); text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink), 1px -1px 0 var(--ink), -1px 1px 0 var(--ink); }
+  h2 { margin: 0 0 8px; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
+  .sub { margin: 0 0 14px; }
+  .badge { display: inline-block; padding: 1px 8px; border: 2px solid var(--ink); background: var(--gold); font-weight: bold; }
+  .badge.publica { background: var(--cream); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .box { background: var(--cream); border: 3px solid var(--ink); box-shadow: 5px 5px 0 rgba(43,45,66,.45);
+         padding: 10px 12px; margin-bottom: 12px; }
+  .big { font-size: 28px; font-weight: bold; }
+  .muted { color: var(--ink-soft); }
+  .help { color: var(--ink-soft); font-size: 13px; margin: 6px 0 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border-bottom: 2px solid var(--cream-dark); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--cream-dark); text-transform: uppercase; font-size: 12px; }
+  .ok { color: var(--green); font-weight: bold; }
+  .bad { color: var(--red); font-weight: bold; }
+  .bar { display: inline-block; height: 10px; background: var(--gold); border: 1px solid var(--ink); vertical-align: middle; }
+  .pid { font-weight: bold; color: var(--blue); }
+  .new { animation: flash 1.2s steps(4); }
+  @keyframes flash { 0% { background: var(--gold); } 100% { background: transparent; } }
+  #error { display: none; background: var(--red); color: white; border: 3px solid var(--ink); padding: 8px; margin-bottom: 12px; }
+  ul { margin: 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<h1>Panel del servidor</h1>
+<p class="sub"><b>Futbol De Cabeza</b> &middot; vista <span id="vista" class="badge">...</span>
+  &middot; se actualiza solo cada segundo &middot; <span id="edad" class="muted"></span></p>
+<div id="error"></div>
+
+<div class="grid">
+  <div class="box"><h2>Proceso servidor</h2>
+    <div>pid <span id="srv-pid" class="pid big"></span></div>
+    <div id="srv-info" class="muted"></div>
+    <p class="help">Un solo proceso con un bucle <b>asyncio</b>: atiende a todos los conectados.</p></div>
+  <div class="box"><h2>Conexiones</h2>
+    <div class="big" id="conexiones"></div>
+    <div id="sesiones" class="muted"></div>
+    <p class="help">Cada conexión tiene una tarea que lee y otra que escribe.</p></div>
+  <div class="box"><h2>Procesos de sala</h2>
+    <div class="big" id="procesos"></div>
+    <p class="help">Un proceso de <b>simulación</b> aparte (multiprocessing) por cada sala que está jugando.</p></div>
+  <div class="box"><h2>Tráfico por segundo</h2>
+    <div id="trafico"></div>
+    <p class="help">Estados: fotos del partido, reemplazables. Mensajes: confiables, en orden.</p></div>
+</div>
+
+<div class="grid">
+  <div class="box"><h2>Tareas asyncio ahora</h2><ul id="tareas"></ul>
+    <p class="help">Corren todas en el mismo hilo y se turnan en cada <code>await</code>: por eso no hacen falta locks.</p></div>
+  <div class="box"><h2>Hilos del proceso servidor</h2><ul id="hilos"></ul>
+    <p class="help">Los del ejecutor lanzan y cierran procesos sin frenar al bucle; los alimentadores pasan los
+      mensajes de las colas de multiprocessing al pipe.</p></div>
+</div>
+
+<div class="box"><h2>Salas</h2>
+  <table><thead id="salas-head"></thead><tbody id="salas"></tbody></table>
+  <p class="help">ACK: lo que tarda el proceso de la sala en confirmar una orden. Pausa: motivos por los que la
+    simulación sigue detenida (pedida por un jugador o una desconexión).</p></div>
+
+<div class="box" id="jugadores-box" style="display:none"><h2>Jugadores</h2>
+  <table><thead><tr><th>nombre</th><th>conexión</th><th>mensajes por enviar</th><th>estados reemplazados</th></tr></thead>
+    <tbody id="jugadores"></tbody></table></div>
+
+<div class="box"><h2>Registro de procesos</h2>
+  <table><thead><tr><th>hora</th><th>sala</th><th>evento</th><th>pid</th><th>detalle</th></tr></thead>
+    <tbody id="registro"></tbody></table>
+  <p class="help">Cada sala lanza su proceso al empezar el primer partido y lo cierra de forma coordinada
+    (orden + Event, espera del BYE, join con tiempo límite) cuando la sala se vacía.</p></div>
+
+<script>
+const REFRESH_MS = 1000;           // cada cuánto se piden los datos (igual que PANEL_REFRESH)
+const MS_PER_SECOND = 1000;
+const DECIMALS_RATE = 1;           // decimales de los "por segundo"
+const BAR_PX_PER_UNIT = 2;         // largo de la barrita por unidad de estados por segundo
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+const PHASES = {countdown: "cuenta regresiva", playing: "en juego", goal: "gol", finished: "terminado"};
+const full = location.pathname.replace(/\/+$/, "").endsWith("/completo");
+const dataUrl = location.pathname.replace(/\/+$/, "") + ".json";
+let lastOk = 0;
+let seenLog = new Set();
+
+function esc(v) {
+  return String(v === null || v === undefined ? "-" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function dur(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / SECONDS_PER_HOUR), m = Math.floor((s % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const r = s % SECONDS_PER_MINUTE;
+  return (h ? h + " h " : "") + (h || m ? m + " min " : "") + r + " s";
+}
+function rate(v) { return (v || 0).toFixed(DECIMALS_RATE); }
+function list(el, counts) {
+  const items = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  el.innerHTML = items.map(([k, n]) => `<li><b>${n}</b> &times; ${esc(k)}</li>`).join("") || "<li>-</li>";
+}
+
+function render(d) {
+  document.getElementById("vista").textContent = d.vista === "completa" ? "COMPLETA" : "PÚBLICA";
+  document.getElementById("vista").className = "badge " + d.vista;
+  const s = d.servidor;
+  document.getElementById("srv-pid").textContent = s.pid;
+  document.getElementById("srv-info").textContent =
+    `${s.sistema} · Python ${s.python} · ${s.nucleos} núcleos · activo hace ${dur(s.activo_hace)}`;
+  document.getElementById("conexiones").textContent = d.conexiones;
+  document.getElementById("sesiones").textContent =
+    `${d.sesiones} jugadores con nombre · ${d.esperando_reconexion} esperando reconexión (30 s)`;
+  document.getElementById("procesos").textContent = d.procesos_de_sala;
+  const t = d.trafico_por_s || {};
+  document.getElementById("trafico").innerHTML =
+    `<div>recibidos: <b>${rate(t["mensajes recibidos"])}</b></div>` +
+    `<div>mensajes enviados: <b>${rate(t["mensajes enviados"])}</b></div>` +
+    `<div>estados enviados: <b>${rate(t["estados enviados"])}</b></div>` +
+    `<div>estados reemplazados: <b>${rate(t["estados reemplazados"])}</b></div>`;
+  list(document.getElementById("tareas"), d.tareas);
+  list(document.getElementById("hilos"), d.hilos);
+
+  const head = ["sala", "estado", "jugadores", "proceso (pid)", "partido", "fase", "reloj", "marcador",
+                "estados/s", "controles/s", "ACK", "sin confirmar", "pausa"].concat(full ? ["nombre", "miembros"] : []);
+  document.getElementById("salas-head").innerHTML = "<tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr>";
+  document.getElementById("salas").innerHTML = d.salas.map(r => {
+    const sim = r.simulacion;
+    const cells = [
+      r.sala + (r.privada ? " 🔒" : ""), esc(r.estado), r.jugadores + "/2",
+      sim ? `<span class="pid">${esc(sim.pid)}</span> <span class="${sim.viva ? "ok" : "bad"}">${sim.viva ? "vivo" : "detenido"}</span>` : "<span class=muted>sin proceso</span>",
+      sim ? esc(sim.partido) : "-", sim ? esc(PHASES[sim.fase] || sim.fase) : "-",
+      sim && sim.reloj !== null && sim.reloj !== undefined ? sim.reloj.toFixed(DECIMALS_RATE) + " s" : "-",
+      sim && sim.marcador ? sim.marcador.join(" - ") : "-",
+      sim ? `<span class="bar" style="width:${Math.round(sim.estados_por_s * BAR_PX_PER_UNIT)}px"></span> ${rate(sim.estados_por_s)}` : "-",
+      sim ? rate(sim.controles_por_s) : "-",
+      sim && sim.ack_ms !== null ? sim.ack_ms.toFixed(DECIMALS_RATE) + " ms" : "-",
+      sim ? sim.ordenes_sin_confirmar : "-",
+      sim && sim.pausa.length ? esc(sim.pausa.join(", ")) : "-",
+    ];
+    if (full) {
+      cells.push(esc(r.nombre) + "<br><span class=muted>de " + esc(r.creador) + "</span>");
+      cells.push((r.miembros || []).map(m =>
+        `${esc(m.display)} · ${esc(m.character)} · ${m.ready ? "listo" : "eligiendo"}` +
+        (m.connected ? "" : " · <span class=bad>desconectado</span>")).join("<br>"));
+    }
+    return "<tr>" + cells.map(c => `<td>${c}</td>`).join("") + "</tr>";
+  }).join("") || `<tr><td colspan="${head.length}" class="muted">No hay salas todavía.</td></tr>`;
+
+  document.getElementById("jugadores-box").style.display = full ? "block" : "none";
+  if (full) {
+    document.getElementById("jugadores").innerHTML = (d.jugadores || []).map(j =>
+      `<tr><td>${esc(j.nombre)}</td><td class="${j.conectado ? "ok" : "bad"}">${j.conectado ? "conectado" : "esperando que vuelva"}</td>` +
+      `<td>${j.mensajes_pendientes}</td><td>${j.estados_reemplazados}</td></tr>`).join("") ||
+      "<tr><td colspan=4 class=muted>Nadie conectado.</td></tr>";
+  }
+
+  const fresh = new Set();
+  document.getElementById("registro").innerHTML = d.registro.map(e => {
+    const key = [e.hora, e.sala, e.evento, e.pid].join("|");
+    fresh.add(key);
+    const cls = seenLog.size && !seenLog.has(key) ? "new" : "";
+    return `<tr class="${cls}"><td>${esc(e.hora)}</td><td>${esc(e.sala)}</td><td>${esc(e.evento)}</td>` +
+           `<td class="pid">${esc(e.pid)}</td><td>${esc(e.detalle)}</td></tr>`;
+  }).join("") || "<tr><td colspan=5 class=muted>Todavía no se lanzó ningún proceso de sala.</td></tr>";
+  seenLog = fresh;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch(dataUrl, {cache: "no-store"});
+    if (!r.ok) throw new Error("el servidor respondió " + r.status);
+    render(await r.json());
+    lastOk = Date.now();
+    document.getElementById("error").style.display = "none";
+  } catch (e) {
+    const box = document.getElementById("error");
+    box.textContent = "No se pudo leer el estado del servidor: " + e.message;
+    box.style.display = "block";
+  }
+}
+setInterval(() => {
+  const age = lastOk ? ((Date.now() - lastOk) / MS_PER_SECOND).toFixed(DECIMALS_RATE) : "-";
+  document.getElementById("edad").textContent = "datos de hace " + age + " s";
+}, REFRESH_MS / 2);
+setInterval(refresh, REFRESH_MS);
+refresh();
+</script>
+</body>
+</html>

@@ -30,8 +30,9 @@ log = logging.getLogger("fdc.net")
 IN_BROWSER = sys.platform == "emscripten"
 
 # códigos de cierre que NO deben provocar reconexión
-NO_RETRY_CODES = {4000: "Tu sesión se abrió en otra ventana.", 1008: "El servidor cortó la conexión.",
-                  1013: "El servidor está lleno: probá más tarde."}
+NO_RETRY_CODES = {W.CLOSE_REPLACED: "Tu sesión se abrió en otra ventana.",
+                  W.CLOSE_POLICY: "El servidor cortó la conexión.",
+                  W.CLOSE_TRY_AGAIN: "El servidor está lleno: probá más tarde."}
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ class ThreadTransport:
     def _put(self, item):
         while not self.stop.is_set():
             try:
-                self.inbox.put(item, timeout=0.2)
+                self.inbox.put(item, timeout=Online.INBOX_PUT_WAIT)
                 return
             except queue.Full:
                 continue           # la interfaz la vacía en el próximo cuadro
@@ -66,7 +67,8 @@ class ThreadTransport:
             return
         code, reason = None, "conexión cerrada"
         try:
-            with connect(self.url, open_timeout=5, close_timeout=1, max_size=2 ** 20) as ws:
+            with connect(self.url, open_timeout=Online.CONNECT_TIMEOUT, close_timeout=Online.CLOSE_TIMEOUT,
+                         max_size=Online.CLIENT_MAX_MESSAGE) as ws:
                 self.ws = ws
                 self._put(("open", None))
                 for raw in ws:                    # bloquea en la red (no consume CPU)
@@ -81,7 +83,7 @@ class ThreadTransport:
             reason = (f"No se pudo conectar con {self.url} ({exc})" if self.ws is None else str(exc))
         self._put(("closed", {"code": code, "reason": reason}))
 
-    def receive(self, limit=400):
+    def receive(self, limit=Online.CLIENT_RECEIVE_BATCH):
         out = []
         for _ in range(limit):
             try:
@@ -159,7 +161,7 @@ class BrowserTransport:
         install_js()
         self.id = int(self.win.fdcNet.open(url))
 
-    def receive(self, limit=400):
+    def receive(self, limit=Online.CLIENT_RECEIVE_BATCH):
         raw = str(self.win.fdcNet.take(self.id))
         if not raw:
             return []
@@ -246,6 +248,7 @@ class NetClient:
         self.pause = {"type": W.PAUSE_INFO, "status": W.PAUSE_NONE}
         self.opponent = None
         self.result = None             # último match_over
+        self.room_info = None          # datos de la sala en el servidor (panel F3 del partido)
         self.last_error = None         # último error del servidor (nombre en uso, clave...)
         self.lost_at = None
         self.next_retry = 0.0
@@ -276,7 +279,7 @@ class NetClient:
         self.status = IDLE
         self.welcomed = False
         self.token = None
-        self.room = self.match = self.result = None
+        self.room = self.match = self.result = self.room_info = None
         forget_session()
 
     @property
@@ -355,7 +358,7 @@ class NetClient:
             if self.status != RECONNECTING:
                 self.status = RECONNECTING
                 self.lost_at = now
-                self.next_retry = now + 0.5
+                self.next_retry = now + Online.FIRST_RETRY_DELAY
                 log.info("se cortó la conexión (%s): reintentando", reason)
             return
         self._give_up(NO_RETRY_CODES.get(code) or reason or "No se pudo conectar con el servidor.")
@@ -400,6 +403,9 @@ class NetClient:
         elif t == W.MATCH_OVER:
             self.result = msg
             self.match = None
+            self.room_info = None
+        elif t == W.ROOM_INFO:
+            self.room_info = msg
         elif t == W.ERROR:
             self.last_error = dict(msg, at=now)
         elif t == W.PONG and isinstance(msg.get("t"), (int, float)):

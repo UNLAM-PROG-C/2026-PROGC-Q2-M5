@@ -278,7 +278,27 @@ class Online:
     OUTBOX_LIMIT = 400          # mensajes confiables sin enviar -> cliente demasiado lento
     CLIENT_INBOX = 512          # cola de entrada del cliente de escritorio
     HELLO_TIMEOUT = 10.0        # s para presentarse después de conectar
+    HELLO_MIN_WAIT = 0.1        # s: espera mínima al leer el saludo (si el plazo casi venció)
     RETRY_EVERY = 2.0           # el cliente reintenta reconectar cada tanto
+    FIRST_RETRY_DELAY = 0.5     # s hasta el primer reintento después de un corte
+    KEEPALIVE_EVERY = 5.0       # s entre pings del servidor (detecta conexiones muertas)
+    KEEPALIVE_TIMEOUT = 10.0    # s sin respuesta al ping -> la conexión se da por cortada
+    STATE_SEND_SLACK = 0.004    # s de margen para no saltear un estado por milisegundos
+    RATE_WINDOW = 1.0           # s: ventana para contar mensajes por segundo de un cliente
+    TOKEN_BYTES = 18            # bytes aleatorios del token de sesión (para volver tras un corte)
+    SHUTDOWN_TASKS_WAIT = 10.0  # s que el servidor espera a las salas que se estaban cerrando
+    ROOM_INFO_EVERY = 1.0       # s entre avisos de la sala a los jugadores (panel F3 online)
+    PANEL_REFRESH = 1.0         # s entre actualizaciones del panel del servidor
+    PANEL_LOG_SIZE = 30         # eventos de procesos que guarda el panel
+    PANEL_PATH = "/estado"      # panel público (sólo datos técnicos)
+    PANEL_FULL_PATH = "/estado/completo"   # panel con nombres (pide contraseña)
+    # contraseña de la vista completa del panel; sin contraseña, esa vista no existe
+    PANEL_PASSWORD = os.environ.get("FDC_CLAVE_PANEL", "")
+    CLIENT_RECEIVE_BATCH = 400  # mensajes que el cliente procesa como máximo por cuadro
+    CONNECT_TIMEOUT = 5.0       # s para abrir la conexión (cliente de escritorio)
+    CLOSE_TIMEOUT = 1.0         # s para el saludo de cierre (cliente de escritorio)
+    CLIENT_MAX_MESSAGE = 2 ** 20  # bytes: el cliente acepta estados grandes (1 MiB)
+    INBOX_PUT_WAIT = 0.2        # s: el hilo lector reintenta si la cola de entrada está llena
 
 
 # ---------------------------------------------------------------------------
