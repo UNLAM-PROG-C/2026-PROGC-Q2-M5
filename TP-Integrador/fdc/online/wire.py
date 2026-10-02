@@ -79,7 +79,11 @@ END_TIME = "tiempo"
 END_FORFEIT = "abandono"
 END_ERROR = "error"
 
-MAX_COUNTER = 10 ** 9
+MAX_COUNTER = 10 ** 9       # tope de los contadores de saltos y patadas (más es un mensaje falso)
+INPUT_FIELDS = 4            # foto de controles: izquierda, derecha, saltos, patadas
+POSITION_DECIMALS = 1       # décimas de píxel alcanzan para dibujar
+FINE_DECIMALS = 3           # el avance de la patada y la escala necesitan más precisión
+FULL_TURN = 360.0           # grados: el ángulo de la pelota se manda entre 0 y 360
 
 
 class WireError(ValueError):
@@ -107,7 +111,7 @@ def decode(raw, allowed=None):
 
 def clean_input(p):
     """Valida una foto de controles: [bool, bool, entero >= 0, entero >= 0]."""
-    if not isinstance(p, (list, tuple)) or len(p) != 4:
+    if not isinstance(p, (list, tuple)) or len(p) != INPUT_FIELDS:
         raise WireError("controles mal formados")
     left, right, jumps, kicks = p
     for c in (jumps, kicks):
@@ -118,7 +122,7 @@ def clean_input(p):
 
 def _round(obj):
     if isinstance(obj, float):
-        return round(obj, 1)
+        return round(obj, POSITION_DECIMALS)
     if isinstance(obj, dict):
         return {k: _round(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -137,8 +141,8 @@ def compact_state(state):
     out = _round(out)
     out["type"] = STATE
     # el ángulo de la pelota y el avance de la patada necesitan más precisión
-    out["ball"]["angle"] = round(state["ball"]["angle"] % 360.0, 1)
+    out["ball"]["angle"] = round(state["ball"]["angle"] % FULL_TURN, POSITION_DECIMALS)
     for p, src in zip(out["players"], state["players"]):
-        p["kick"] = round(src["kick"], 3)
-        p["scale"] = round(src["scale"], 3)
+        p["kick"] = round(src["kick"], FINE_DECIMALS)
+        p["scale"] = round(src["scale"], FINE_DECIMALS)
     return out

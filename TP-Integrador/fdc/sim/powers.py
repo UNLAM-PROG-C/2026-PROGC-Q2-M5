@@ -18,7 +18,16 @@ import math
 
 from ..config import (Arena, BallSpec, PERSONAL_TARGETS, POWER_IDS,
                       POWERS_BY_ID, PowerRules as PR)
-from .physics import clamp
+from .physics import EPSILON, clamp
+
+PLAYER_CLEARANCE = 10       # px libres entre un objeto que aparece y el cuerpo de un jugador
+GOAL_CLEARANCE = 20         # px libres entre un objeto y la boca de un arco
+FLOOR_CLEARANCE = 10        # px libres entre un objeto y el piso
+CEILING_CLEARANCE = 60      # px libres entre un objeto y el techo (debajo del tablero)
+BOMB_HEIGHT = 20            # px sobre el piso donde se apoya una bomba
+BLAST_MIN_UPWARD = 0.35     # la explosión siempre empuja hacia arriba al menos esta fracción
+TEST_SPAWN_OFFSET_X = 180   # modo de prueba: el objeto aparece a esta distancia horizontal de la pelota
+TEST_SPAWN_HEIGHT = 200     # modo de prueba: y a esta altura sobre el piso (alcanzable con una patada)
 
 
 class Effect:
@@ -138,7 +147,7 @@ class PowerManager:
             ok = True
             for p in match.players:
                 for cx, cy, cr in p.circles():
-                    if math.hypot(x - cx, y - cy) < cr + r + 10:
+                    if math.hypot(x - cx, y - cy) < cr + r + PLAYER_CLEARANCE:
                         ok = False
             if ok:
                 return x, y
@@ -148,9 +157,9 @@ class PowerManager:
     def position_is_free(x, y, match):
         """Fuera de arcos, travesaños, paredes y piso."""
         r = PR.PICKUP_RADIUS
-        if x - r < Arena.GOAL_DEPTH + 20 or x + r > Arena.WIDTH - Arena.GOAL_DEPTH - 20:
+        if x - r < Arena.GOAL_DEPTH + GOAL_CLEARANCE or x + r > Arena.WIDTH - Arena.GOAL_DEPTH - GOAL_CLEARANCE:
             return False
-        if y + r > Arena.FLOOR_Y - 10 or y - r < Arena.CEILING_Y + 60:
+        if y + r > Arena.FLOOR_Y - FLOOR_CLEARANCE or y - r < Arena.CEILING_Y + CEILING_CLEARANCE:
             return False
         for g in match.goals:
             x0, y0, x1, y1 = g.bar_rect()
@@ -182,7 +191,7 @@ class PowerManager:
             self.effects[(t, pdef.prop)] = Effect(power, t, pdef.prop, pdef.value, pdef.duration)
         if pdef.prop == "bomb":
             bx = self.rng.uniform(*PR.BOMB_ZONE_X)
-            bomb = Bomb(self._new_id(), bx, Arena.FLOOR_Y - 20)
+            bomb = Bomb(self._new_id(), bx, Arena.FLOOR_Y - BOMB_HEIGHT)
             self.bombs.append(bomb)
             events.append(("bomb_armed", {"bomb": bomb.id, "x": bomb.x, "y": bomb.y}))
         events.append(("power", {"power": power, "receptor": receptor,
@@ -225,11 +234,11 @@ class PowerManager:
             if d >= R:
                 return None
             f = 1.0 - d / R
-            if d > 1e-6:
+            if d > EPSILON:
                 nx, ny = dx / d, dy / d
             else:
                 nx, ny = 0.0, -1.0
-            ny = min(ny, -0.35)          # siempre con componente hacia arriba
+            ny = min(ny, -BLAST_MIN_UPWARD)          # siempre con componente hacia arriba
             n = math.hypot(nx, ny)
             return nx / n * strength * f, ny / n * strength * f, f
 
@@ -266,6 +275,7 @@ class PowerManager:
 
 def default_test_spawn(match):
     """Posición fija y alcanzable para el modo de prueba."""
-    x = clamp(match.ball.x + 180 if match.ball.x < Arena.WIDTH / 2 else match.ball.x - 180,
+    ball_x = match.ball.x
+    x = clamp(ball_x + TEST_SPAWN_OFFSET_X if ball_x < Arena.WIDTH / 2 else ball_x - TEST_SPAWN_OFFSET_X,
               *PR.SPAWN_X)
-    return x, Arena.FLOOR_Y - 200 - BallSpec.RADIUS
+    return x, Arena.FLOOR_Y - TEST_SPAWN_HEIGHT - BallSpec.RADIUS

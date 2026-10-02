@@ -7,26 +7,100 @@ from .. import protocol as P
 from ..config import (CATEGORY_BAD, CATEGORY_COLORS, CATEGORY_GLOBAL, PLAYER_COLORS, PLAYER_KEYS,
                       PLAYER_LABELS, POWER_IDS, POWERS_BY_ID, Arena, MatchRules)
 from . import palette as C
-from . import pixelfont
 from .assets import draw_text, text, wrap
 from .retro import bevel_box
 from .characters import CHARACTER_IDS, CHARACTERS_BY_ID, short_name
 from .icons import power_icon
 from .input import key_code, key_label
+from .layout import (ARROW_BUTTON_W, BUTTON_SMALL_H, CENTER_X, FONT_BANNER, FONT_LARGE, FONT_SMALL, FONT_TEXT,
+                     FONT_TITLE, FONT_TITLE_L, FONT_TITLE_S, FRAME_LINE, SHADOW_OFFSET, TEXT_LINE_H, VEIL_OVERLAY,
+                     VEIL_RESULT)
 from .render import MatchRenderer
 from .screens import (BACK_KEYS, BackButton, Menu, MenuScreen, MultiplayerMenuScreen, Screen, button, dim,
-                      footer, panel, title)
+                      footer, panel, scoreboard, title)
+from .sprites import celebrate_pose, idle_pose
+
+PLAYER_X = (250, 1030)             # x de cada jugador en la selección (J1 a la izquierda, J2 a la derecha)
+FACING = (1, -1)                   # J1 mira a la derecha y J2 a la izquierda
+# --- fila de tarjetas de personajes (selección local y Mundialito)
+CARD_W = 150                       # px: ancho de cada tarjeta
+CARD_H = 168                       # px: alto de cada tarjeta
+CARD_GAP = 14                      # px entre tarjetas
+CARDS_TOP = 508                    # borde superior de la fila
+CARD_LIFT = 8                      # px que sube la tarjeta elegida
+CARD_NAME_BOTTOM = 14              # nombre, desde el borde inferior de la tarjeta
+SELECTION_MARGIN = 6               # px entre la tarjeta y el marco de quien la eligió
+SELECTION_LINE = 6                 # px: grosor de ese marco (si la eligieron los dos, van uno adentro del otro)
+# --- botones de mouse ◄ OK ► debajo de cada personaje
+CHOICE_BUTTONS_Y = 402             # borde superior de la fila
+OK_BUTTON_W = 172                  # ancho del botón OK / CANCELAR
+BUTTON_GAP = 12                    # px entre los botones
+
+
+def card_rect(k):
+    """Lugar de la tarjeta del personaje k en la fila (centrada, abajo)."""
+    n = len(CHARACTER_IDS)
+    total = n * CARD_W + (n - 1) * CARD_GAP
+    x0 = CENTER_X - total / 2
+    return pygame.Rect(x0 + k * (CARD_W + CARD_GAP), CARDS_TOP, CARD_W, CARD_H)
+
+
+def draw_card(surf, sprites, k, lifted):
+    """Tarjeta del personaje k con su nombre (sube un poco si está elegida). Devuelve dónde quedó."""
+    cid = CHARACTER_IDS[k]
+    rr = card_rect(k).move(0, -CARD_LIFT if lifted else 0)
+    pygame.draw.rect(surf, C.INK, rr.move(SHADOW_OFFSET, SHADOW_OFFSET))
+    surf.blit(sprites.portrait(cid), rr)
+    pygame.draw.rect(surf, C.INK, rr, FRAME_LINE)
+    draw_text(surf, short_name(CHARACTERS_BY_ID[cid]).upper(), FONT_SMALL,
+              (rr.centerx, rr.bottom - CARD_NAME_BOTTOM), C.WHITE, outline=C.INK)
+    return rr
+
+
+def choice_buttons(x):
+    """Botones ◄  OK/CANCELAR  ► centrados en x, debajo del personaje."""
+    half = OK_BUTTON_W // 2
+    y = CHOICE_BUTTONS_Y
+    return {"prev": pygame.Rect(x - half - BUTTON_GAP - ARROW_BUTTON_W, y, ARROW_BUTTON_W, BUTTON_SMALL_H),
+            "ok": pygame.Rect(x - half, y, OK_BUTTON_W, BUTTON_SMALL_H),
+            "next": pygame.Rect(x + half + BUTTON_GAP, y, ARROW_BUTTON_W, BUTTON_SMALL_H)}
+
+
+def by_strength(weakest, k):
+    """Valor entre 'weakest' (golpe suave, k = 0) y 1 (golpe fuerte, k = 1)."""
+    return weakest + (1 - weakest) * k
 
 
 # ---------------------------------------------------------------------------
 # Selección de personajes (independiente para cada jugador)
 # ---------------------------------------------------------------------------
 class SelectScreen(Screen):
-    CARD_W, CARD_H, GAP = 150, 168, 14
+    LABEL_INSET_X = 6                  # etiqueta "J1"/"J2", desde el costado del marco
+    LABEL_RAISE = 12                   # etiqueta, sobre el borde del marco
+    LABEL_PAD = (4, 2)                 # px de aire alrededor de la etiqueta (horizontal, vertical)
+    READY_DELAY = 0.9                  # s con los dos listos antes de ir a la cancha
+    TITLE_Y = 40                       # título
+    SUBTITLE_Y = 84                    # "Todos tienen las mismas capacidades..."
+    TAG = (300, 70)                    # recuadro con el nombre del personaje (ancho, alto)
+    TAG_TOP = 108                      # borde superior de ese recuadro
+    TAG_BAR_H = 6                      # franja con el color del jugador
+    TAG_NAME_Y = 22                    # nombre, desde arriba del recuadro
+    TAG_TEAM_Y = 44                    # selección y camiseta, desde arriba del recuadro
+    PEDESTAL = (200, 18)               # pedestal bajo el personaje (ancho, alto)
+    PEDESTAL_TOP = 376                 # borde superior del pedestal
+    FEET_Y = 380                       # y de los pies del personaje
+    PLAYER_SCALE = 1.9                 # tamaño del personaje
+    READY_X = 170                      # "¡LISTO!", hacia el centro desde el personaje
+    READY_Y = 300                      # "¡LISTO!", altura
+    READY_BOB_HZ = 6                   # saltitos por segundo del "¡LISTO!"
+    READY_BOB_PX = 4                   # px de esos saltitos
+    HINT_Y = 458                       # teclas de cada jugador
+    VS_Y = 280                         # "VS"
+    GO_Y = 360                         # "¡A LA CANCHA!"
 
     def __init__(self, app, preselect=None):
         super().__init__(app)
-        pre = preselect or app.last_characters or (CHARACTER_IDS[0], CHARACTER_IDS[2])
+        pre = preselect or app.last_characters or (CHARACTER_IDS[0], CHARACTER_IDS[2])   # dos distintos
         self.cursor = [CHARACTER_IDS.index(pre[0]), CHARACTER_IDS.index(pre[1])]
         self.ready = [False, False]
         self.both_ready_t = None
@@ -39,17 +113,9 @@ class SelectScreen(Screen):
         self.app.switch(MultiplayerMenuScreen(self.app))
 
     # ------------------------------------------------------------------ geometría
-    def card_rect(self, k):
-        total = len(CHARACTER_IDS) * self.CARD_W + (len(CHARACTER_IDS) - 1) * self.GAP
-        x0 = 640 - total / 2
-        return pygame.Rect(x0 + k * (self.CARD_W + self.GAP), 508, self.CARD_W, self.CARD_H)
-
     def buttons(self, i):
         """Botones de mouse de cada jugador: ◄  OK/CANCELAR  ►."""
-        x = 250 if i == 0 else 1030
-        y = 402
-        return {"prev": pygame.Rect(x - 150, y, 52, 44), "ok": pygame.Rect(x - 86, y, 172, 44),
-                "next": pygame.Rect(x + 98, y, 52, 44)}
+        return choice_buttons(PLAYER_X[i])
 
     # ------------------------------------------------------------------ acciones
     def move(self, i, d):
@@ -85,7 +151,7 @@ class SelectScreen(Screen):
                 for name, r in self.buttons(i).items():
                     if r.collidepoint(ev.pos):
                         self.hover = (i, name)
-        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3):
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (pygame.BUTTON_LEFT, pygame.BUTTON_RIGHT):
             for i in (0, 1):
                 b = self.buttons(i)
                 if b["ok"].collidepoint(ev.pos):
@@ -98,9 +164,9 @@ class SelectScreen(Screen):
                     self.move(i, 1)
                     return
             # tarjetas: clic izquierdo elige para J1, derecho para J2
-            i = 0 if ev.button == 1 else 1
+            i = 0 if ev.button == pygame.BUTTON_LEFT else 1
             for k in range(len(CHARACTER_IDS)):
-                if self.card_rect(k).collidepoint(ev.pos) and not self.ready[i]:
+                if card_rect(k).collidepoint(ev.pos) and not self.ready[i]:
                     self.cursor[i] = k
                     self.app.audio.play("select")
 
@@ -108,7 +174,7 @@ class SelectScreen(Screen):
         super().update(dt)
         if all(self.ready):
             if self.both_ready_t is None:
-                self.both_ready_t = 0.9
+                self.both_ready_t = self.READY_DELAY
             self.both_ready_t -= dt
             if self.both_ready_t <= 0:
                 chars = [CHARACTER_IDS[c] for c in self.cursor]
@@ -118,67 +184,65 @@ class SelectScreen(Screen):
     # ------------------------------------------------------------------ dibujo
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, 120)
-        title(surf, "ELEGÍ TU PERSONAJE", (640, 40), 48)
+        dim(surf, VEIL_OVERLAY)
+        title(surf, "ELEGÍ TU PERSONAJE", (CENTER_X, self.TITLE_Y), FONT_TITLE)
         draw_text(surf, "Todos tienen las mismas capacidades: sólo cambia la apariencia. Pueden elegir el mismo.",
-                  16, (640, 84), C.INK, outline=C.WHITE)
+                  FONT_SMALL, (CENTER_X, self.SUBTITLE_Y), C.INK, outline=C.WHITE)
         sp = self.app.sprites
         for i in (0, 1):
             cid = CHARACTER_IDS[self.cursor[i]]
             ch = CHARACTERS_BY_ID[cid]
-            x = 250 if i == 0 else 1030
-            f = 1 if i == 0 else -1
-            tag = pygame.Rect(0, 0, 300, 70)
-            tag.midtop = (x, 108)
+            x = PLAYER_X[i]
+            tag = pygame.Rect((0, 0), self.TAG)
+            tag.midtop = (x, self.TAG_TOP)
             inner = panel(surf, tag)
-            pygame.draw.rect(surf, PLAYER_COLORS[i], (inner.left, inner.top, inner.width, 6))
-            draw_text(surf, f"{PLAYER_LABELS[i]}  {short_name(ch).upper()}", 24, (x, inner.top + 22),
-                      PLAYER_COLORS[i], outline=C.INK)
-            draw_text(surf, f"{ch['team']} - camiseta {ch['number']}", 16, (x, inner.top + 44), C.INK, outline=None)
+            pygame.draw.rect(surf, PLAYER_COLORS[i], (inner.left, inner.top, inner.width, self.TAG_BAR_H))
+            draw_text(surf, f"{PLAYER_LABELS[i]}  {short_name(ch).upper()}", FONT_TEXT,
+                      (x, inner.top + self.TAG_NAME_Y), PLAYER_COLORS[i], outline=C.INK)
+            draw_text(surf, f"{ch['team']} - camiseta {ch['number']}", FONT_SMALL, (x, inner.top + self.TAG_TEAM_Y),
+                      C.INK, outline=None)
             # pedestal y jugador (festeja al confirmar)
-            ped = pygame.Rect(0, 0, 200, 18)
-            ped.midtop = (x, 376)
+            ped = pygame.Rect((0, 0), self.PEDESTAL)
+            ped.midtop = (x, self.PEDESTAL_TOP)
             bevel_box(surf, ped, C.STRUCT, shadow=True)
+            ang, bob = celebrate_pose(self.t) if self.ready[i] else idle_pose(self.t, i)
+            img, (fx, fy) = sp.player(cid, FACING[i], ang, bob, PLAYER_COLORS[i], False, self.PLAYER_SCALE)
+            surf.blit(img, (x - fx, self.FEET_Y - fy))
             if self.ready[i]:
-                ang, bob = -50 + 50 * math.sin(self.t * 14), -int(abs(math.sin(self.t * 7)) * 6)
-            else:
-                ang, bob = 0, (-1 if (self.t * 1.6 + i * 0.5) % 2 < 1 else 0)
-            img, (fx, fy) = sp.player(cid, f, ang, bob, PLAYER_COLORS[i], False, 1.9)
-            surf.blit(img, (x - fx, 380 - fy))
-            if self.ready[i]:
-                draw_text(surf, "¡LISTO!", 32, (x + (170 if i == 0 else -170), 300 + (4 if int(self.t * 6) % 2 else 0)),
+                bob = self.READY_BOB_PX if int(self.t * self.READY_BOB_HZ) % 2 else 0
+                draw_text(surf, "¡LISTO!", FONT_LARGE, (x + self.READY_X * FACING[i], self.READY_Y + bob),
                           C.GREEN, kind="title", outline=C.INK, shadow=True)
             b = self.buttons(i)
             hv = self.hover
-            button(surf, b["prev"], "◄", hv == (i, "prev"), not self.ready[i], 24, self.t)
-            button(surf, b["ok"], "CANCELAR" if self.ready[i] else "OK", hv == (i, "ok"), True, 24, self.t)
-            button(surf, b["next"], "►", hv == (i, "next"), not self.ready[i], 24, self.t)
+            button(surf, b["prev"], "◄", hv == (i, "prev"), not self.ready[i], FONT_TEXT, self.t)
+            button(surf, b["ok"], "CANCELAR" if self.ready[i] else "OK", hv == (i, "ok"), True, FONT_TEXT, self.t)
+            button(surf, b["next"], "►", hv == (i, "next"), not self.ready[i], FONT_TEXT, self.t)
             names = PLAYER_KEYS[i]
             hint = (f"{key_label(names['left'], True)}/{key_label(names['right'], True)} elegir  "
                     f"{key_label(names['kick'], True)} confirmar  {key_label(names['jump'], True)} cancelar")
-            draw_text(surf, hint, 16, (x, 458), C.INK, outline=C.WHITE)
-        draw_text(surf, "VS", 72, (640, 280), C.WHITE, kind="title", outline=C.INK, shadow=True)
-        for k, cid in enumerate(CHARACTER_IDS):
-            r = self.card_rect(k)
+            draw_text(surf, hint, FONT_SMALL, (x, self.HINT_Y), C.INK, outline=C.WHITE)
+        draw_text(surf, "VS", FONT_BANNER, (CENTER_X, self.VS_Y), C.WHITE, kind="title", outline=C.INK, shadow=True)
+        pad_x, pad_y = self.LABEL_PAD
+        for k in range(len(CHARACTER_IDS)):
             sel = [i for i in (0, 1) if self.cursor[i] == k]
-            rr = r.move(0, -8 if sel else 0)
-            pygame.draw.rect(surf, C.INK, rr.move(6, 6))
-            surf.blit(sp.portrait(cid), rr)
-            pygame.draw.rect(surf, C.INK, rr, 4)
-            ch = CHARACTERS_BY_ID[cid]
-            draw_text(surf, short_name(ch).upper(), 16, (rr.centerx, rr.bottom - 14), C.WHITE, outline=C.INK)
+            rr = draw_card(surf, sp, k, bool(sel))
             for n, i in enumerate(sel):
-                inset = 6 * n if len(sel) == 2 else 0
-                fr = rr.inflate(12 - inset * 2, 12 - inset * 2)
-                pygame.draw.rect(surf, PLAYER_COLORS[i], fr, 6)
-                lab = text(PLAYER_LABELS[i], 16, C.WHITE, outline=C.INK)
-                pos = (fr.left + 6, fr.top - 12) if i == 0 else (fr.right - lab.get_width() - 6, fr.top - 12)
-                pygame.draw.rect(surf, PLAYER_COLORS[i], (pos[0] - 4, pos[1] - 2, lab.get_width() + 8,
-                                                          lab.get_height() + 4))
+                inset = SELECTION_LINE * n if len(sel) == 2 else 0
+                grow = 2 * SELECTION_MARGIN - inset * 2
+                fr = rr.inflate(grow, grow)
+                pygame.draw.rect(surf, PLAYER_COLORS[i], fr, SELECTION_LINE)
+                lab = text(PLAYER_LABELS[i], FONT_SMALL, C.WHITE, outline=C.INK)
+                top = fr.top - self.LABEL_RAISE
+                pos = ((fr.left + self.LABEL_INSET_X, top) if i == 0
+                       else (fr.right - lab.get_width() - self.LABEL_INSET_X, top))
+                pygame.draw.rect(surf, PLAYER_COLORS[i], (pos[0] - pad_x, pos[1] - pad_y, lab.get_width() + 2 * pad_x,
+                                                          lab.get_height() + 2 * pad_y))
                 surf.blit(lab, pos)
         if all(self.ready):
-            draw_text(surf, "¡A LA CANCHA!", 40, (640, 360), C.GOLD, kind="title", outline=C.INK, shadow=True)
-        footer(surf, "Esc: volver  -  Mouse: botones de cada jugador; clic izquierdo en una tarjeta elige J1, derecho J2")
+            draw_text(surf, "¡A LA CANCHA!", FONT_TITLE_S, (CENTER_X, self.GO_Y), C.GOLD, kind="title", outline=C.INK,
+                      shadow=True)
+        footer(surf, "Esc: volver  -  Mouse: botones de cada jugador; "
+                     "clic izquierdo en una tarjeta elige J1, derecho J2")
         self.back_button.draw(surf, self.t)
 
 
@@ -189,6 +253,47 @@ class MatchScreen(Screen):
     """Partido. El Mundialito la extiende redefiniendo los métodos "gancho"
     (extra_payload, controls, pause_items, on_match_over); el modo
     Multijugador Local usa los valores de esta clase."""
+    PAUSE_MENU_CENTER = (CENTER_X, 420)  # botones del menú de pausa
+    PAUSE_MENU_W = 380                 # ancho de esos botones
+    PAUSE_BOX = (560, 380)             # recuadro de la pausa (ancho, alto)
+    PAUSE_CENTER = (CENTER_X, 390)     # centro de ese recuadro
+    PAUSE_TITLE_Y = 34                 # "PAUSA", desde arriba del recuadro
+    PAUSE_REASON_Y = 78                # motivo de la pausa, desde arriba del recuadro
+    PAUSE_TEXT_MARGIN = 20             # px de aire a los costados del motivo
+    PAUSE_STATUS_Y = 30                # "Pausando..." / "Reanudando...", bajo el centro del recuadro
+    MESSAGE_Y = 330                    # "Preparando partido..." y "¡FINAL DEL PARTIDO!"
+    MESSAGE_NOTE_Y = 380               # aclaración bajo "Preparando partido..."
+    GOLDEN_GOAL_BANNER = 2.5           # s que se muestra el cartel de gol de oro
+    KICKOFF_BANNER = 0.8               # s que se muestra el "¡YA!"
+    GOAL_SHAKE = 0.25                  # s que tiembla la cámara con el gol
+    CONFETTI_INSET = 50                # px desde el costado de la cancha donde salen los papelitos del gol
+    CONFETTI_HEIGHT = 120              # px sobre el piso donde salen esos papelitos
+    FINAL_WAIT = 1.8                   # s entre el pitazo final y la pantalla del resultado
+    WHOOSH_VOLUME = 0.7                # volumen del "fiuu" de la patada
+    HARD_HIT_SPEED = 1100              # px/s: a esta velocidad de la pelota el golpe suena (y se ve) al máximo
+    HEADER_MIN_VOLUME = 0.5            # volumen del cabezazo más suave (el más fuerte suena a 1)
+    HEADER_MIN_FLASH = 0.5             # tamaño del destello del cabezazo más suave
+    BAR_MIN_VOLUME = 0.4               # volumen del golpe más suave en el travesaño
+    BOUNCE_MIN_VOLUME = 0.3            # volumen del pique más suave
+    DUST_SPEED = 350                   # px/s: un pique más fuerte que esto levanta polvo
+    TOAST_TIME = 2.6                   # s que dura un aviso de poder
+    MAX_TOASTS = 3                     # avisos visibles a la vez (los más nuevos)
+    TOAST_BLINK_TIME = 0.3             # s finales en los que el aviso parpadea antes de irse
+    TOAST_BLINK_HZ = 20                # cambios por segundo de ese parpadeo
+    TOAST_H = 40                       # px: alto de un aviso
+    TOAST_TOP = 170                    # borde superior del primer aviso
+    TOAST_STEP = 46                    # px entre avisos
+    TOAST_PADDING = 28                 # px que se suman al texto (márgenes y franja de color)
+    TOAST_ICON_ROOM = 30               # px extra si el aviso lleva ícono
+    TOAST_BAR_W = 6                    # franja con el color de la categoría
+    TOAST_TEXT_X = 12                  # ícono o texto, desde el borde izquierdo
+    TOAST_ICON = 28                    # px: ícono del poder
+    TOAST_ICON_ADVANCE = 34            # px que ocupa el ícono con su separación
+    TEST_PANEL = (8, 646, 600, 68)     # recuadro del modo prueba, abajo a la izquierda (x, y, ancho, alto)
+    TEST_ICON = 44                     # px: ícono del poder elegido
+    TEST_ICON_INSET = 6                # ícono, desde la esquina del recuadro
+    TEST_TEXT_X = 60                   # textos, desde el borde izquierdo
+    TEST_LINE_Y = (8, 32)              # los dos renglones, desde el borde superior
 
     def __init__(self, app, characters):
         super().__init__(app)
@@ -200,7 +305,7 @@ class MatchScreen(Screen):
         self.waiting = None          # "start" | "restart" mientras falta la confirmación
         self.pause_state = None      # None | "requested" | "paused" | "resuming"
         self.pause_reason = None
-        self.pause_menu = Menu(self.pause_items(), (640, 420), width=380)
+        self.pause_menu = Menu(self.pause_items(), self.PAUSE_MENU_CENTER, width=self.PAUSE_MENU_W)
         self.end_info = None
         self.end_timer = 0.0
         self.toasts = []
@@ -356,27 +461,27 @@ class MatchScreen(Screen):
         elif cmd == P.CMD_RESUME:
             self.pause_state = None if m["ok"] else "paused"
         elif cmd == P.CMD_DEBUG_POWER and not m["ok"]:
-            self.toast(f"Prueba rechazada: {m.get('detail', '')}", (255, 120, 120))
+            self.toast(f"Prueba rechazada: {m.get('detail', '')}", C.SOFT_RED)
 
     def _on_event(self, m):
         t = m["type"]
         au, fx, st = self.app.audio, self.app.fx, self.state
         if t == P.EV_GOLDEN_GOAL:
-            self.renderer.golden_flash = 2.5
+            self.renderer.golden_flash = self.GOLDEN_GOAL_BANNER
             au.play("whistle")
         elif t == P.EV_KICKOFF:
-            self.renderer.kickoff_flash = 0.8
+            self.renderer.kickoff_flash = self.KICKOFF_BANNER
             au.play("go")
             au.play("whistle")
         elif t == P.EV_GOAL:
             self.renderer.goal_banner = (MatchRules.GOAL_CELEBRATION, m)
-            gx = 50 if m["side"] == 0 else Arena.WIDTH - 50
-            fx.confetti(gx, Arena.FLOOR_Y - 120, [PLAYER_COLORS[m["scorer"]], C.WHITE, C.GOLD])
-            fx.shake = 0.25
+            gx = self.CONFETTI_INSET if m["side"] == 0 else Arena.WIDTH - self.CONFETTI_INSET
+            fx.confetti(gx, Arena.FLOOR_Y - self.CONFETTI_HEIGHT, [PLAYER_COLORS[m["scorer"]], C.WHITE, C.GOLD])
+            fx.shake = self.GOAL_SHAKE
             au.play("goal")
         elif t == P.EV_MATCH_END:
             self.end_info = m
-            self.end_timer = 1.8
+            self.end_timer = self.FINAL_WAIT
             au.play("whistle_end")
         elif t == P.EV_PAUSED:
             self.pause_state = "paused"
@@ -395,44 +500,44 @@ class MatchScreen(Screen):
             txt = f"{who}: {pdef.name}" + (f"  (sobre {targets})" if targets else "")
             self.toast(txt, col, m["power"])
         elif t == P.EV_POWER_SPAWN:
-            fx.ring(m["x"], m["y"], 10, 60, 0.35, CATEGORY_COLORS[POWERS_BY_ID[m["power"]].category], 4)
+            fx.power_spawn(m["x"], m["y"], CATEGORY_COLORS[POWERS_BY_ID[m["power"]].category])
             au.play("spawn")
         elif t == P.EV_PICKUP_EXPIRED:
-            fx.burst(m["x"], m["y"], 14, (230, 230, 240), speed=(40, 120), g=0, kind="puff", size=(4, 8))
+            fx.vanish(m["x"], m["y"])
         elif t == P.EV_BOMB_ARMED:
             au.play("bomb_tick")
         elif t == P.EV_BOMB_EXPLODE:
             fx.explosion(m["x"], m["y"], m["radius"])
             au.play("explosion")
         elif t == P.EV_KICK:
-            au.play("whoosh", 0.7)
+            au.play("whoosh", self.WHOOSH_VOLUME)
         elif t == P.EV_KICK_BLOCKED:
             au.play("blocked")
             if st:
                 p = st["players"][m["player"]]
-                fx.burst(p["x"] + 30 * p["facing"], p["y"] - 20, 8, (255, 80, 80), speed=(40, 120), g=0)
+                fx.kick_blocked(p["x"], p["y"], p["facing"])
         elif t == P.EV_TOUCH:
             kind, sp = m["kind"], m.get("speed", 0)
-            k = min(1.0, sp / 1100)
+            k = min(1.0, sp / self.HARD_HIT_SPEED)       # fuerza del golpe, de 0 a 1
             if kind == "kick":
                 au.play("kick")
-                fx.impact(m["x"], m["y"], 1.0, (255, 245, 200))
+                fx.kick_impact(m["x"], m["y"])
             elif kind == "head":
-                au.play("header", 0.5 + 0.5 * k)
-                fx.impact(m["x"], m["y"], 0.5 + k * 0.5)
+                au.play("header", by_strength(self.HEADER_MIN_VOLUME, k))
+                fx.impact(m["x"], m["y"], by_strength(self.HEADER_MIN_FLASH, k))
             elif kind == "bar":
-                au.play("post", 0.4 + 0.6 * k)
-                fx.impact(m["x"], m["y"], k, (255, 255, 255))
+                au.play("post", by_strength(self.BAR_MIN_VOLUME, k))
+                fx.impact(m["x"], m["y"], k)
             elif kind == "floor":
-                au.play("bounce", 0.3 + 0.7 * k)
-                if sp > 350:
+                au.play("bounce", by_strength(self.BOUNCE_MIN_VOLUME, k))
+                if sp > self.DUST_SPEED:
                     fx.dust(m["x"], Arena.FLOOR_Y, k)
             else:
-                au.play("bounce", 0.3 + 0.7 * k)
+                au.play("bounce", by_strength(self.BOUNCE_MIN_VOLUME, k))
 
     def toast(self, txt, color, power=None):
-        self.toasts.append([txt, color, 2.6, power])
-        self.toasts = self.toasts[-3:]
+        self.toasts.append([txt, color, self.TOAST_TIME, power])
+        self.toasts = self.toasts[-self.MAX_TOASTS:]
 
     # ------------------------------------------------------------------ ciclo
     def update(self, dt):
@@ -459,8 +564,8 @@ class MatchScreen(Screen):
             self.last_count = None
         if st:
             for p in st["players"]:
-                if p["frozen"] and int(self.t * 20) % 3 == 0:
-                    self.app.fx.snow(p["x"] + (self.t * 97 % 60) - 30, p["y"] - 120 * p["scale"])
+                if p["frozen"]:
+                    self.app.fx.frozen(self.t, p["x"], p["y"], p["scale"])
         if self.end_info is not None:
             self.end_timer -= dt
             if self.end_timer <= 0:
@@ -471,10 +576,11 @@ class MatchScreen(Screen):
         st = self.state
         if st is None:
             surf.blit(self.app.background, (0, 0))
-            dim(surf, 120)
+            dim(surf, VEIL_OVERLAY)
             msg = "Preparando partido..." if self.waiting != "restart" else "Reiniciando partido..."
-            title(surf, msg, (640, 330), 32, C.WHITE)
-            draw_text(surf, "Esperando la confirmación de la simulación", 16, (640, 380), C.INK, outline=C.WHITE)
+            title(surf, msg, (CENTER_X, self.MESSAGE_Y), FONT_LARGE, C.WHITE)
+            draw_text(surf, "Esperando la confirmación de la simulación", FONT_SMALL, (CENTER_X, self.MESSAGE_NOTE_Y),
+                      C.INK, outline=C.WHITE)
             return
         off = self.app.fx.shake_offset()
         self.renderer.draw_world(surf, st, off)
@@ -483,7 +589,7 @@ class MatchScreen(Screen):
         self.renderer.draw_center_messages(surf, st)
         self._draw_toasts(surf)
         if self.end_info is not None:
-            title(surf, "¡FINAL DEL PARTIDO!", (640, 330), 56, C.WHITE)
+            title(surf, "¡FINAL DEL PARTIDO!", (CENTER_X, self.MESSAGE_Y), FONT_TITLE_L, C.WHITE)
         if self.app.options.test_mode:
             self._draw_test_panel(surf)
         self.pause_button.visible = self.pause_state is None and self.end_info is None
@@ -493,48 +599,51 @@ class MatchScreen(Screen):
 
     def _draw_toasts(self, surf):
         for k, (txt, col, left, power) in enumerate(self.toasts):
-            if left < 0.3 and int(left * 20) % 2:
+            if left < self.TOAST_BLINK_TIME and int(left * self.TOAST_BLINK_HZ) % 2:
                 continue                                  # parpadeo retro al desaparecer
-            img = text(txt, 16, C.INK, outline=None)
-            w = img.get_width() + (58 if power else 28)
-            r = pygame.Rect(0, 0, w, 40)
-            r.midtop = (640, 170 + k * 46)
+            img = text(txt, FONT_SMALL, C.INK, outline=None)
+            w = img.get_width() + self.TOAST_PADDING + (self.TOAST_ICON_ROOM if power else 0)
+            r = pygame.Rect(0, 0, w, self.TOAST_H)
+            r.midtop = (CENTER_X, self.TOAST_TOP + k * self.TOAST_STEP)
             inner = bevel_box(surf, r, C.CREAM)
-            pygame.draw.rect(surf, col, (inner.left, inner.top, 6, inner.height))
-            x = inner.left + 12
+            pygame.draw.rect(surf, col, (inner.left, inner.top, self.TOAST_BAR_W, inner.height))
+            x = inner.left + self.TOAST_TEXT_X
             if power:
-                surf.blit(power_icon(power, 28), (x, r.centery - 14))
-                x += 34
+                surf.blit(power_icon(power, self.TOAST_ICON), (x, r.centery - self.TOAST_ICON // 2))
+                x += self.TOAST_ICON_ADVANCE
             surf.blit(img, (x, r.centery - img.get_height() // 2))
 
     def _draw_test_panel(self, surf):
         power = POWER_IDS[self.test_sel]
         pdef = POWERS_BY_ID[power]
-        r = pygame.Rect(8, 646, 600, 68)
+        r = pygame.Rect(self.TEST_PANEL)
         inner = bevel_box(surf, r, C.GOLD)
-        surf.blit(power_icon(power, 44), (inner.left + 6, inner.top + 6))
-        draw_text(surf, f"MODO PRUEBA - {pdef.name}", 16, (inner.left + 60, inner.top + 8), C.INK,
-                  anchor="topleft", outline=None)
-        draw_text(surf, "F5/F6 elegir  F7 generar  F8 dar al de la izq.  F9 al de la der.  F12 fallo", 16,
-                  (inner.left + 60, inner.top + 32), C.INK, anchor="topleft", outline=None)
+        surf.blit(power_icon(power, self.TEST_ICON), (inner.left + self.TEST_ICON_INSET,
+                                                      inner.top + self.TEST_ICON_INSET))
+        first, second = self.TEST_LINE_Y
+        draw_text(surf, f"MODO PRUEBA - {pdef.name}", FONT_SMALL, (inner.left + self.TEST_TEXT_X, inner.top + first),
+                  C.INK, anchor="topleft", outline=None)
+        draw_text(surf, "F5/F6 elegir  F7 generar  F8 dar al de la izq.  F9 al de la der.  F12 fallo", FONT_SMALL,
+                  (inner.left + self.TEST_TEXT_X, inner.top + second), C.INK, anchor="topleft", outline=None)
 
     def _draw_pause(self, surf):
-        dim(surf, 120)
-        r = pygame.Rect(0, 0, 560, 380)
-        r.center = (640, 390)
+        dim(surf, VEIL_OVERLAY)
+        r = pygame.Rect((0, 0), self.PAUSE_BOX)
+        r.center = self.PAUSE_CENTER
         inner = panel(surf, r)
-        title(surf, "PAUSA", (640, inner.top + 34), 48)
+        title(surf, "PAUSA", (CENTER_X, inner.top + self.PAUSE_TITLE_Y), FONT_TITLE)
         reason = {P.PAUSE_REASON_FOCUS: "La ventana perdió el foco: se liberaron los controles.",
                   P.PAUSE_REASON_WATCHDOG: "Pausa automática: la simulación dejó de recibir controles."}.get(
             self.pause_reason, "El reloj, los poderes y las bombas están detenidos.")
-        for k, ln in enumerate(wrap(reason, 16, inner.width - 20)):
-            draw_text(surf, ln, 16, (640, inner.top + 78 + k * 22), C.INK, outline=None)
+        for k, ln in enumerate(wrap(reason, FONT_SMALL, inner.width - self.PAUSE_TEXT_MARGIN)):
+            draw_text(surf, ln, FONT_SMALL, (CENTER_X, inner.top + self.PAUSE_REASON_Y + k * TEXT_LINE_H), C.INK,
+                      outline=None)
         if self.pause_state == "paused":
             self.pause_menu.draw(surf)
         else:
             msg = {"requested": "Pausando... esperando confirmación de la simulación",
                    "resuming": "Reanudando..."}.get(self.pause_state, "")
-            draw_text(surf, msg, 16, (640, r.centery + 30), C.INK, outline=None)
+            draw_text(surf, msg, FONT_SMALL, (CENTER_X, r.centery + self.PAUSE_STATUS_Y), C.INK, outline=None)
 
     def debug_info(self):
         st = self.state or {}
@@ -552,13 +661,30 @@ class MatchScreen(Screen):
 # Resultado
 # ---------------------------------------------------------------------------
 class ResultScreen(Screen):
+    MENU_CENTER = (CENTER_X, 560)      # botones Revancha / Elegir personajes / Menú principal
+    MENU_W = 380                       # ancho de esos botones
+    MENU_BUTTON_H = 52                 # alto de esos botones (más bajos que los del menú: son tres)
+    MENU_GAP = 10                      # px entre esos botones
+    MENU_FONT = 26                     # tamaño de letra de esos botones
+    PLAYER_X = (330, 950)              # x de cada jugador
+    FEET_Y = 470                       # y de los pies de los jugadores
+    NAME_Y = 500                       # nombre de cada jugador
+    WINNER_SCALE = 2.4                 # el ganador se ve más grande...
+    LOSER_SCALE = 1.8                  # ...que el que perdió (o los dos, si empataron)
+    CONFETTI_EVERY = 1.4               # s entre tandas de papelitos sobre el ganador
+    CONFETTI_Y = 380                   # altura de donde salen esos papelitos
+    HEADLINE_Y = 80                    # "¡GANÓ ...!" / "¡EMPATE!"
+    SCORE_CENTER = (CENTER_X, 290)     # tablero con el resultado
+    SCORE_W = 300                      # ancho del tablero
+
     def __init__(self, app, chars, end_info, last_state):
         super().__init__(app)
         self.chars = chars
         self.score = end_info["score"]
         self.winner = end_info["winner"]
         self.menu = Menu([("Revancha", self.rematch), ("Elegir personajes", self.choose),
-                          ("Menú principal", self.to_menu)], (640, 560), width=380, height=52, gap=10, size=26)
+                          ("Menú principal", self.to_menu)], self.MENU_CENTER, width=self.MENU_W,
+                         height=self.MENU_BUTTON_H, gap=self.MENU_GAP, size=self.MENU_FONT)
         self.confetti_t = 0.0
 
     def enter(self):
@@ -590,39 +716,29 @@ class ResultScreen(Screen):
         self.app.fx.update(dt)
         self.confetti_t -= dt
         if self.winner is not None and self.confetti_t <= 0:
-            self.confetti_t = 1.4
-            x = 330 if self.winner == 0 else 950
-            self.app.fx.confetti(x, 380, [PLAYER_COLORS[self.winner], C.WHITE, C.GOLD])
+            self.confetti_t = self.CONFETTI_EVERY
+            x = self.PLAYER_X[self.winner]
+            self.app.fx.confetti(x, self.CONFETTI_Y, [PLAYER_COLORS[self.winner], C.WHITE, C.GOLD])
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, 100)
+        dim(surf, VEIL_RESULT)
         sp = self.app.sprites
         for i in (0, 1):
             cid = self.chars[i]
-            x, f = (330, 1) if i == 0 else (950, -1)
+            x = self.PLAYER_X[i]
             win = self.winner == i
-            if win:
-                ang, bob = -50 + 50 * math.sin(self.t * 14), -int(abs(math.sin(self.t * 7)) * 6)
-            else:
-                ang, bob = 0, (-1 if (self.t * 1.6 + i * 0.5) % 2 < 1 else 0)
-            img, (fx, fy) = sp.player(cid, f, ang, bob, PLAYER_COLORS[i], False, 2.4 if win else 1.8)
-            surf.blit(img, (x - fx, 470 - fy))
-            draw_text(surf, self.name(i), 24, (x, 500), PLAYER_COLORS[i], outline=C.INK)
+            ang, bob = celebrate_pose(self.t) if win else idle_pose(self.t, i)
+            img, (fx, fy) = sp.player(cid, FACING[i], ang, bob, PLAYER_COLORS[i], False,
+                                      self.WINNER_SCALE if win else self.LOSER_SCALE)
+            surf.blit(img, (x - fx, self.FEET_Y - fy))
+            draw_text(surf, self.name(i), FONT_TEXT, (x, self.NAME_Y), PLAYER_COLORS[i], outline=C.INK)
         self.app.fx.draw(surf)
         if self.winner is None:
             head, col = "¡EMPATE!", C.WHITE
         else:
             head, col = f"¡GANÓ {self.name(self.winner).upper()}!", PLAYER_COLORS[self.winner]
-        title(surf, head, (640, 80), 56, col)
-        box = pygame.Rect(0, 0, 300, 110)
-        box.center = (640, 290)
-        pygame.draw.rect(surf, C.INK, box.move(6, 6))
-        pygame.draw.rect(surf, C.STRUCT_DARK, box)
-        pygame.draw.rect(surf, C.INK, box, 4)
-        led = box.inflate(-16, -16)
-        pygame.draw.rect(surf, C.LED_BG, led)
-        score = pixelfont.render_led(f"{self.score[0]}-{self.score[1]}", 9, C.LED_ON, C.LED_OFF)
-        surf.blit(score, score.get_rect(center=led.center))
+        title(surf, head, (CENTER_X, self.HEADLINE_Y), FONT_TITLE_L, col)
+        scoreboard(surf, self.SCORE_CENTER, self.SCORE_W, f"{self.score[0]}-{self.score[1]}")
         self.menu.draw(surf)
         footer(surf, "Revancha: mismos personajes  -  Elegir personajes: volver a la selección")

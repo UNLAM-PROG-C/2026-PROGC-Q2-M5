@@ -25,14 +25,32 @@ from ..config import (DEBUG_PANEL_KEY, FULLSCREEN_KEY, GAME_NAME, LOGICAL_HEIGHT
 from .assets import clear_caches, draw_text
 from . import palette as C
 from . import pixelfont
-from .audio import Audio
+from .audio import AUDIO_BITS, AUDIO_BUFFER, AUDIO_CHANNELS, AUDIO_RATE, Audio
 from .sprites import CharacterSprites
 from .fx import Effects
 from .input import InputTracker, key_code
+from .layout import FONT_SMALL
 from .screens import BootScreen, ErrorScreen, fps_value
 from .stadium import BallSprite, build_background
 
 log = logging.getLogger("fdc.ui")
+
+FPS_SAMPLES = 60            # cuadros que se promedian para mostrar los FPS
+EPSILON = 1e-6              # evita dividir por cero al promediar
+MAX_FRAME_DT = 0.1          # s: un cuadro muy atrasado cuenta como mucho esto (sin saltos enormes)
+ICON_SIZE = 64              # px: ícono de la ventana (la pelota del juego)
+ICON_BALL_RADIUS = 28       # px: radio de la pelota dibujada en el ícono
+ICON_BALL_ANGLE = 20        # grados: giro de la pelota del ícono (que se vean los gajos)
+# panel de depuración (F3)
+DEBUG_TEXT_SCALE = 2        # escala de la fuente pixel art en el panel
+DEBUG_LINE_H = 24           # px entre renglones
+DEBUG_PADDING = 24          # px de margen horizontal total del texto
+DEBUG_EXTRA_H = 14          # px de alto extra del recuadro
+DEBUG_MARGIN = 8            # px entre el recuadro y el borde de la pantalla
+DEBUG_TEXT_X = 20           # px: x del texto
+DEBUG_TEXT_TOP = 2          # px: separación del primer renglón
+DEBUG_ALPHA = 225           # opacidad del fondo del panel
+DEBUG_BORDER = 2            # px: grosor del marco dorado
 
 
 class FrameLimiter:
@@ -48,7 +66,7 @@ class FrameLimiter:
         self.period = 1.0 / fps
         self.deadline = time.perf_counter()
         self.last = self.deadline
-        self.samples = deque(maxlen=60)
+        self.samples = deque(maxlen=FPS_SAMPLES)
 
     def tick(self):
         self.deadline += self.period
@@ -67,14 +85,14 @@ class FrameLimiter:
     def get_fps(self):
         if not self.samples:
             return 0.0
-        return len(self.samples) / max(1e-6, sum(self.samples))
+        return len(self.samples) / max(EPSILON, sum(self.samples))
 
 
 class App:
     def __init__(self, options):
         self.options = options
         self.web = bool(getattr(options, "web", False))   # versión de navegador (pygbag)
-        pygame.mixer.pre_init(22050, -16, 1, 512)
+        pygame.mixer.pre_init(AUDIO_RATE, AUDIO_BITS, AUDIO_CHANNELS, AUDIO_BUFFER)
         pygame.init()
         pygame.display.set_caption(GAME_NAME)
         if self.web:
@@ -125,8 +143,9 @@ class App:
         self.current.enter()
 
     def _set_icon(self):
-        icon = pygame.Surface((64, 64), pygame.SRCALPHA)
-        self.ball_sprite.draw(icon, 32, 32, 28, 20)
+        icon = pygame.Surface((ICON_SIZE, ICON_SIZE), pygame.SRCALPHA)
+        center = ICON_SIZE // 2
+        self.ball_sprite.draw(icon, center, center, ICON_BALL_RADIUS, ICON_BALL_ANGLE)
         pygame.display.set_icon(icon)
 
     # ------------------------------------------------------------------ navegación
@@ -186,7 +205,7 @@ class App:
     # ------------------------------------------------------------------ bucle
     def frame(self):
         """Un cuadro: eventos -> mensajes de la SIM -> salud -> lógica de pantalla -> dibujo."""
-        dt = min(self.clock.tick(), 0.1)
+        dt = min(self.clock.tick(), MAX_FRAME_DT)
         for ev in pygame.event.get():
             self.handle_event(ev)
             if not self.running:
@@ -318,14 +337,16 @@ class App:
             (f"FPS UI {fps_value(self.clock):.0f}  |  física {PHYSICS_HZ} Hz  |  prueba: "
              f"{yes(self.options.test_mode)}  |  semilla {self.options.seed}", None),
         ]
-        w = max(pixelfont.text_width(t, 2) for t, _ in lines) + 24
-        h = len(lines) * 24 + 14
+        w = max(pixelfont.text_width(t, DEBUG_TEXT_SCALE) for t, _ in lines) + DEBUG_PADDING
+        h = len(lines) * DEBUG_LINE_H + DEBUG_EXTRA_H
+        top = LOGICAL_HEIGHT - h - DEBUG_MARGIN
         box = pygame.Surface((w, h), pygame.SRCALPHA)
-        box.fill((*C.INK, 225))
-        surf.blit(box, (8, 720 - h - 8))
-        pygame.draw.rect(surf, C.GOLD, (8, 720 - h - 8, w, h), 2)
+        box.fill((*C.INK, DEBUG_ALPHA))
+        surf.blit(box, (DEBUG_MARGIN, top))
+        pygame.draw.rect(surf, C.GOLD, (DEBUG_MARGIN, top, w, h), DEBUG_BORDER)
         for k, (t, col) in enumerate(lines):
-            draw_text(surf, t, 16, (20, 720 - h + 2 + k * 24), col or C.CREAM, anchor="topleft", outline=None)
+            draw_text(surf, t, FONT_SMALL, (DEBUG_TEXT_X, top + DEBUG_MARGIN + DEBUG_TEXT_TOP + k * DEBUG_LINE_H),
+                      col or C.CREAM, anchor="topleft", outline=None)
 
 
 def run_app(options):

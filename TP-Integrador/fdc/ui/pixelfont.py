@@ -7,8 +7,18 @@ escalado sin suavizado (píxeles nítidos, estilo retro).
 """
 import pygame
 
-BOX_H = 11
-LINE_H = 12
+from . import palette as C
+
+BOX_H = 11                  # filas de la caja de una letra (acentos + mayúsculas + descendentes)
+LINE_H = 12                 # filas entre renglones
+CAP_TOP = 2                 # primera fila de las mayúsculas (debajo de los acentos)
+BASELINE = 9                # fila siguiente a la línea base (donde terminan mayúsculas y dígitos)
+DEFAULT_SCALE = 2           # escala por defecto de la fuente
+CACHE_LIMIT = 800           # textos guardados antes de vaciar la caché
+LED_DOT = 4                 # px por lámpara del tablero LED
+LED_HIGHLIGHT = 70          # cuánto más clara es la luz de cada lámpara encendida
+LED_HIGHLIGHT_MIN = 3       # lámparas de este tamaño o más llevan su luz
+OUTLINE_OFFSETS = (-1, 0, 1)  # el contorno de 1 píxel se arma corriendo la letra a los vecinos
 
 # (fila superior, filas)
 G = {}
@@ -189,7 +199,7 @@ def _mask(text):
         for r, line in enumerate(rows):
             for cx, ch in enumerate(line):
                 if ch == "#":
-                    surf.set_at((x + cx, top + r), (255, 255, 255, 255))
+                    surf.set_at((x + cx, top + r), (*C.WHITE, C.OPAQUE))
         x += len(rows[0]) + 1
     return surf
 
@@ -197,7 +207,7 @@ def _mask(text):
 _cache = {}
 
 
-def render(text, scale=2, color=(255, 255, 255), outline=None, shadow=None, shadow_off=1):
+def render(text, scale=DEFAULT_SCALE, color=C.WHITE, outline=None, shadow=None, shadow_off=1):
     """Texto nítido. outline: color del contorno (1 píxel de la fuente);
     shadow: color de sombra desplazada hacia abajo-derecha."""
     key = (text, scale, tuple(color), tuple(outline) if outline else None,
@@ -213,31 +223,31 @@ def render(text, scale=2, color=(255, 255, 255), outline=None, shadow=None, shad
 
     def tinted(col):
         t = m.copy()
-        t.fill((*col[:3], 255), special_flags=pygame.BLEND_RGBA_MULT)
+        t.fill((*col[:C.RGB_CHANNELS], C.OPAQUE), special_flags=pygame.BLEND_RGBA_MULT)
         return t
     if shadow:
         sh = tinted(shadow)
         if outline:
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
+            for dx in OUTLINE_OFFSETS:
+                for dy in OUTLINE_OFFSETS:
                     base.blit(sh, (pad + dx + extra, pad + dy + extra))
         else:
             base.blit(sh, (extra, extra))
     if outline:
         ol = tinted(outline)
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
+        for dx in OUTLINE_OFFSETS:
+            for dy in OUTLINE_OFFSETS:
                 if dx or dy:
                     base.blit(ol, (pad + dx, pad + dy))
     base.blit(tinted(color), (pad, pad))
     s = pygame.transform.scale(base, (base.get_width() * scale, base.get_height() * scale))
-    if len(_cache) > 800:
+    if len(_cache) > CACHE_LIMIT:
         _cache.clear()
     _cache[key] = s
     return s
 
 
-def render_led(text, dot=4, on=(255, 196, 70), off=(58, 54, 50), bg=None):
+def render_led(text, dot=LED_DOT, on=C.LED_ON, off=C.LED_OFF, bg=None):
     """Texto de tablero: cada píxel de la fuente es una lámpara cuadrada."""
     key = ("led", text, dot, tuple(on), tuple(off) if off else None, tuple(bg) if bg else None)
     s = _cache.get(key)
@@ -245,18 +255,18 @@ def render_led(text, dot=4, on=(255, 196, 70), off=(58, 54, 50), bg=None):
         return s
     m = _mask(text)
     w, _ = m.get_size()
-    top, bottom = 2, 9          # sólo la franja de mayúsculas y dígitos
+    top, bottom = CAP_TOP, BASELINE          # sólo la franja de mayúsculas y dígitos
     s = pygame.Surface((w * dot + 1, (bottom - top) * dot + 1), pygame.SRCALPHA)
     if bg:
         s.fill(bg)
-    hi = tuple(min(255, c + 70) for c in on)
+    hi = tuple(min(C.MAX_CHANNEL, c + LED_HIGHLIGHT) for c in on)
     size = max(1, dot - 1)
     for y in range(top, bottom):
         for x in range(w):
             r = pygame.Rect(x * dot + 1, (y - top) * dot + 1, size, size)
             if m.get_at((x, y)).a > 0:
                 pygame.draw.rect(s, on, r)
-                if size >= 3:
+                if size >= LED_HIGHLIGHT_MIN:
                     pygame.draw.rect(s, hi, (r.x, r.y, size - 1, 1))
             elif off:
                 pygame.draw.rect(s, off, r)

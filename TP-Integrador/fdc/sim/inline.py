@@ -26,6 +26,7 @@ from .core import SimulationCore
 log = logging.getLogger("fdc.inline")
 
 
+
 class InlineSimulation(SimulationCore):
     """El núcleo con "colas" en memoria: listas que se vacían en cada cuadro."""
 
@@ -180,7 +181,7 @@ class InlineLink(MatchLink):
         lc = self.last_confirmed
         if lc:
             ok = "ok" if lc["ok"] else "rechazada"
-            rtt = f", {lc['rtt'] * 1000:.0f} ms" if lc["rtt"] is not None else ""
+            rtt = f", {lc['rtt'] * C.MS_PER_SECOND:.0f} ms" if lc["rtt"] is not None else ""
             confirmed = f"{lc['cmd']} #{lc['cid']} ({ok}{rtt}) hace {self.clock() - lc['at']:.1f} s"
         else:
             confirmed = "-"

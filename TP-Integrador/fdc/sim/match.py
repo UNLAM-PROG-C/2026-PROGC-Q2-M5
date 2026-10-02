@@ -22,9 +22,11 @@ from .powers import PowerManager, default_test_spawn
 # patada > cabeza > cuerpo; luego mayor velocidad de impacto; empate exacto ->
 # se conserva el último toque anterior.
 TOUCH_PRIORITY = {"kick": 3, "head": 2, "body": 1}
-SOUND_COOLDOWN = 0.07
+SOUND_COOLDOWN = 0.07     # s mínimos entre dos sonidos del mismo tipo (rebotes seguidos)
 KICK_BALL_IGNORE = 0.12   # s sin choque entre la pelota y quien la acaba de patear
 NET_DAMPING = 7.0   # 1/s: frenado de la red durante la celebración
+NET_ZONE = 40       # px desde la línea de gol en los que la red frena la pelota durante la celebración
+SEED_BITS = 31      # la semilla al azar es un entero de 31 bits (cabe en cualquier plataforma)
 
 
 class Match:
@@ -33,7 +35,7 @@ class Match:
         # gol de oro: si el tiempo termina empatado, el próximo gol gana (Mundialito)
         self.golden_goal = golden_goal
         self.golden = False
-        self.seed = seed if seed is not None else random.randrange(2 ** 31)
+        self.seed = seed if seed is not None else random.getrandbits(SEED_BITS)
         self.rng = random.Random(self.seed)
         # Los personajes sólo se guardan para el registro: la física usa
         # siempre las mismas capacidades base (config.PlayerSpec).
@@ -124,7 +126,7 @@ class Match:
             self.phase_left -= dt
             self._physics(dt, controls=False)
             # la red amortigua: la pelota queda adentro durante la celebración
-            if any(g.ball_inside(self.ball) or abs(self.ball.x - g.mouth_x) < 40 for g in self.goals):
+            if any(g.ball_inside(self.ball) or abs(self.ball.x - g.mouth_x) < NET_ZONE for g in self.goals):
                 k = math.exp(-NET_DAMPING * dt)
                 self.ball.vx *= k
                 self.ball.vy *= k if self.ball.vy < 0 else 1.0

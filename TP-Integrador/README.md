@@ -284,7 +284,7 @@ Tampoco hay hilos, semáforos ni procesos decorativos: en el modo local, los ún
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Son 99 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
+Son 102 pruebas y tardan unos 100 s. Usan `unittest`; las del online necesitan además `websockets` (`requirements-online.txt`).
 
 | Archivo | Qué prueba |
 |---|---|
@@ -297,6 +297,7 @@ Son 99 pruebas y tardan unos 95 s. Usan `unittest`; las del online necesitan ade
 | `test_inline.py` | La simulación dentro de la página (versión de navegador): READY, ACK, estados con número, controles con contadores, pausa con el reloj congelado, sin "ponerse al día" de golpe tras una traba, error informado sin romper la interfaz. También prueba la **app en modo navegador** sin procesos: menú sin *Salir*, Mundialito (moverse, pausa, abandonar), multijugador local con los dos jugadores moviéndose y entrada al online |
 | `test_online_ui.py` | La **aplicación de escritorio** sin ventana contra un servidor real, con un rival de prueba: nombre, lista, sala privada con contraseña, elegir personaje, listo, partido (el movimiento lo decide el servidor), pausa pedida con el aviso bajo el marcador, abandono del rival y resultado |
 | `test_mundialito.py` | Torneo (los 6 rivales, avance, puestos al perder, campeón) y rival automático (no aprieta teclas fuera del juego, le gana a un jugador quieto, el nivel más alto le gana al más bajo). El gol de oro está en `test_match.py` |
+| `test_constantes.py` | La regla de **"sin números mágicos"** (ver la sección 10): recorre todo el código Python y falla si dentro de una función aparece un número que no sea 0, 1, -1, 2 o 0,5, o si una constante con números no tiene su comentario |
 | `test_ui_smoke.py` | La **aplicación completa** sin ventana visible (SDL `dummy`) manejada con eventos de teclado. Recorre menú, Jugar > Multijugador > Online (pide el nombre y vuelve sin conectarse) y Local, controles, leyenda, selección del mismo personaje, movimiento, salto, poder, pausa confirmada, pérdida de foco, reinicio, final, revancha, vuelta al menú y cierre ordenado. También prueba un Mundialito (elegir, jugar con las dos combinaciones de teclas, resultado, progreso guardado al ir al menú y abandono desde la pausa), la pantalla de error y *Reintentar* | También prueba que el nombre se pide al empezar (y no se puede dejar vacío), que queda guardado y que al cambiarlo desde el menú se conserva el mismo jugador.
 
 Durante las pruebas se ven en la salida trazas de error y avisos que son esperados:
@@ -313,7 +314,10 @@ Durante las pruebas se ven en la salida trazas de error y avisos que son esperad
 - el **último mensaje confirmado**, con su `cid`, resultado y tiempo de ida y vuelta, y la cantidad de órdenes sin confirmar;
 - los controles enviados y los reemplazados, y los estados y eventos recibidos;
 - los estados ignorados (de otro partido o viejos), los reemplazados por la simulación y los eventos cosméticos descartados;
-- los FPS, el modo de prueba y la semilla.
+- los FPS, el modo de prueba y la semilla;
+- **en un partido online**, los datos de la sala que manda el servidor: su pid, el pid del proceso de simulación de esa sala, los estados y controles por segundo, el último ACK y la pausa.
+
+**Panel del servidor** (online): `http://…/estado` muestra en vivo los procesos de cada sala, las tareas `asyncio`, los hilos y el tráfico; `/estado/completo` agrega los jugadores y pide contraseña (`--clave-panel` o `FDC_CLAVE_PANEL`). Ver [docs/ONLINE.md](docs/ONLINE.md#panel-del-servidor-para-ver-la-concurrencia-en-vivo).
 
 ---
 
@@ -336,7 +340,8 @@ Durante las pruebas se ven en la salida trazas de error y avisos que son esperad
 12. **Online: un proceso por sala.** Levantá `servidor.py` y jugá un partido entre dos navegadores. Con `ps -ef | grep multiprocessing` aparece un proceso de simulación nuevo por cada sala en juego, y `logs/servidor.log` muestra cuándo se lanza y su cierre ordenado al terminar la sala.
 13. **Online: desconexión.** Cerrá la pestaña de un jugador en pleno partido: el otro ve «perdió la conexión» con la cuenta de 30 s y el reloj se detiene. Si se vuelve a abrir la página a tiempo, el partido sigue; si no, gana el que se quedó.
 14. **Online: pausa sin cortar la jugada.** Con `Esc`, el aviso «*usuario* pidió la pausa» aparece bajo el marcador y el partido sigue hasta el próximo gol. Recién ahí se pausa, y sigue con los dos «listo» o a los 30 s.
-15. **Código del online para mostrar:**
+15. **Online: el panel del servidor.** Con dos partidos a la vez, abrí `/estado`: hay dos procesos de simulación con pid distintos, una tarea lectora y una escritora por conexión y un puente por sala, todo en un solo hilo de `asyncio`. En el partido, F3 muestra el pid del proceso de esa sala y el tiempo de los ACK. Funciona igual con el dominio.
+16. **Código del online para mostrar:**
     - `RoomRunner.tick()` en `fdc/online/server.py`: el puente sala ↔ proceso, los estados reemplazables, la pausa y el plazo;
     - `Session.send_text()`: la política de la cola de salida de cada conexión;
     - `ThreadTransport` en `fdc/online/client.py`: el hilo lector con su cola acotada.
@@ -360,7 +365,8 @@ fdc/sim/match.py          partido: fases, reloj, goles, último toque, estado se
 fdc/sim/physics.py        pelota, jugadores (cabeza + botín), arcos, colisiones, subpasos
 fdc/sim/powers.py         objetos, efectos, reemplazo/renovación, bombas
 fdc/online/lobby.py       salas del online: usuarios, salas, contraseñas, lados (lógica pura, sin red)
-fdc/online/server.py      servidor asyncio: sesiones, reconexión, un proceso de simulación por sala
+fdc/online/server.py      servidor asyncio: sesiones, reconexión, un proceso de simulación por sala, panel /estado
+fdc/online/panel.html     página del panel del servidor (se actualiza sola cada segundo)
 fdc/online/client.py      cliente (escritorio: hilo + cola acotada; navegador: WebSocket de JS)
 fdc/online/wire.py        mensajes online en JSON: validación y compactación de estados
 fdc/online/interp.py      suavizado del movimiento entre estados en el cliente online
@@ -368,6 +374,7 @@ fdc/mundialito.py         torneo del Mundialito: etapas, avance, puestos, campe�
 fdc/profile.py            nombre del jugador (se elige una vez) e id propio; se guarda en la compu o el navegador
 fdc/bot.py                rival automático: mira el estado y genera pulsaciones (6 niveles)
 fdc/ui/app.py             ventana, bucle de cuadros, eventos, foco, panel F3, cierre
+fdc/ui/layout.py          medidas comunes de la interfaz: tamaños de letra, velos, ritmos, botones
 fdc/ui/screens.py         arranque, menú, controles, leyenda, error, botones retro
 fdc/ui/match_screens.py   selección (teclado y mouse), partido (pausa, reinicio, prueba), resultado
 fdc/ui/mundialito_screens.py  elección, llave del torneo, partido contra la CPU, resultado y copa
@@ -396,6 +403,16 @@ docs/CONCURRENCIA.md      cómo funciona la concurrencia en todo el juego (proce
 web/plantilla.tmpl        pantalla de carga de la página (estadio, barra, "¡TOCÁ PARA JUGAR!")
 tests/                    pruebas (unittest) y el conductor de la interfaz sin ventana
 ```
+
+### Constantes: sin números mágicos
+
+Ninguna condición ni cuenta usa un número suelto como `x > 3`: cada valor es una **constante con nombre** que dice qué representa, y tiene al lado un comentario que lo explica (unidad, para qué sirve). Están en tres lugares:
+
+- **`fdc/config.py`:** los valores del juego. Física, reglas, poderes, colas, tiempos de red y del servidor.
+- **`fdc/ui/layout.py`:** las medidas que se repiten en toda la interfaz. Tamaños de letra (`FONT_SMALL`, `FONT_TITLE`…), velos (`VEIL_MENU`…), ritmos de parpadeo y la forma estándar de botones y paneles.
+- **Al principio de cada módulo o de cada clase:** lo propio de esa pantalla o de ese dibujo. Por ejemplo, `ControlsScreen.ACTION_STEP` (px entre acciones), `MatchScreen.HARD_HIT_SPEED` (velocidad a la que el golpe suena al máximo), las recetas de los sonidos en `audio.py` (`SOUND_RECIPES`) o las formas de los íconos en `icons.py` (`BOLT`, `BOOT`…).
+
+Dentro de las funciones sólo aparecen los números que no necesitan explicación: 0, 1, -1, 2 (el doble) y 0,5 (la mitad). `tests/test_constantes.py` lo verifica en todo el código (`fdc/`, `tools/`, `web/` y los `.py` de la raíz): si alguien agrega un número suelto o una constante sin comentario, la prueba falla y dice el archivo y la línea.
 
 ### Gráficos: sprites y estilo retro
 
@@ -463,7 +480,8 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 
 **Hecho y verificado:**
 
-- Las 92 pruebas automáticas pasan.
+- Las 102 pruebas automáticas pasan, incluida la de constantes.
+- **Cambio a constantes sin cambiar nada visible:** las 40 pantallas del juego se dibujaron antes y después del cambio y quedaron idénticas píxel por píxel. Lo mismo el fondo, los 17 íconos, la pelota, el dibujo del partido con todos los poderes (224 casos), los efectos y los 21 sonidos.
 - **Juego completo en un navegador real** (Chrome sin ventana, versión compilada con pygbag): menú, Mundialito contra la computadora, multijugador local con los dos jugadores a la vez y entrada al online, todo a 60 FPS.
 - **Online en navegadores reales:** dos instancias de Chrome (sin ventana) jugaron contra `servidor.py`, con la versión web compilada con pygbag (Python 3.12 en WebAssembly) a 60 FPS. La prueba recorrió:
   - nombre, crear sala, unirse, elegir personaje, listo y lados sorteados;

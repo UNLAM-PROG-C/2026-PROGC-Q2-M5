@@ -24,11 +24,14 @@ import os
 import random
 
 from ..config import CHARACTER_IDS, Online
-from ..profile import NAME_RE as USERNAME_RE
+from ..profile import MAX_PLAYER_ID, NAME_RE as USERNAME_RE, NAME_RULE
 
-MAX_PLAYERS = 2
+MAX_PLAYERS = 2             # una sala es siempre 1 contra 1
 TAGS = 10000                # etiquetas #0000 a #9999
-ROOM_NAME_MAX = 24
+SALT_BYTES = 16             # bytes de sal aleatoria por contraseña de sala
+TAG_HASH_DIGITS = 8         # dígitos hexadecimales del hash del perfil que se usan para la etiqueta
+HEX = 16                    # base de los dígitos hexadecimales
+ROOM_NAME_MAX = 24          # caracteres máximos del nombre de una sala
 # contraseña de una sala (no de una cuenta): alcanza con esto y el hash tarda
 # unos pocos ms, así no frena el bucle del servidor que atiende a todos
 PBKDF2_ROUNDS = 20_000
@@ -90,7 +93,7 @@ class Room:
         self.id = room_id
         self.name = name
         self.owner = owner                  # quien la creó, con su etiqueta ("Ale #4821")
-        self.salt = os.urandom(16) if password else None
+        self.salt = os.urandom(SALT_BYTES) if password else None
         self.password_hash = _hash_password(password, self.salt) if password else None
         self.members = []
         self.state = WAITING
@@ -182,15 +185,16 @@ class Lobby:
     def _hello(self, conn, msg):
         name = (msg.get("username") or "").strip()
         if not USERNAME_RE.match(name):
-            raise LobbyError("nombre_invalido", "El nombre debe tener entre 3 y 16 letras, números o espacios.")
+            raise LobbyError("nombre_invalido", f"El nombre debe tener {NAME_RULE}.")
         user = User(name, self._tag_for(conn, name, msg.get("player_id")))
         self.users[conn] = user
         return [([conn], {"type": "welcome", **user.public()}), ([conn], self._rooms_msg())]
 
     def _tag_for(self, conn, name, player_id):
         """Etiqueta estable para ese perfil y distinta de la de otro conectado con el mismo nombre."""
-        if isinstance(player_id, str) and 0 < len(player_id) <= 64:
-            tag = int(hashlib.sha256(player_id.encode("utf-8")).hexdigest()[:8], 16) % TAGS
+        if isinstance(player_id, str) and 0 < len(player_id) <= MAX_PLAYER_ID:
+            digest = hashlib.sha256(player_id.encode("utf-8")).hexdigest()
+            tag = int(digest[:TAG_HASH_DIGITS], HEX) % TAGS
         else:
             tag = self.rng.randrange(TAGS)
         taken = {u.tag for c, u in self.users.items() if c != conn and u.name.lower() == name.lower()}

@@ -26,6 +26,14 @@ OUT = os.path.join(ROOT, "build", "web")
 # locales la corren dentro de la página (fdc/sim/inline.py).
 SKIP = {os.path.join("fdc", "ipc.py"), os.path.join("fdc", "sim", "process.py"),
         os.path.join("fdc", "online", "server.py")}
+FAVICON_SIZE = 96              # px: ícono de la pestaña del navegador
+FAVICON_BALL = (48, 48, 40, 20)   # pelota del ícono: (x, y, radio, ángulo)
+LOADING_BALL_SIZE = 64         # px: imagen de la pelota que gira en la pantalla de carga
+LOADING_BALL = (32, 32, 26, 30)   # pelota de esa imagen: (x, y, radio, ángulo)
+PLAY_BUTTON = (480, 84)        # imagen del botón "¡TOCÁ PARA JUGAR!" (con lugar para la sombra)
+PLAY_BUTTON_FACE = (472, 76)   # el botón en sí
+ERROR_TAIL = 3000              # caracteres finales de la salida de pygbag que se muestran si falla
+BYTES_PER_KB = 1024            # para mostrar el tamaño del resultado
 
 
 def copy_package():
@@ -50,8 +58,8 @@ def make_icon(path):
     from fdc.ui.stadium import BallSprite
     pygame.display.init()
     pygame.display.set_mode((1, 1))
-    icon = pygame.Surface((96, 96), pygame.SRCALPHA)
-    BallSprite().draw(icon, 48, 48, 40, 20)
+    icon = pygame.Surface((FAVICON_SIZE, FAVICON_SIZE), pygame.SRCALPHA)
+    BallSprite().draw(icon, *FAVICON_BALL)
     pygame.image.save(icon, path)
     pygame.display.quit()
     return True
@@ -68,7 +76,8 @@ LOADING_TEXTS = {            # etapas de la pantalla de carga (web/plantilla.tmp
 
 def make_loading_images(out):
     """Imágenes de la pantalla de carga, dibujadas con el mismo código del juego
-    (estadio, logo, cabezones, fuente pixel art y botones retro)."""
+    (estadio, logo, cabezones, fuente pixel art y botones retro). El fondo es el
+    del menú principal, con las mismas medidas (screens.MenuScreen)."""
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
     sys.path.insert(0, ROOT)
     try:
@@ -76,35 +85,38 @@ def make_loading_images(out):
     except ImportError:
         return False
     pygame.display.init()
-    pygame.display.set_mode((1280, 720))
-    from fdc.config import PLAYER_COLORS
+    from fdc.config import LOGICAL_HEIGHT, LOGICAL_WIDTH, PLAYER_COLORS, Arena
+    pygame.display.set_mode((LOGICAL_WIDTH, LOGICAL_HEIGHT))
     from fdc.ui import palette as C
     from fdc.ui.assets import draw_text, text
+    from fdc.ui.layout import FONT_LARGE, FONT_TEXT, VEIL_MENU
     from fdc.ui.retro import bevel_box
-    from fdc.ui.screens import dim, draw_logo, panel
+    from fdc.ui.screens import LOGO_CENTER, LOGO_PANEL, LOGO_PANEL_ALPHA, LOGO_SCALE, MenuScreen, dim, draw_logo, panel
     from fdc.ui.sprites import CharacterSprites
     from fdc.ui.stadium import BallSprite, build_background
 
     splash = build_background().copy()
-    dim(splash, 70)
+    dim(splash, VEIL_MENU)
     sprites = CharacterSprites()
-    for i, (cid, x, f) in enumerate((("messi", 230, 1), ("pele", 1050, -1))):
-        img, (fx, fy) = sprites.player(cid, f, 0, 0, PLAYER_COLORS[i], False, 1.6)
-        splash.blit(img, (x - fx, 646 - fy))
-    panel(splash, pygame.Rect(360, 20, 560, 150), alpha=225)
-    draw_logo(splash, (640, 72), 0.9, 0.0)
+    for i, (cid, x, f) in enumerate(MenuScreen.MASCOTS):
+        img, (fx, fy) = sprites.player(cid, f, 0, 0, PLAYER_COLORS[i], False, MenuScreen.MASCOT_SCALE)
+        splash.blit(img, (x - fx, Arena.FLOOR_Y - fy))
+    panel(splash, pygame.Rect(LOGO_PANEL), alpha=LOGO_PANEL_ALPHA)
+    draw_logo(splash, LOGO_CENTER, LOGO_SCALE, 0.0)
     pygame.image.save(splash, os.path.join(out, "splash.png"))
 
-    ball = pygame.Surface((64, 64), pygame.SRCALPHA)
-    BallSprite().draw(ball, 32, 32, 26, 30)
+    ball = pygame.Surface((LOADING_BALL_SIZE, LOADING_BALL_SIZE), pygame.SRCALPHA)
+    BallSprite().draw(ball, *LOADING_BALL)
     pygame.image.save(ball, os.path.join(out, "pelota.png"))
 
     for key, msg in LOADING_TEXTS.items():
-        pygame.image.save(text(msg, 24, C.WHITE, outline=C.INK, shadow=True), os.path.join(out, f"txt_{key}.png"))
+        pygame.image.save(text(msg, FONT_TEXT, C.WHITE, outline=C.INK, shadow=True),
+                          os.path.join(out, f"txt_{key}.png"))
 
-    btn = pygame.Surface((480, 84), pygame.SRCALPHA)
-    bevel_box(btn, pygame.Rect(0, 0, 472, 76), C.GOLD)
-    draw_text(btn, "¡TOCÁ PARA JUGAR!", 32, (236, 38), C.INK, outline=None)
+    btn = pygame.Surface(PLAY_BUTTON, pygame.SRCALPHA)
+    face = pygame.Rect((0, 0), PLAY_BUTTON_FACE)
+    bevel_box(btn, face, C.GOLD)
+    draw_text(btn, "¡TOCÁ PARA JUGAR!", FONT_LARGE, face.center, C.INK, outline=None)
     pygame.image.save(btn, os.path.join(out, "boton_jugar.png"))
     pygame.display.quit()
     return True
@@ -123,7 +135,7 @@ def ca_bundle_env():
 
 
 def main():
-    from fdc.config import GAME_NAME
+    from fdc.config import GAME_NAME, Online
     shutil.rmtree(STAGE, ignore_errors=True)
     os.makedirs(STAGE)
     shutil.copy2(os.path.join(ROOT, "web", "main.py"), os.path.join(STAGE, "main.py"))
@@ -139,7 +151,7 @@ def main():
     print("compilando con pygbag...", flush=True)
     res = subprocess.run(cmd, env=ca_bundle_env(), stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if res.returncode != 0 or not os.path.isfile(os.path.join(STAGE, "build", "web", "index.html")):
-        print(res.stdout[-3000:], res.stderr[-3000:], sep="\n")
+        print(res.stdout[-ERROR_TAIL:], res.stderr[-ERROR_TAIL:], sep="\n")
         print("ERROR: pygbag no generó el cliente web")
         return 1
     shutil.rmtree(OUT, ignore_errors=True)
@@ -147,8 +159,8 @@ def main():
     if not make_loading_images(OUT):          # van sueltas: no hace falta meterlas en el paquete
         print("AVISO: sin pygame no se generaron las imágenes de la pantalla de carga")
     size = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
-    print(f"listo: {OUT} ({size / 1024:.0f} KB). Para probar: .venv/bin/python servidor.py "
-          f"y abrir http://127.0.0.1:8765")
+    print(f"listo: {OUT} ({size / BYTES_PER_KB:.0f} KB). Para probar: .venv/bin/python servidor.py "
+          f"y abrir http://127.0.0.1:{Online.PORT}")
     return 0
 
 

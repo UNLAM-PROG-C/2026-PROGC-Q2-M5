@@ -4,7 +4,20 @@ import pygame
 from . import palette as C
 from . import pixelfont
 from .assets import draw_text, text_width
+from .layout import CARET_HZ, FONT_SMALL, FONT_TEXT
 from .retro import bevel_box
+
+DEFAULT_MAX_LEN = 16        # caracteres que entran por defecto en un campo
+LABEL_GAP = 14              # px entre la etiqueta y el borde de arriba del campo
+FOCUS_RING = 6              # px que el marco dorado sobresale del campo activo
+FOCUS_LINE = 3              # px de grosor de ese marco
+TEXT_PADDING = 10           # px entre el borde del campo y el texto
+CARET_W = 4                 # px: ancho del cursor de texto
+CARET_H = 24                # px: alto del cursor de texto
+CARET_GAP = 2               # px entre la última letra y el cursor
+CHECK_SIZE = 32             # px: lado de la casilla
+CHECK_MARK_INSET = 8        # px entre el borde de la casilla y el cuadrado de "tildada"
+CHECK_LABEL_GAP = 14        # px entre la casilla y su texto
 
 FONT_CHARS = frozenset(pixelfont.G) | {" "}
 
@@ -15,7 +28,7 @@ _textinput_seen = False
 
 
 class TextField:
-    def __init__(self, rect, label, max_len=16, password=False, allowed=None, value="", placeholder="",
+    def __init__(self, rect, label, max_len=DEFAULT_MAX_LEN, password=False, allowed=None, value="", placeholder="",
                  sticky=False):
         self.rect = pygame.Rect(rect)
         self.label = label
@@ -76,22 +89,22 @@ class TextField:
 
     def draw(self, surf, t=0.0):
         if self.label:
-            draw_text(surf, self.label, 16, (self.rect.left, self.rect.top - 14), C.INK,
+            draw_text(surf, self.label, FONT_SMALL, (self.rect.left, self.rect.top - LABEL_GAP), C.INK,
                       anchor="midleft", outline=C.WHITE)
         face = C.WHITE if self.focused else (C.CREAM if self.enabled else C.CREAM_DARK)
         inner = bevel_box(surf, self.rect, face)
         if self.focused:
-            pygame.draw.rect(surf, C.GOLD, self.rect.inflate(6, 6), 3)
+            pygame.draw.rect(surf, C.GOLD, self.rect.inflate(FOCUS_RING, FOCUS_RING), FOCUS_LINE)
         shown = "•" * len(self.value) if self.password else self.value
-        x = inner.left + 10
+        x = inner.left + TEXT_PADDING
         if shown:
-            draw_text(surf, shown, 24, (x, inner.centery), C.INK, anchor="midleft", outline=None)
+            draw_text(surf, shown, FONT_TEXT, (x, inner.centery), C.INK, anchor="midleft", outline=None)
         elif self.placeholder and not self.focused:
-            draw_text(surf, self.placeholder, 16, (x, inner.centery), C.INK_SOFT, anchor="midleft",
+            draw_text(surf, self.placeholder, FONT_SMALL, (x, inner.centery), C.INK_SOFT, anchor="midleft",
                       outline=None)
-        if self.focused and int(t * 2.5) % 2 == 0:
-            cx = x + (text_width(shown, 24) + 2 if shown else 0)
-            pygame.draw.rect(surf, C.INK, (cx, inner.centery - 12, 4, 24))
+        if self.focused and int(t * CARET_HZ) % 2 == 0:
+            cx = x + (text_width(shown, FONT_TEXT) + CARET_GAP if shown else 0)
+            pygame.draw.rect(surf, C.INK, (cx, inner.centery - CARET_H // 2, CARET_W, CARET_H))
 
 
 class CheckBox:
@@ -110,8 +123,9 @@ class CheckBox:
         return False
 
     def draw(self, surf):
-        box = pygame.Rect(self.rect.left, self.rect.centery - 16, 32, 32)
+        box = pygame.Rect(self.rect.left, self.rect.centery - CHECK_SIZE // 2, CHECK_SIZE, CHECK_SIZE)
         inner = bevel_box(surf, box, C.GOLD if self.hover else C.WHITE, shadow=False)
         if self.value:
-            pygame.draw.rect(surf, C.INK, inner.inflate(-8, -8))
-        draw_text(surf, self.label, 24, (box.right + 14, box.centery), C.INK, anchor="midleft", outline=C.WHITE)
+            pygame.draw.rect(surf, C.INK, inner.inflate(-CHECK_MARK_INSET, -CHECK_MARK_INSET))
+        draw_text(surf, self.label, FONT_TEXT, (box.right + CHECK_LABEL_GAP, box.centery), C.INK,
+                  anchor="midleft", outline=C.WHITE)

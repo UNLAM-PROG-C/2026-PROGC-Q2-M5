@@ -32,7 +32,20 @@ BOOT_FROM = "pele"
 SOURCE_PX = 18.6          # píxeles del original por píxel nativo (cabeza de ~43 px nativos)
 BOOT_ANGLES = list(range(30, -121, -10))   # grados; + gira la punta hacia atrás
 HEAD_ANCHOR_FROM_TOP = 21.5              # centro del cráneo, medido desde el pelo (px nativos)
-OUTLINE = (22, 18, 20)
+OUTLINE = (22, 18, 20)    # color del contorno (casi negro)
+OPAQUE = 255              # alfa de un píxel opaco (y valor máximo de un canal de color)
+WHITE = (255, 255, 255)   # blanco (para armar máscaras)
+CUT_BACK = 60             # px: la línea de corte empieza un poco a la izquierda del punto A...
+CUT_REACH = 4000          # ...y la zona del botín sigue "hasta el infinito" a la derecha y abajo
+MASK_THRESHOLD = 128      # opacidad mínima para que un píxel cuente como parte del dibujo
+MIN_PART = 50             # px: partes sueltas más chicas que esto no cuentan (manchas)
+ALPHA_CUT = 120           # al reducir, los píxeles menos opacos que esto quedan transparentes
+DARK_LIMIT = 58           # colores más oscuros que esto pasan a ser contorno
+COLOR_STEP = 8            # los colores se redondean de a 8 (paleta más limpia)
+EDGE_LIGHT = 70           # un borde más claro que esto recibe contorno
+ANKLE = (0.28, 0.12)      # tobillo: a 28 % del ancho desde la derecha y a 12 % del alto desde arriba
+HIDDEN_WINDOW = (8, 8)    # ventana mínima: pygame la necesita para convert_alpha
+DEBUG_TINT = (255, 0, 0, 90)   # rojo translúcido: zona del botín en las imágenes de --depurar
 
 # Línea de corte entre el cuello y los cordones del botín, en coordenadas del
 # original: todo lo que queda DEBAJO de la recta A-B (y a la derecha de A) es
@@ -54,18 +67,18 @@ def boot_mask(src, cid):
     w, h = src.get_size()
     (ax, ay), (bx, by) = CUTS[cid]
     k = (by - ay) / (bx - ax)
-    far = 4000
-    poly = [(ax - 60, ay - k * 60), (bx + far, by + k * far), (bx + far, h + far), (ax - 60, h + far)]
+    far, back = CUT_REACH, CUT_BACK
+    poly = [(ax - back, ay - k * back), (bx + far, by + k * far), (bx + far, h + far), (ax - back, h + far)]
     s = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.polygon(s, (255, 255, 255), poly)
-    return pygame.mask.from_surface(s, 128)
+    pygame.draw.polygon(s, WHITE, poly)
+    return pygame.mask.from_surface(s, MASK_THRESHOLD)
 
 
 def apply_mask(src, mask, keep=True):
     """Copia de src con alfa 0 fuera (keep=True) o dentro (keep=False) de la máscara."""
     w, h = src.get_size()
     m = mask if keep else _inverted(mask)
-    cut = m.to_surface(setcolor=(255, 255, 255, 255), unsetcolor=(255, 255, 255, 0))
+    cut = m.to_surface(setcolor=(*WHITE, OPAQUE), unsetcolor=(*WHITE, 0))
     out = src.copy()
     out.blit(cut, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
     return out
@@ -78,8 +91,8 @@ def _inverted(mask):
 
 
 def largest_part(surf):
-    m = pygame.mask.from_surface(surf, 128)
-    comps = m.connected_components(50)
+    m = pygame.mask.from_surface(surf, MASK_THRESHOLD)
+    comps = m.connected_components(MIN_PART)
     if not comps:
         return surf
     return apply_mask(surf, max(comps, key=lambda c: c.count()))
@@ -90,7 +103,7 @@ def to_native(surf, bb=None):
 
     Devuelve (superficie nativa, rectángulo recortado en coordenadas del original).
     """
-    bb = bb or surf.get_bounding_rect(128)
+    bb = bb or surf.get_bounding_rect(MASK_THRESHOLD)
     crop = surf.subsurface(bb).copy()
     size = (max(1, round(bb.w / SOURCE_PX)), max(1, round(bb.h / SOURCE_PX)))
     small = pygame.transform.smoothscale(crop, size)
@@ -100,15 +113,15 @@ def to_native(surf, bb=None):
     for y in range(h):
         for x in range(w):
             c = small.get_at((x, y))
-            if c.a < 120:
+            if c.a < ALPHA_CUT:
                 continue
-            k = 255.0 / c.a                      # des-premultiplica el borde
-            r, g, b = (min(255, int(v * k)) for v in (c.r, c.g, c.b))
-            if max(r, g, b) < 58:
+            k = float(OPAQUE) / c.a              # des-premultiplica el borde
+            r, g, b = (min(OPAQUE, int(v * k)) for v in (c.r, c.g, c.b))
+            if max(r, g, b) < DARK_LIMIT:
                 r, g, b = OUTLINE                # casi negro -> contorno
             else:
-                r, g, b = (min(255, (v + 4) // 8 * 8) for v in (r, g, b))
-            out.set_at((x + 1, y + 1), (r, g, b, 255))
+                r, g, b = (min(OPAQUE, (v + COLOR_STEP // 2) // COLOR_STEP * COLOR_STEP) for v in (r, g, b))
+            out.set_at((x + 1, y + 1), (r, g, b, OPAQUE))
             solid.add((x + 1, y + 1))
     # contorno de 1 píxel nativo donde el borde quedó sin línea oscura
     for (x, y) in list(solid):
@@ -117,9 +130,9 @@ def to_native(surf, bb=None):
             if n in solid:
                 continue
             c = out.get_at((x, y))
-            if max(c.r, c.g, c.b) > 70:
+            if max(c.r, c.g, c.b) > EDGE_LIGHT:
                 if 0 <= n[0] < w + 2 and 0 <= n[1] < h + 2:
-                    out.set_at(n, (*OUTLINE, 255))
+                    out.set_at(n, (*OUTLINE, OPAQUE))
     return out, bb
 
 
@@ -128,11 +141,16 @@ def native_point(pt, bb):
     return ((pt[0] - bb.left) / SOURCE_PX + 1, (pt[1] - bb.top) / SOURCE_PX + 1)
 
 
+def ankle(bb):
+    """Tobillo: arriba a la derecha del botín (donde entraría la pierna)."""
+    share_x, share_y = ANKLE
+    return bb.right - bb.w * share_x, bb.top + bb.h * share_y
+
+
 def boot_frames(boot, meta_out):
     """Rota el botín en alta resolución alrededor del tobillo y reduce cada cuadro."""
-    bb = boot.get_bounding_rect(128)
-    # tobillo: arriba a la derecha del botín (donde entraría la pierna)
-    pivot = (bb.right - bb.w * 0.28, bb.top + bb.h * 0.12)
+    bb = boot.get_bounding_rect(MASK_THRESHOLD)
+    pivot = ankle(bb)
     crop = boot.subsurface(bb).copy()
     pad = int(math.hypot(bb.w, bb.h))
     big = pygame.Surface((bb.w + 2 * pad, bb.h + 2 * pad), pygame.SRCALPHA)
@@ -162,7 +180,7 @@ def main():
     ap.add_argument("--depurar", action="store_true")
     args = ap.parse_args()
     pygame.init()
-    pygame.display.set_mode((8, 8))
+    pygame.display.set_mode(HIDDEN_WINDOW)
     os.makedirs(OUT_DIR, exist_ok=True)
     meta = {"source_px": SOURCE_PX, "heads": {}}
     boot_pivot_src = {}
@@ -180,15 +198,14 @@ def main():
         if cid == BOOT_FROM:
             boot_pivot_src = boot_frames(boot, meta)
         # dónde queda el tobillo de SU botín respecto de su cabeza (composición original)
-        bbb = boot.get_bounding_rect(128)
-        pivot = (bbb.right - bbb.w * 0.28, bbb.top + bbb.h * 0.12)
+        pivot = ankle(boot.get_bounding_rect(MASK_THRESHOLD))
         w, h = head_px.get_size()
         meta["heads"][cid] = {"file": f"{cid}.png", "size": [w, h],
                               "anchor": [round(w / 2, 2), HEAD_ANCHOR_FROM_TOP],
                               "boot_pivot": [round(v, 2) for v in native_point(pivot, hbb)]}
         if args.depurar:
             dbg = src.copy()
-            tint = bm.to_surface(setcolor=(255, 0, 0, 90), unsetcolor=(0, 0, 0, 0))
+            tint = bm.to_surface(setcolor=DEBUG_TINT, unsetcolor=(0, 0, 0, 0))
             dbg.blit(tint, (0, 0))
             pygame.image.save(dbg, os.path.join(OUT_DIR, f"_debug_{cid}.png"))
         print(f"{cid}: cabeza {head_px.get_size()}")

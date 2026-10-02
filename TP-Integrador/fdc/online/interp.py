@@ -6,7 +6,14 @@ El cliente dibuja "un poquito en el pasado", entre las dos últimas fotos.
 
 Es sólo presentación: la simulación del servidor sigue decidiendo todo.
 """
+from ..config import Online
+
 TELEPORT = 160.0     # px: un salto mayor (saque del medio, gol) no se suaviza
+HALF_TURN = 180.0    # grados
+FULL_TURN = 360.0    # grados
+MIN_GAP = 0.005      # s: se ignoran intervalos menores entre estados (llegaron juntos)
+MAX_GAP = 0.2        # s: y mayores (una traba de la red no debe frenar el suavizado)
+GAP_SMOOTHING = 0.2  # peso de cada intervalo nuevo en el promedio del ritmo de llegada
 
 
 def _lerp(a, b, k):
@@ -15,7 +22,7 @@ def _lerp(a, b, k):
 
 def _lerp_angle(a, b, k):
     """Ángulos en grados (la pelota gira sin límite: se toma el camino corto)."""
-    d = (b - a + 180.0) % 360.0 - 180.0
+    d = (b - a + HALF_TURN) % FULL_TURN - HALF_TURN
     return a + d * k
 
 
@@ -24,7 +31,7 @@ class Interpolator:
         self.prev = None
         self.cur = None
         self.t_cur = 0.0
-        self.interval = 1 / 30
+        self.interval = 1 / Online.STATE_HZ       # ritmo esperado hasta medir el real
 
     def reset(self):
         self.prev = self.cur = None
@@ -33,8 +40,8 @@ class Interpolator:
         if self.cur is not None and state.get("seq", 0) <= self.cur.get("seq", 0):
             return False
         if self.cur is not None:
-            gap = min(0.2, max(0.005, now - self.t_cur))
-            self.interval += (gap - self.interval) * 0.2     # promedio suave del ritmo real
+            gap = min(MAX_GAP, max(MIN_GAP, now - self.t_cur))
+            self.interval += (gap - self.interval) * GAP_SMOOTHING     # promedio suave del ritmo real
         self.prev, self.cur = self.cur, state
         self.t_cur = now
         return True

@@ -15,7 +15,21 @@ import math
 
 from ..config import Arena, BallSpec as BS, PlayerSpec as PS, PowerRules
 
-HALF_BAR = Arena.BAR_THICKNESS / 2.0
+HALF_BAR = Arena.BAR_THICKNESS / 2.0   # radio de la cápsula del travesaño (mitad de su grosor)
+
+# --- constantes internas de la física (los valores "del juego" están en config.py)
+EPSILON = 1e-6              # distancia mínima para normalizar un vector (evita dividir por cero)
+BAR_BEYOND_WALL = 40.0      # px que el travesaño sigue por detrás de la pared: la pelota no se cuela por la punta
+STACK_NORMAL = 0.8          # choque casi vertical entre jugadores (|ny| mayor): uno cae sobre la cabeza del otro
+STACK_SLIDE_BIAS = 0.45     # empujón lateral que se suma en ese caso para que se deslice y no quede apoyado
+SUPPORT_NORMAL = 0.3        # desde esta componente vertical, el de abajo (apoyado en el piso) no se mueve
+HEADER_MIN_APPROACH = 40.0  # px/s: la cabeza tiene que ir hacia la pelota al menos así para sumar el cabezazo
+MAX_BALL_SUBSTEPS = 16      # tope de subpasos de la pelota por paso de física (aunque vaya muy rápido)
+BAR_REST_TOLERANCE = 2.0    # px: margen para considerar que la pelota está apoyada sobre el travesaño
+BAR_REST_MAX_VY = 120.0     # px/s: más rápido que esto (subiendo o cayendo) no se considera apoyada
+KICK_HEIGHT_SCALE = 60.0    # px de diferencia de altura entre pelota y pie que cambian la elevación en 1
+KICK_LIFT_MIN_CHANGE = -0.35  # la elevación de la patada baja como mucho esto (pelota muy por debajo del pie)
+KICK_LIFT_MAX_CHANGE = 0.5    # y sube como mucho esto (pelota por encima del pie)
 
 
 def clamp(v, lo, hi):
@@ -38,6 +52,7 @@ def sign(v):
 class Goal:
     """side 0 = arco izquierdo (lo defiende J1); side 1 = derecho (J2)."""
 
+    # px/s: el arco cambia el 35 % de su alto (el cambio de los poderes) en GOAL_TRANSITION s
     RATE = Arena.GOAL_HEIGHT * 0.35 / PowerRules.GOAL_TRANSITION
 
     def __init__(self, side):
@@ -64,8 +79,8 @@ class Goal:
     def bar_segment(self):
         y = self.bar_y()
         if self.side == 0:
-            return (-40.0, y, float(self.mouth_x), y)
-        return (float(self.mouth_x), y, Arena.WIDTH + 40.0, y)
+            return (-BAR_BEYOND_WALL, y, float(self.mouth_x), y)
+        return (float(self.mouth_x), y, Arena.WIDTH + BAR_BEYOND_WALL, y)
 
     def bar_rect(self):
         y = self.bar_y()
@@ -94,6 +109,7 @@ class Goal:
 # Pelota
 # ---------------------------------------------------------------------------
 class Ball:
+    # px/s: el radio cambia el 35 % (pelota grande o chica) en SIZE_TRANSITION s
     RADIUS_RATE = BS.RADIUS * 0.35 / PowerRules.SIZE_TRANSITION
 
     def __init__(self):
@@ -133,6 +149,7 @@ class Ball:
 # Jugador
 # ---------------------------------------------------------------------------
 class Player:
+    # 1/s: la escala del jugador cambia 0.25 (agrandar o encoger) en SIZE_TRANSITION s
     SCALE_RATE = 0.25 / PowerRules.SIZE_TRANSITION
 
     def __init__(self, idx):
@@ -373,22 +390,22 @@ def collide_players(a, b):
                 if d2 >= rr * rr:
                     continue
                 d = math.sqrt(d2)
-                if d > 1e-6:
+                if d > EPSILON:
                     nx, ny = dx / d, dy / d
                 else:
                     nx, ny = (1.0, 0.0)
-                if abs(ny) > 0.8:
+                if abs(ny) > STACK_NORMAL:
                     # uno cae sobre la cabeza del otro: sesgo lateral determinista
                     # para que se deslice en vez de quedar apoyado
                     side = sign(b.x - a.x) or (1 if a.idx == 0 else -1)
-                    nx += 0.45 * side
+                    nx += STACK_SLIDE_BIAS * side
                     n = math.hypot(nx, ny)
                     nx, ny = nx / n, ny / n
                 pen = rr - d
                 wa = 0.5
-                if a.on_ground and ny < -0.3:
+                if a.on_ground and ny < -SUPPORT_NORMAL:
                     wa = 0.0   # a está abajo y apoyado: se mueve b
-                elif b.on_ground and ny > 0.3:
+                elif b.on_ground and ny > SUPPORT_NORMAL:
                     wa = 1.0
                 a.x -= nx * pen * wa
                 a.y -= ny * pen * wa
@@ -441,7 +458,7 @@ def _collide_ball_world(ball, goals, touches):
         if d2 >= rr * rr:
             continue
         d = math.sqrt(d2)
-        if d > 1e-6:
+        if d > EPSILON:
             nx, ny = dx / d, dy / d
         else:
             nx, ny = 0.0, -1.0
@@ -463,7 +480,7 @@ def _collide_ball_circle(ball, cx, cy, cr, pvx, pvy, e, boost):
     if d2 >= rr * rr:
         return None
     d = math.sqrt(d2)
-    if d > 1e-6:
+    if d > EPSILON:
         nx, ny = dx / d, dy / d
     else:
         nx, ny = 0.0, -1.0
@@ -475,7 +492,7 @@ def _collide_ball_circle(ball, cx, cy, cr, pvx, pvy, e, boost):
         return 0.0
     ball.vx -= (1 + e) * vn * nx
     ball.vy -= (1 + e) * vn * ny
-    if boost and (pvx * nx + pvy * ny) > 40:
+    if boost and (pvx * nx + pvy * ny) > HEADER_MIN_APPROACH:
         ball.vx += nx * boost
         ball.vy += ny * boost
     return -vn
@@ -494,7 +511,7 @@ def step_ball(ball, players, goals, dt, contacts, touches):
     ball.clamp_speed()
     speed = math.hypot(ball.vx, ball.vy)
     max_move = max(1.0, BS.SUBSTEP_FRACTION * ball.radius)
-    n = max(1, min(16, int(math.ceil(speed * dt / max_move))))
+    n = max(1, min(MAX_BALL_SUBSTEPS, int(math.ceil(speed * dt / max_move))))
     h = dt / n
     for _ in range(n):
         ball.x += ball.vx * h
@@ -522,7 +539,8 @@ def step_ball(ball, players, goals, dt, contacts, touches):
         # apoyada sobre el travesaño: leve pendiente hacia la cancha, para que
         # nunca quede inalcanzable arriba del arco
         ax, ay, bx, _ = g.bar_segment()
-        if ax <= ball.x <= bx and abs(ball.y + ball.radius - (ay - HALF_BAR)) < 2.0 and abs(ball.vy) < 120:
+        resting = abs(ball.y + ball.radius - (ay - HALF_BAR)) < BAR_REST_TOLERANCE
+        if ax <= ball.x <= bx and resting and abs(ball.vy) < BAR_REST_MAX_VY:
             ball.vx += g.toward_field * BS.BAR_ROLL_ACCEL * dt
     ball.clamp_speed()
     ball.angle -= math.degrees(ball.vx * dt / max(ball.radius, 1.0))
@@ -548,7 +566,7 @@ def apply_kick(ball, p):
     """Golpe de la patada: dirección según la orientación del jugador."""
     fx, fy, _ = p.foot()
     dy = ball.y - fy
-    lift = PS.KICK_LIFT + clamp(-dy / 60.0, -0.35, 0.5)
+    lift = PS.KICK_LIFT + clamp(-dy / KICK_HEIGHT_SCALE, KICK_LIFT_MIN_CHANGE, KICK_LIFT_MAX_CHANGE)
     nx, ny = float(p.facing), -lift
     n = math.hypot(nx, ny)
     vx = nx / n * PS.KICK_POWER + p.vx * PS.KICK_CARRY

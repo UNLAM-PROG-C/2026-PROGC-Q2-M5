@@ -245,6 +245,8 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 ## 11. Cómo verlo funcionando
 
 - **Dos procesos:** `.venv/bin/python main.py --depuracion` y apretá F3. Se ven los pid de los dos procesos, que la simulación no cargó pygame, el último ACK con su tiempo de ida y vuelta, los controles reemplazados y los estados ignorados.
+- **Panel del servidor (online, desde el navegador):** `/estado` muestra en vivo un proceso de simulación por sala con su pid, las tareas `asyncio` por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión), los hilos, el tráfico por segundo y el tiempo de los ACK. `/estado/completo` (con contraseña: `--clave-panel` o `FDC_CLAVE_PANEL`) agrega los jugadores y el registro de procesos. Sirve también en la NAS con el dominio. Detalles en [ONLINE.md](ONLINE.md#panel-del-servidor-para-ver-la-concurrencia-en-vivo).
+- **F3 en un partido online:** muestra el pid del servidor y el del proceso de simulación de la sala, los estados y controles por segundo y el último ACK.
 - **En la terminal:** `ps -ef | grep multiprocessing` muestra el proceso de simulación (y en el servidor, uno por sala en juego).
 - **Registros:** `logs/fdc.log` (escritorio) y `logs/servidor.log` (servidor). Ahí se ve cuándo se lanza y se cierra cada proceso, con `method: ordenado, bye: True`.
 - **Pruebas automáticas:**
@@ -267,6 +269,7 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 | Servidor: conexiones y salas | `fdc/online/server.py` → `GameServer.handler`, `route`, `_connection_lost`, `_expire_later` |
 | Servidor: cola de salida | `fdc/online/server.py` → `Session.send_text`, `_write_loop` |
 | Servidor: puente con la sala | `fdc/online/server.py` → `RoomRunner.tick`, `request_pause`, `player_away`, `forfeit` |
+| Servidor: panel y datos de la sala (F3) | `fdc/online/server.py` → `GameServer.panel_data`, `_stats_loop`, `RoomRunner.room_info`; página `fdc/online/panel.html` |
 | Salas (lógica pura) | `fdc/online/lobby.py` → `Lobby.handle` |
 | Cliente de red | `fdc/online/client.py` → `ThreadTransport`, `BrowserTransport`, `NetClient.poll` |
 | Bucle de la interfaz | `fdc/ui/app.py` → `App.frame`, `run`, `run_async`, `FrameLimiter` |

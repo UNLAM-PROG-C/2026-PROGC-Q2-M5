@@ -19,7 +19,7 @@ ELIMINATED = "eliminado"
 CHAMPION = "campeon"
 
 HUMAN_SLOT = 1            # la persona juega a la derecha
-BOT_SLOT = 0
+BOT_SLOT = 0                # la computadora juega a la izquierda
 
 
 class Tournament:

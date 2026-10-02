@@ -45,7 +45,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Response
 
 from .. import protocol as P
-from ..config import LOG_DIR, ROOT_DIR, Online
+from ..config import LOG_DIR, MS_PER_SECOND, ROOT_DIR, Online
 from ..ipc import SimLink
 from . import wire as W
 from .lobby import MAX_PLAYERS, PLAYING, Lobby
@@ -60,7 +60,6 @@ LOOPBACK = "127.0.0.1"
 # dirección de documentación (RFC 5737) y un puerto cualquiera: "conectar" un
 # socket UDP no envía nada, sólo sirve para saber qué IP de la red local usa la compu
 LAN_PROBE = ("192.0.2.1", 9)
-MS_PER_SECOND = 1000
 NO_SCORE = [0, 0]                         # marcador si el partido terminó antes del primer estado
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("application/octet-stream", ".apk")
@@ -490,7 +489,8 @@ class GameServer:
             # busca sus paquetes en localhost:8000: el juego no arranca. La
             # misma computadora como 127.0.0.1 no tiene ese problema.
             port = host.split(":")[1] if ":" in host else str(self.port)
-            return _response(http.HTTPStatus.FOUND, b"", extra=[("Location", f"http://{LOOPBACK}:{port}{request.path}")])
+            location = f"http://{LOOPBACK}:{port}{request.path}"
+            return _response(http.HTTPStatus.FOUND, b"", extra=[("Location", location)])
         if path in (Online.PANEL_PATH, Online.PANEL_PATH + JSON_SUFFIX):
             return self._panel(path, full=False)
         if path in (Online.PANEL_FULL_PATH, Online.PANEL_FULL_PATH + JSON_SUFFIX):

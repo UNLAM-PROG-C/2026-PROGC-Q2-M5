@@ -16,15 +16,16 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 1        # versión del protocolo UI <-> simulación (se informa en READY)
 
 # ---------------------------------------------------------------------------
 # Pantalla (resolución lógica de referencia; la ventana escala con SCALED
 # conservando la proporción y agregando bandas si hace falta)
 # ---------------------------------------------------------------------------
-LOGICAL_WIDTH = 1280
-LOGICAL_HEIGHT = 720
-UI_FPS = 60
+LOGICAL_WIDTH = 1280        # px: ancho lógico de la pantalla (todo se dibuja en esta resolución)
+LOGICAL_HEIGHT = 720        # px: alto lógico de la pantalla
+UI_FPS = 60                 # cuadros por segundo que dibuja la interfaz
+MS_PER_SECOND = 1000        # para mostrar tiempos en milisegundos (latencia, ACK)
 
 # ---------------------------------------------------------------------------
 # Controles. Se guardan como nombres de tecla de pygame (pygame.key.key_code)
@@ -58,23 +59,23 @@ PLAYER_COLORS = ((255, 138, 30), (255, 64, 160))
 # Cancha
 # ---------------------------------------------------------------------------
 class Arena:
-    WIDTH = 1280
-    HEIGHT = 720
+    WIDTH = 1280            # px: ancho de la cancha (toda la pantalla)
+    HEIGHT = 720            # px: alto de la cancha
     FLOOR_Y = 646          # línea donde apoyan los botines y rebota la pelota
     CEILING_Y = 0          # techo invisible: la pelota no sale de la pantalla
     GOAL_DEPTH = 112       # profundo: aunque un jugador se meta, la pelota puede cruzar la línea
     GOAL_HEIGHT = 250      # un jugador saltando desde el piso no llega al travesaño
     BAR_THICKNESS = 10     # grosor del travesaño (cápsula con punta redonda)
     GOAL_MIN_HEIGHT = 150  # límites de seguridad para los poderes de arco
-    GOAL_MAX_HEIGHT = 340
+    GOAL_MAX_HEIGHT = 340   # px: alto máximo del arco (con el poder de arco grande)
 
 
 # ---------------------------------------------------------------------------
 # Física. Paso fijo: la simulación avanza siempre de a PHYSICS_DT, sin
 # importar a cuántos cuadros por segundo dibuje la interfaz.
 # ---------------------------------------------------------------------------
-PHYSICS_HZ = 120
-PHYSICS_DT = 1.0 / PHYSICS_HZ
+PHYSICS_HZ = 120            # pasos de física por segundo
+PHYSICS_DT = 1.0 / PHYSICS_HZ   # s: duración de cada paso fijo
 STATE_EVERY_TICKS = 2          # se publica un estado cada 2 pasos (60 por s)
 MAX_CATCHUP_STEPS = 6          # si la simulación se atrasa, no intenta "recuperar" más
 
@@ -88,39 +89,39 @@ class PlayerSpec:
     Balance medido con simulaciones (ver README): los jugadores son rápidos en
     relación con la pelota para que siempre se pueda volver a defender.
     """
-    HEAD_RADIUS = 41
+    HEAD_RADIUS = 41        # px: radio de la cabeza (lo que choca con la pelota al cabecear)
     HEAD_OFFSET_Y = 65      # centro de la cabeza medido desde la suela
     BODY_RADIUS = 12        # botín
-    BODY_OFFSET_Y = 12
+    BODY_OFFSET_Y = 12      # px: centro del botín medido desde la suela
     HALF_WIDTH = 34         # caja para chocar con piso, paredes y travesaños
-    HEIGHT = 106
-    SPAWN_X = (340, 940)
+    HEIGHT = 106            # px: alto total del jugador, de la suela a lo alto de la cabeza
+    SPAWN_X = (340, 940)    # px: x de salida de cada jugador (izquierda, derecha)
 
-    MOVE_SPEED = 340
+    MOVE_SPEED = 340        # px/s: velocidad máxima caminando
     GROUND_ACCEL = 3400     # aceleración rápida...
     GROUND_DECEL = 4600     # ...y frenado fuerte: poco deslizamiento
-    AIR_ACCEL = 2500
-    AIR_DECEL = 1500
+    AIR_ACCEL = 2500        # px/s²: aceleración en el aire (menos control que en el piso)
+    AIR_DECEL = 1500        # px/s²: frenado en el aire
     JUMP_SPEED = 697        # ~128 px: la cabeza queda por debajo del travesaño
     HEAD_JUMP_BOOST = 1.3   # saltando desde la cabeza del rival (~216 px): se llega arriba del arco
-    GRAVITY = 1900
-    MAX_FALL_SPEED = 1500
+    GRAVITY = 1900          # px/s²: gravedad de los jugadores
+    MAX_FALL_SPEED = 1500   # px/s: velocidad máxima de caída
     COYOTE_TIME = 0.07      # margen para saltar justo al salir de un borde
     JUMP_BUFFER = 0.10      # una pulsación apenas antes de aterrizar cuenta
 
     KICK_DURATION = 0.22    # duración total de la animación
     KICK_ACTIVE = (0.03, 0.17)  # ventana en la que el pie golpea
     KICK_COOLDOWN = 0.32    # recuperación entre patadas (configurable)
-    KICK_BUFFER = 0.08
+    KICK_BUFFER = 0.08      # s: una pulsación de patada apenas antes de poder patear cuenta
     KICK_REACH_X = 27       # centro del pie respecto del centro del jugador
-    KICK_REACH_Y = 14
-    KICK_RADIUS = 22
-    KICK_POWER = 920
+    KICK_REACH_Y = 14       # px: altura del pie sobre la suela
+    KICK_RADIUS = 22        # px: radio del golpe del pie
+    KICK_POWER = 920        # px/s: velocidad que le da la patada a la pelota
     KICK_LIFT = 1.30        # patada alta (~52°): la pelota "vuela" hasta la altura de los poderes
     KICK_CARRY = 0.25       # fracción de la velocidad del jugador que hereda
 
-    HEAD_RESTITUTION = 0.60
-    BODY_RESTITUTION = 0.45
+    HEAD_RESTITUTION = 0.60 # rebote contra la cabeza (0 = nada, 1 = sin pérdida)
+    BODY_RESTITUTION = 0.45 # rebote contra el botín
     HEADER_BOOST = 34       # empujón extra si la cabeza va hacia la pelota
     KNOCKBACK_CONTROL = 0.25  # control horizontal mientras dura un empujón
     # True: el personaje mira hacia donde se movió por última vez y patea en esa
@@ -129,28 +130,28 @@ class PlayerSpec:
 
 
 class BallSpec:
-    RADIUS = 17
+    RADIUS = 17             # px: radio de la pelota
     GRAVITY = 850            # pelota flotante...
-    RESTITUTION_FLOOR = 0.60
-    RESTITUTION_WALL = 0.72
-    RESTITUTION_BAR = 0.55
+    RESTITUTION_FLOOR = 0.60   # rebote contra el piso
+    RESTITUTION_WALL = 0.72 # rebote contra las paredes y el techo
+    RESTITUTION_BAR = 0.55  # rebote contra los travesaños
     MAX_RESTITUTION = 0.90   # tope aun con "mucho rebote"
     FLOOR_FRICTION = 1.7     # amortiguación exponencial al rodar (1/s)
     AIR_DRAG = 1.0           # ...que frena en el aire: sube alto pero no cruza toda la cancha
-    MAX_SPEED = 1150
+    MAX_SPEED = 1150        # px/s: velocidad máxima de la pelota
     REST_SPEED = 51          # por debajo, el rebote vertical se anula
     SUBSTEP_FRACTION = 0.45  # cada subpaso mueve como máximo 45 % del radio
-    SPAWN = (640, 330)
+    SPAWN = (640, 330)      # px: donde aparece la pelota en cada saque
     SOUND_MIN_IMPACT = 145   # impactos más suaves no generan sonido
     BAR_ROLL_ACCEL = 360     # una pelota quieta sobre el travesaño rueda hacia la cancha
 
 
 class MatchRules:
     DURATION = 60.0          # tiempo efectivo
-    KICKOFF_COUNTDOWN = 3.0
-    GOAL_COUNTDOWN = 2.0
-    RESUME_COUNTDOWN = 2.0
-    GOAL_CELEBRATION = 2.3
+    KICKOFF_COUNTDOWN = 3.0 # s: cuenta regresiva del saque inicial
+    GOAL_COUNTDOWN = 2.0    # s: cuenta regresiva después de un gol
+    RESUME_COUNTDOWN = 2.0  # s: cuenta regresiva al salir de una pausa
+    GOAL_CELEBRATION = 2.3  # s: festejo de un gol (la pelota queda en la red)
     GOLDEN_GOAL_COUNTDOWN = 3.0  # saque del gol de oro
     INPUT_WATCHDOG = 0.6     # sin controles de la interfaz por este tiempo -> pausa
 
@@ -159,28 +160,30 @@ class MatchRules:
 # Poderes
 # ---------------------------------------------------------------------------
 class PowerRules:
-    SPAWN_MIN = 7.0
-    SPAWN_MAX = 10.0
-    PICKUP_TTL = 6.0
-    PICKUP_RADIUS = 26
+    SPAWN_MIN = 7.0         # s de juego efectivo, como mínimo, entre dos objetos de poder
+    SPAWN_MAX = 10.0        # s como máximo entre dos objetos de poder
+    PICKUP_TTL = 6.0        # s que dura un objeto si nadie lo toca con la pelota
+    PICKUP_RADIUS = 26      # px: radio del objeto para tocarlo con la pelota
+    # px: franja horizontal donde aparecen (lejos de los arcos)
     SPAWN_X = (Arena.GOAL_DEPTH + 110, Arena.WIDTH - Arena.GOAL_DEPTH - 110)
     SPAWN_Y = (Arena.FLOOR_Y - 260, Arena.FLOOR_Y - 70)   # a ras del piso o para un globo
-    SPAWN_MIN_BALL_DIST = 140
-    SPAWN_TRIES = 40
+    SPAWN_MIN_BALL_DIST = 140   # px: no aparecen pegados a la pelota
+    SPAWN_TRIES = 40        # intentos de encontrar un lugar libre antes de esperar al próximo turno
     SIZE_TRANSITION = 0.30   # segundos para completar un cambio de tamaño
-    GOAL_TRANSITION = 0.45
-    BOMB_WARNING = 1.0
-    BOMB_ZONE_X = (520, 760)
-    BOMB_BLAST_RADIUS = 250
-    BOMB_BALL_IMPULSE = 1150
-    BOMB_PLAYER_IMPULSE = 870
-    BOMB_KNOCKBACK = 0.35
+    GOAL_TRANSITION = 0.45  # s para completar un cambio de tamaño del arco
+    BOMB_WARNING = 1.0      # s de aviso antes de que explote una bomba
+    BOMB_ZONE_X = (520, 760)   # px: franja donde caen las bombas (cerca del medio)
+    BOMB_BLAST_RADIUS = 250 # px: alcance de la explosión
+    BOMB_BALL_IMPULSE = 1150   # px/s: empujón máximo a la pelota (en el centro de la explosión)
+    BOMB_PLAYER_IMPULSE = 870   # px/s: empujón máximo a un jugador
+    BOMB_KNOCKBACK = 0.35   # s máximos sin control después de un empujón de bomba
 
 
 # categoría -> color de la regla del proyecto
 CATEGORY_GOOD = "verde"      # beneficia al receptor
 CATEGORY_BAD = "rojo"        # perjudica al receptor
 CATEGORY_GLOBAL = "violeta"  # modifica el partido
+# color RGB de cada categoría (íconos, carteles y bordes de los efectos)
 CATEGORY_COLORS = {
     CATEGORY_GOOD: (46, 204, 113),
     CATEGORY_BAD: (231, 76, 60),
@@ -198,6 +201,8 @@ CATEGORY_COLORS = {
 PowerDef = namedtuple(
     "PowerDef", "id name label category target prop value duration description")
 
+# (id, nombre, cartel, categoría, a quién, propiedad, valor, duración en s, descripción)
+# valor: multiplicador de la propiedad (1,35 = 35 % más) o delta de tamaño
 POWERS = (
     PowerDef("speed_up", "Velocidad aumentada", "VELOCIDAD +", CATEGORY_GOOD,
              "self", "speed", 1.35, 6.0, "Te movés más rápido (×1,35)."),
@@ -246,22 +251,24 @@ class IPC:
     INPUT_QUEUE_SIZE = 4        # controles: reemplazables (contadores acumulados)
     STATE_QUEUE_SIZE = 3        # estados: reemplazables, "el último gana"
     EVENT_QUEUE_SIZE = 512      # eventos y confirmaciones
-    COMMAND_PUT_TIMEOUT = 1.0
+    COMMAND_PUT_TIMEOUT = 1.0  # s: espera máxima para meter una orden en la cola (si no, error visible)
     ACK_TIMEOUT = 3.0           # sin confirmación en este tiempo -> error visible
-    READY_TIMEOUT = 20.0
+    READY_TIMEOUT = 20.0    # s: si la simulación no avisa READY en este tiempo, error visible
     IDLE_WAIT = 0.05            # espera bloqueante del proceso sin partido
     PAUSED_HEARTBEAT = 0.2      # estados de latido mientras está en pausa
-    PARENT_CHECK_EVERY = 0.5
+    PARENT_CHECK_EVERY = 0.5  # s: cada cuánto la simulación controla que la interfaz siga viva
     SHUTDOWN_BYE_TIMEOUT = 2.0  # espera del mensaje de despedida
     JOIN_TIMEOUT = 2.0          # espera de fin del proceso antes de forzar
-    MAX_EVENTS_PER_FRAME = 400
+    MAX_EVENTS_PER_FRAME = 400  # eventos que la interfaz procesa como máximo por cuadro
+    EVENT_PUT_RETRY = 0.2       # s: la simulación reintenta un evento confiable si la cola está llena
+    BYE_POLL = 0.1              # s: al cerrar, cada espera del BYE (para notar si el proceso ya murió)
 
 
 # ---------------------------------------------------------------------------
 # Online (servidor de salas + navegador). Ver docs/ONLINE.md
 # ---------------------------------------------------------------------------
 class Online:
-    PORT = 8765
+    PORT = 8765             # puerto TCP del servidor (página web + WebSocket)
     WS_PATH = "/ws"
     # servidor por defecto para la versión de escritorio (la web usa el mismo
     # sitio desde el que se cargó); se cambia con --servidor o FDC_SERVIDOR
@@ -273,7 +280,7 @@ class Online:
     PING_EVERY = 2.0            # el cliente mide la latencia cada tanto
     MAX_MESSAGE_BYTES = 2048    # tamaño máximo de un mensaje de un cliente
     MAX_MESSAGES_PER_SEC = 150  # más que esto se considera abuso y se corta
-    MAX_CONNECTIONS = 64
+    MAX_CONNECTIONS = 64    # conexiones simultáneas como máximo (más reciben 'servidor lleno')
     MAX_ROOMS = 16              # cada sala en juego usa un proceso de simulación
     OUTBOX_LIMIT = 400          # mensajes confiables sin enviar -> cliente demasiado lento
     CLIENT_INBOX = 512          # cola de entrada del cliente de escritorio

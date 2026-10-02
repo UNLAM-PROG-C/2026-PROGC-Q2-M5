@@ -52,7 +52,7 @@ class SimulationServer(SimulationCore):
         """Entrega garantizada salvo que se esté cerrando todo."""
         while True:
             try:
-                self.event_q.put(msg, timeout=0.2)
+                self.event_q.put(msg, timeout=C.IPC.EVENT_PUT_RETRY)
                 return True
             except queue.Full:
                 if self.stop_event.is_set() or not self._parent_alive():

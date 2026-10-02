@@ -18,7 +18,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 OVERRIDE_ROOT = os.path.join(ROOT, ASSET_OVERRIDE_DIR)
 
 _texts = {}
-TEXT_CACHE_LIMIT = 600
+TEXT_CACHE_LIMIT = 600      # textos dibujados que se guardan para no volver a generarlos
+POINTS_PER_SCALE = 8.0      # "tamaño" en puntos que equivale a escala 1 de la fuente pixel art
+TITLE_SHADOW_DARKEN = 90    # cuánto más oscura que el color del título es su sombra
 
 
 def clear_caches():
@@ -29,20 +31,20 @@ def clear_caches():
 
 def scale_for(size):
     """Traduce el "tamaño" histórico en puntos a la escala de la fuente pixel art."""
-    return max(1, int(round(size / 8.0)))
+    return max(1, int(round(size / POINTS_PER_SCALE)))
 
 
-def text(txt, size, color=(255, 255, 255), outline=palette.INK, outline_px=None,
+def text(txt, size, color=palette.WHITE, outline=palette.INK, outline_px=None,
          kind="ui", shadow=False):
     """Texto en la fuente pixel art propia (nítido, estilo retro)."""
     sc = scale_for(size)
     sh = None
     if shadow:
-        sh = tuple(max(0, c - 90) for c in color) if kind == "title" else palette.INK
+        sh = tuple(max(0, c - TITLE_SHADOW_DARKEN) for c in color) if kind == "title" else palette.INK
     return pixelfont.render(txt, sc, color, outline=outline, shadow=sh)
 
 
-def draw_text(surf, txt, size, pos, color=(255, 255, 255), anchor="center", **kw):
+def draw_text(surf, txt, size, pos, color=palette.WHITE, anchor="center", **kw):
     img = text(txt, size, color, **kw)
     r = img.get_rect()
     setattr(r, anchor, (round(pos[0]), round(pos[1])))

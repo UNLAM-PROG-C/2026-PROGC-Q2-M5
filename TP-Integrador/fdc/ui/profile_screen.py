@@ -8,21 +8,32 @@ import pygame
 from .. import profile as prof
 from . import palette as C
 from .assets import draw_text
-from .screens import BackButton, Screen, button, dim, draw_logo, footer, panel
+from .layout import BUTTON_H, CENTER_X, FONT_LARGE, FONT_SMALL, FONT_TEXT, VEIL_PROFILE
+from .screens import LOGO_CENTER, LOGO_PANEL, LOGO_PANEL_ALPHA, LOGO_SCALE, BackButton, Screen, button, dim, \
+    draw_logo, footer, panel
 from .widgets import TextField
 
 
 class ProfileScreen(Screen):
+    FIELD = (440, 352, 400, BUTTON_H)  # campo de texto del nombre (x, y, ancho, alto)
+    OK_SIZE = (300, BUTTON_H)          # botón "¡A JUGAR!" / "GUARDAR" (ancho, alto)
+    OK_CENTER = (CENTER_X, 470)        # centro de ese botón
+    BOX = (340, 210, 600, 330)         # recuadro de la pregunta (x, y, ancho, alto)
+    QUESTION_Y = 34                    # "¿CÓMO TE LLAMÁS?", desde arriba del recuadro
+    EXPLANATION_Y = 78                 # explicación, desde arriba del recuadro
+    NOTE_GAP = 24                      # aviso o error, debajo del recuadro
+
     def __init__(self, app, first_run=True):
         super().__init__(app)
         self.first_run = first_run
         current = app.profile.name if app.profile else ""
-        self.field = TextField((440, 352, 400, 56), "TU NOMBRE", 16,
+        self.field = TextField(self.FIELD, "TU NOMBRE", prof.NAME_MAX_LEN,
                                allowed=lambda ch: ch in prof.NAME_CHARS, value=current,
-                               placeholder="entre 3 y 16 letras o números", sticky=True)
+                               placeholder=f"entre {prof.NAME_MIN_LEN} y {prof.NAME_MAX_LEN} letras o números",
+                               sticky=True)
         self.field.focus(True)
-        self.ok_rect = pygame.Rect(0, 0, 300, 56)
-        self.ok_rect.center = (640, 470)
+        self.ok_rect = pygame.Rect((0, 0), self.OK_SIZE)
+        self.ok_rect.center = self.OK_CENTER
         self.hover = False
         self.error = None
         self.back_button = BackButton(self.back)
@@ -35,7 +46,7 @@ class ProfileScreen(Screen):
     def submit(self):
         name = self.field.value.strip()
         if not prof.valid_name(name):
-            self.error = "El nombre debe tener entre 3 y 16 letras, números o espacios."
+            self.error = f"El nombre debe tener {prof.NAME_RULE}."
             self.app.audio.play("blocked")
             return
         old = self.app.profile
@@ -66,20 +77,21 @@ class ProfileScreen(Screen):
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, 110)
-        panel(surf, pygame.Rect(360, 20, 560, 150), alpha=225)
-        draw_logo(surf, (640, 72), 0.9, self.t)
-        box = panel(surf, pygame.Rect(340, 210, 600, 330))
-        draw_text(surf, "¿CÓMO TE LLAMÁS?", 32, (640, box.top + 34), C.GOLD, kind="title", outline=C.INK,
-                  shadow=True)
-        draw_text(surf, "Vale para todos los modos: Mundialito, local y online.", 16,
-                  (640, box.top + 78), C.INK, outline=None)
+        dim(surf, VEIL_PROFILE)
+        panel(surf, pygame.Rect(LOGO_PANEL), alpha=LOGO_PANEL_ALPHA)
+        draw_logo(surf, LOGO_CENTER, LOGO_SCALE, self.t)
+        box = panel(surf, pygame.Rect(self.BOX))
+        draw_text(surf, "¿CÓMO TE LLAMÁS?", FONT_LARGE, (CENTER_X, box.top + self.QUESTION_Y), C.GOLD, kind="title",
+                  outline=C.INK, shadow=True)
+        draw_text(surf, "Vale para todos los modos: Mundialito, local y online.", FONT_SMALL,
+                  (CENTER_X, box.top + self.EXPLANATION_Y), C.INK, outline=None)
         self.field.draw(surf, self.t)
-        button(surf, self.ok_rect, "¡A JUGAR!" if self.first_run else "GUARDAR", self.hover, True, 24, self.t)
+        button(surf, self.ok_rect, "¡A JUGAR!" if self.first_run else "GUARDAR", self.hover, True, FONT_TEXT,
+               self.t)
         if self.error:
-            draw_text(surf, self.error, 16, (640, box.bottom + 24), C.RED, outline=C.WHITE)
+            draw_text(surf, self.error, FONT_SMALL, (CENTER_X, box.bottom + self.NOTE_GAP), C.RED, outline=C.WHITE)
         else:
             draw_text(surf, "Si otra persona usa el mismo nombre online, los distingue una etiqueta (#1234).",
-                      16, (640, box.bottom + 24), C.INK, outline=C.WHITE)
+                      FONT_SMALL, (CENTER_X, box.bottom + self.NOTE_GAP), C.INK, outline=C.WHITE)
         footer(surf, "Enter: confirmar" + ("" if self.first_run else "  -  Esc: volver sin cambiar"))
         self.back_button.draw(surf, self.t)

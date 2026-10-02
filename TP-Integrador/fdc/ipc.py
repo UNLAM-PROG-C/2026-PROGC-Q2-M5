@@ -16,11 +16,12 @@ import queue
 import time
 
 from . import protocol as P
-from .config import IPC
+from .config import IPC, MS_PER_SECOND
 from .link import MatchLink
 from .sim.process import simulation_main
 
 log = logging.getLogger("fdc.ipc")
+
 
 COMMAND_NAMES = {
     P.CMD_START: "iniciar", P.CMD_PAUSE: "pausar", P.CMD_RESUME: "continuar",
@@ -209,7 +210,7 @@ class SimLink(MatchLink):
         deadline = t0 + IPC.SHUTDOWN_BYE_TIMEOUT
         while self.bye is None and time.monotonic() < deadline:
             try:
-                msg = self.event_q.get(timeout=0.1)   # espera bloqueante acotada
+                msg = self.event_q.get(timeout=IPC.BYE_POLL)   # espera bloqueante acotada
             except queue.Empty:
                 if not self.proc.is_alive():
                     break
@@ -265,7 +266,7 @@ class SimLink(MatchLink):
         if lc:
             age = time.monotonic() - lc["at"]
             ok = "ok" if lc["ok"] else "rechazada"
-            rtt = f", {lc['rtt'] * 1000:.0f} ms" if lc["rtt"] is not None else ""
+            rtt = f", {lc['rtt'] * MS_PER_SECOND:.0f} ms" if lc["rtt"] is not None else ""
             confirmed = f"{lc['cmd']} #{lc['cid']} ({ok}{rtt}) hace {age:.1f} s"
         else:
             confirmed = "—"

@@ -17,12 +17,19 @@ import re
 import secrets
 import sys
 
-NAME_RE = re.compile(r"^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ _.-]{3,16}$")
-NAME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-                       "ÁÉÍÓÚÜÑáéíóúüñ _.-")
+NAME_MIN_LEN = 3            # letras mínimas de un nombre
+NAME_MAX_LEN = 16           # letras máximas de un nombre (entra en el marcador y en las listas)
+# caracteres que se pueden usar en un nombre
+NAME_ALPHABET = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+                 "ÁÉÍÓÚÜÑáéíóúüñ _.-")
+NAME_CHARS = frozenset(NAME_ALPHABET)
+NAME_RE = re.compile(f"^[{re.escape(NAME_ALPHABET)}]{{{NAME_MIN_LEN},{NAME_MAX_LEN}}}$")
+NAME_RULE = f"entre {NAME_MIN_LEN} y {NAME_MAX_LEN} letras, números o espacios"
 DEFAULT_PATH = os.environ.get("FDC_PERFIL") or os.path.join(os.path.expanduser("~"), ".futbol_de_cabeza.json")
 STORAGE_KEY = "fdc_perfil"
 IN_BROWSER = sys.platform == "emscripten"
+PLAYER_ID_BYTES = 8         # bytes aleatorios del id del jugador (16 caracteres hexadecimales)
+MAX_PLAYER_ID = 64          # largo máximo aceptado de un id guardado (si no, se genera otro)
 
 
 def valid_name(name):
@@ -32,7 +39,7 @@ def valid_name(name):
 class Profile:
     def __init__(self, name, player_id=None):
         self.name = name.strip()
-        self.player_id = player_id or secrets.token_hex(8)
+        self.player_id = player_id or secrets.token_hex(PLAYER_ID_BYTES)
 
     def renamed(self, name):
         """Mismo jugador (mismo id) con otro nombre."""
@@ -52,7 +59,7 @@ def load(path=None):
     if not isinstance(data, dict) or not valid_name(data.get("name")):
         return None
     pid = data.get("id")
-    return Profile(data["name"], pid if isinstance(pid, str) and 0 < len(pid) <= 64 else None)
+    return Profile(data["name"], pid if isinstance(pid, str) and 0 < len(pid) <= MAX_PLAYER_ID else None)
 
 
 def save(profile, path=None):

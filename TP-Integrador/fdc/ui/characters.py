@@ -6,6 +6,7 @@ las mismas capacidades para todos: nada de este archivo llega a la física.
 """
 from .. import config
 
+# id, nombre, selección, número de camiseta y colores (camiseta, detalle) en RGB
 CHARACTERS = [
     {"id": "messi", "name": "Messi", "team": "Argentina", "number": 10,
      "colors": ((117, 190, 233), (250, 250, 252))},

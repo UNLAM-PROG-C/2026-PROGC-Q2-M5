@@ -113,7 +113,41 @@ Del servidor también llegan:
   - `--host`: 127.0.0.1 para aceptar sólo conexiones locales;
   - `--duracion S`: partidos cortos para probar;
   - `--gracia S`: los segundos para volver tras un corte.
-- **Estado y registros:** <http://127.0.0.1:8765/estado> muestra cuántas salas y conexiones hay. El registro queda en `logs/servidor.log`.
+- **Panel del servidor:** <http://127.0.0.1:8765/estado> (ver más abajo). El registro queda en `logs/servidor.log`.
+
+## Panel del servidor (para ver la concurrencia en vivo)
+
+El servidor tiene una página que se actualiza sola cada segundo. Sirve igual en la compu que en la NAS con el dominio (`https://futbol.tudominio.com/estado`).
+
+| Dirección | Quién la ve | Qué muestra |
+|---|---|---|
+| `/estado` | Cualquiera (vista técnica, **sin nombres de jugadores**) | El proceso del servidor (pid, tiempo encendido). Las conexiones abiertas y las que esperan reconexión. **Un proceso de simulación por sala en juego**, con su pid y si está vivo. Las **tareas `asyncio`** agrupadas por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión) y los **hilos** (el principal con el bucle `asyncio`, el ejecutor y los alimentadores de las colas de `multiprocessing`). El tráfico por segundo (mensajes, estados, controles) y el tiempo de ida y vuelta de los **ACK** de cada sala. |
+| `/estado/completo` | Sólo con contraseña | Lo mismo, más los nombres de los jugadores de cada sala y el registro de procesos: cuándo se lanzó, quedó listo (READY) y se cerró cada simulación. |
+
+Los mismos datos están en JSON en `/estado.json` y `/estado/completo.json`.
+
+**Contraseña de la vista completa.** Se pasa al arrancar el servidor:
+
+```bash
+.venv/bin/python servidor.py --clave-panel UNA-CLAVE
+```
+
+También sirve la variable de entorno `FDC_CLAVE_PANEL`, que es mejor en la NAS porque la clave no queda a la vista en los argumentos de la tarea:
+
+```powershell
+setx /M FDC_CLAVE_PANEL "UNA-CLAVE"
+```
+
+El navegador pide usuario y contraseña. El usuario puede ser cualquiera: se controla sólo la contraseña. Si no se configuró ninguna, `/estado/completo` no existe y responde 404, y queda sólo la vista pública.
+
+**F3 durante un partido online.** Además de lo que muestra en el local (pantalla, fase, `seq`, FPS), el panel F3 muestra los datos de la sala que manda el servidor una vez por segundo:
+
+- el pid del servidor y el **pid del proceso de simulación de esa sala** (son distintos: la sala corre en su propio proceso);
+- los estados por segundo que llegan y los controles por segundo que manda la sala;
+- el tiempo de ida y vuelta del último ACK y las órdenes sin confirmar;
+- el estado de la pausa.
+
+Así, en la defensa se puede mostrar desde el navegador que cada sala es un proceso aparte y que el servidor no se traba con varias salas a la vez.
 
 ## Ponerlo en la NAS (Windows)
 
@@ -131,7 +165,7 @@ py -3.13 -m venv .venv
 ```
 
 - **Dependencias:** el servidor sólo necesita `websockets` (no carga pygame). `pygame` y `pygbag` hacen falta únicamente para compilar el cliente web. También se puede compilar en la Mac y copiar la carpeta `build\web`.
-- **Python en el navegador:** la página descarga el intérprete (WebAssembly) del CDN de pygame-web (`pygame-web.github.io`), así que los jugadores necesitan internet. La NAS sólo sirve el juego (unos 240 KB) y el WebSocket.
+- **Python en el navegador:** la página descarga el intérprete (WebAssembly) del CDN de pygame-web (`pygame-web.github.io`), así que los jugadores necesitan internet. La NAS sólo sirve el juego (unos 400 KB) y el WebSocket.
 - **Prueba en la red de tu casa:** desde otra compu, abrí `http://IP-DE-LA-NAS:8765`. Si no abre, permití Python en el Firewall de Windows (puerto 8765, red privada).
 
 ### 2. Que arranque solo (sin dejar una sesión abierta)
@@ -139,7 +173,7 @@ py -3.13 -m venv .venv
 Con el **Programador de tareas** de Windows:
 
 1. Creá una tarea con el desencadenador **Al iniciar el sistema**.
-2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `servidor.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`.
+2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `servidor.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`. Para la vista completa del panel, definí antes la variable `FDC_CLAVE_PANEL` (ver "Panel del servidor").
 3. En *General*, marcá **Ejecutar tanto si el usuario inició sesión como si no**.
 4. En *Configuración*, elegí **Si la tarea no se ejecuta, reiniciar cada 1 minuto**.
 

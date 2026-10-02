@@ -16,6 +16,7 @@ from ..config import PlayerSpec
 from . import palette as C
 from .assets import ROOT
 from .characters import CHARACTERS_BY_ID
+from .layout import CELEBRATE_HOP_HZ, CELEBRATE_HOP_PX, CELEBRATE_KICK_ANGLE, CELEBRATE_KICK_HZ, IDLE_BOB_HZ
 from .retro import PX
 
 SPRITE_DIR = os.path.join(ROOT, "assets", "personajes")
@@ -23,6 +24,33 @@ HIP = (2.0, 12.0)          # cadera respecto del centro de la cabeza (px nativos
 CANVAS = (84, 76)          # lienzo nativo de composición
 ORIGIN = (42, 70)          # posición de la suela dentro del lienzo
 FRONT_ANGLE = -40          # desde este ángulo el botín se dibuja delante de la cabeza
+MASK_THRESHOLD = 20        # opacidad mínima de un píxel para que cuente en la silueta
+ICE_TINT = (150, 215, 255, 120)   # celeste translúcido que cubre al jugador congelado
+CACHE_LIMIT = 3000         # combinaciones de cuadros guardadas antes de vaciar la caché
+PORTRAIT_SIZE = (150, 180)  # px: tarjeta de la selección de personajes
+PORTRAIT_SHIRT_SHARE = 0.35  # fondo de la tarjeta: 35 % el color de la camiseta...
+PORTRAIT_WHITE_SHARE = 0.65  # ...y 65 % blanco (tono claro)
+PORTRAIT_STRIPE_SHARE = 0.25  # franjas: 25 % el color secundario...
+PORTRAIT_STRIPE_WHITE = 0.75  # ...y 75 % blanco
+PORTRAIT_STRIPE_EVERY = 10  # px nativos entre franjas diagonales
+PORTRAIT_STRIPE_W = 5       # px nativos de ancho de cada franja
+PORTRAIT_BAND_H = 14        # px nativos: franja de abajo con el color de la camiseta
+PORTRAIT_BAND_LINE = 2      # px nativos: línea con el color secundario sobre esa franja
+PORTRAIT_HEAD_TOP = 6       # px nativos desde arriba de la tarjeta hasta la cabeza
+RIM_OFFSETS = ((1, 0), (-1, 0), (0, 1), (0, -1))   # el contorno de color se arma corriendo la silueta 1 px
+SCALE_DECIMALS = 2         # decimales de la escala con los que se guarda en caché un cuadro agrandado
+IDLE_PHASE_SHIFT = 0.5     # desfase del balanceo entre los dos jugadores (para que no vayan a la par)
+
+
+def celebrate_pose(t):
+    """(ángulo del botín, rebote de la cabeza) del que festeja: patea al aire y da saltitos."""
+    return (-CELEBRATE_KICK_ANGLE + CELEBRATE_KICK_ANGLE * math.sin(t * CELEBRATE_KICK_HZ),
+            -int(abs(math.sin(t * CELEBRATE_HOP_HZ)) * CELEBRATE_HOP_PX))
+
+
+def idle_pose(t, i=0):
+    """(ángulo del botín, rebote de la cabeza) del que está quieto: se balancea; 'i' es el jugador."""
+    return 0, (-1 if (t * IDLE_BOB_HZ + i * IDLE_PHASE_SHIFT) % 2 < 1 else 0)
 
 
 def _rot(vx, vy, deg):
@@ -104,18 +132,19 @@ class CharacterSprites:
         if front:
             canvas.blit(boot, boot_pos)
         if frozen:
-            ice = pygame.mask.from_surface(canvas, 20).to_surface(setcolor=(150, 215, 255, 120),
-                                                                   unsetcolor=(0, 0, 0, 0))
+            ice = pygame.mask.from_surface(canvas, MASK_THRESHOLD).to_surface(setcolor=ICE_TINT,
+                                                                               unsetcolor=(0, 0, 0, 0))
             canvas.blit(ice, (0, 0))
         if rim:
-            sil = pygame.mask.from_surface(canvas, 20).to_surface(setcolor=(*rim, 255), unsetcolor=(0, 0, 0, 0))
+            sil = pygame.mask.from_surface(canvas, MASK_THRESHOLD).to_surface(setcolor=(*rim, C.OPAQUE),
+                                                                               unsetcolor=(0, 0, 0, 0))
             out = pygame.Surface(CANVAS, pygame.SRCALPHA)
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for dx, dy in RIM_OFFSETS:
                 out.blit(sil, (dx, dy))
             out.blit(canvas, (0, 0))
             canvas = out
         res = (canvas, ORIGIN)
-        if len(self.cache) > 3000:
+        if len(self.cache) > CACHE_LIMIT:
             self.cache.clear()
         self.cache[key] = res
         return res
@@ -125,7 +154,7 @@ class CharacterSprites:
         native, (ox, oy) = self.compose(cid, facing, leg_angle, bob, rim, frozen)
         k = PX * scale
         key = ("big", cid, 1 if facing >= 0 else -1, self._frame_angle(leg_angle), int(bob), rim, frozen,
-               round(scale, 2))
+               round(scale, SCALE_DECIMALS))
         big = self.cache.get(key)
         if big is None:
             w, h = native.get_size()
@@ -144,7 +173,7 @@ class CharacterSprites:
             self.minis[key] = pygame.transform.scale(h, (h.get_width() * scale, h.get_height() * scale))
         return self.minis[key]
 
-    def portrait(self, cid, w=150, h=180):
+    def portrait(self, cid, w=PORTRAIT_SIZE[0], h=PORTRAIT_SIZE[1]):
         """Tarjeta retro: franjas con los colores de la camiseta y la cabeza x3."""
         key = (cid, w, h)
         if key in self.portraits:
@@ -153,16 +182,18 @@ class CharacterSprites:
         c1, c2 = ch["colors"]
         nw, nh = w // PX, h // PX
         card = pygame.Surface((nw, nh))
-        light = tuple(min(255, int(v * 0.35 + 255 * 0.65)) for v in c1)
-        light2 = tuple(min(255, int(v * 0.25 + 255 * 0.75)) for v in c2)
+        white = C.MAX_CHANNEL
+        light = tuple(min(white, int(v * PORTRAIT_SHIRT_SHARE + white * PORTRAIT_WHITE_SHARE)) for v in c1)
+        light2 = tuple(min(white, int(v * PORTRAIT_STRIPE_SHARE + white * PORTRAIT_STRIPE_WHITE)) for v in c2)
         card.fill(light)
-        for x in range(-nh, nw, 10):
-            pygame.draw.polygon(card, light2, [(x, nh), (x + 5, nh), (x + 5 + nh, 0), (x + nh, 0)])
-        pygame.draw.rect(card, c1, (0, nh - 14, nw, 14))
-        pygame.draw.rect(card, c2, (0, nh - 14, nw, 2))
+        stripe = PORTRAIT_STRIPE_W
+        for x in range(-nh, nw, PORTRAIT_STRIPE_EVERY):
+            pygame.draw.polygon(card, light2, [(x, nh), (x + stripe, nh), (x + stripe + nh, 0), (x + nh, 0)])
+        pygame.draw.rect(card, c1, (0, nh - PORTRAIT_BAND_H, nw, PORTRAIT_BAND_H))
+        pygame.draw.rect(card, c2, (0, nh - PORTRAIT_BAND_H, nw, PORTRAIT_BAND_LINE))
         head = self.heads[(cid, -1)]
         hx = (nw - head.get_width()) // 2
-        card.blit(head, (hx, 6))
+        card.blit(head, (hx, PORTRAIT_HEAD_TOP))
         big = pygame.transform.scale(card, (nw * PX, nh * PX))
         self.portraits[key] = big
         return big

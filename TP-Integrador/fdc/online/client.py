@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 
-from ..config import Online
+from ..config import MS_PER_SECOND, Online
 from . import wire as W
 
 log = logging.getLogger("fdc.net")
@@ -424,6 +424,6 @@ class NetClient:
         return max(0.0, Online.RECONNECT_GRACE - (self.clock() - self.lost_at))
 
     def debug_lines(self):
-        rtt = f"{self.rtt * 1000:.0f} ms" if self.rtt is not None else "-"
+        rtt = f"{self.rtt * MS_PER_SECOND:.0f} ms" if self.rtt is not None else "-"
         return {"url": self.url, "status": self.status, "user": self.display or "-", "rtt": rtt,
                 "traffic": f"{self.sent} enviados / {self.received} recibidos / {self.bad} inválidos"}
