@@ -30,6 +30,106 @@
       "args": ["scripts/graficar.py"],
       "options": { "cwd": "${workspaceFolder}/TP1-parte2/01_C++" },
       "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: correr una simulación",
+      "type": "shell",
+      "command": "python",
+      "args": ["src/main.py", "20000", "8"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "group": { "kind": "build", "isDefault": false },
+      "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: ejecutar experimentos",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar_experimentos.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Netherrealm: graficar resultados",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/graficar.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte2/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Carga Criolla: compilar",
+      "detail": "Compila a una carpeta LOCAL (fuera de OneDrive), igual que el resto de los TPs.",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "New-Item -ItemType Directory -Force -Path \"$env:LOCALAPPDATA\\carga_criolla_build\" | Out-Null; javac -Xlint:all -d \"$env:LOCALAPPDATA\\carga_criolla_build\" (Get-ChildItem -Recurse -Filter *.java src).FullName"
+      ],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/03_Java" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Carga Criolla: correr simulación (4 camiones, 5 viajes por planta)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "java -cp \"$env:LOCALAPPDATA\\carga_criolla_build\" cargacriolla.Main 4 5"
+      ],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/03_Java" },
+      "dependsOn": "Carga Criolla: compilar",
+      "problemMatcher": []
+    },
+    {
+      "label": "Carga Criolla: ejecutar experimentos",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar_experimentos.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/03_Java" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Carga Criolla: graficar resultados",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/graficar.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/03_Java" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Babuinos: correr simulación (8 izquierda, 6 derecha)",
+      "type": "shell",
+      "command": "python",
+      "args": ["src/main.py", "8", "6"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Babuinos: verificar (pruebas de estrés)",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/verificar.py"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/02_Python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Baño: correr simulación (8 hombres, 6 mujeres)",
+      "detail": "Compila y corre en una carpeta LOCAL (fuera de OneDrive), igual que el TP de Naruto.",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar.py", "bano", "8", "6"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/01_C++" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Baño: verificar (pruebas de estrés)",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/ejecutar.py", "verificar"],
+      "options": { "cwd": "${workspaceFolder}/TP1-parte3/01_C++" },
+      "problemMatcher": []
     }
   ]
 }
