@@ -1,38 +1,46 @@
-"""Ajustes de la página cuando el juego corre en el navegador (pygbag).
+"""Page adjustments when the game runs in the browser (pygbag).
 
-La pantalla de carga (estadio, barra, "¡TOCÁ PARA JUGAR!") está en
-web/plantilla.tmpl; el juego la oculta cuando dibuja su primer cuadro.
+The loading screen (stadium, bar, "¡TOCÁ PARA JUGAR!") is in
+web/template.tmpl; the game hides it when it draws its first frame.
 
-El navegador tiene acciones propias para algunas teclas que el juego usa:
-Escape "detiene la carga" de la página (en Chrome eso congela el WebSocket),
-F3 abre "Buscar", Tab saca el foco del juego y las flechas desplazan la
-página. Se anula SÓLO la acción del navegador (preventDefault): el evento
-sigue llegando a pygame. Espacio no se toca porque hace falta para escribir
-espacios en los nombres.
+The browser has its own actions for some keys the game uses: Escape "stops
+loading" the page (in Chrome that freezes the WebSocket), F3 opens "Find",
+Tab takes the focus away from the game and the arrows scroll the page. ONLY
+the browser action is cancelled (preventDefault): the event still reaches
+pygame. Space is not touched because it is needed to type spaces in names.
 """
 import sys
 
 _GUARD_JS = r"""
 if (!window.fdcKeyGuard) {
   window.fdcKeyGuard = true;
-  const keys = new Set(['Escape', 'Tab', 'F3', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-  window.addEventListener('keydown', function (e) { if (keys.has(e.key)) e.preventDefault(); }, true);
+  const keys = new Set(['Escape', 'Tab', 'F3', 'Backspace', 'ArrowUp',
+                        'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+  window.addEventListener('keydown', function (e) {
+    if (keys.has(e.key)) e.preventDefault();
+  }, true);
 }
 """
 
 
+def _window():
+    # pylint: disable-next=import-outside-toplevel
+    import platform     # in pygbag, "platform" exposes the JS window object
+    return platform.window
+
+
 def install_key_guard():
+    """Stops the browser actions of the game keys."""
     if sys.platform != "emscripten":
-        return                   # fuera del navegador (p. ej. pruebas del modo web) no hace falta
-    import platform              # en pygbag, "platform" expone el objeto window de JS
-    platform.window.eval(_GUARD_JS)
+        return          # outside the browser (e.g. web mode tests) not needed
+    _window().eval(_GUARD_JS)
 
 
 def hide_loading_screen():
-    """El juego ya dibujó su primer cuadro: se va la pantalla de carga (web/plantilla.tmpl)."""
+    """The game drew its first frame: the loading screen goes away
+    (web/template.tmpl)."""
     if sys.platform != "emscripten":
         return
-    import platform
-    splash = getattr(platform.window, "fdcSplash", None)
+    splash = getattr(_window(), "fdcSplash", None)
     if splash is not None:
         splash.done()

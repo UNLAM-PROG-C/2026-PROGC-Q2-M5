@@ -30,7 +30,7 @@ Dos personas juegan desde **sus casas**, cada una en su **navegador**, contra un
 ```
  Casa A: navegador ──┐                          NAS (Windows)
    (pygbag)          │  https + wss   ┌───────────────────────────────────────────────────┐
-                     ├── dominio ────►│ Caddy (TLS, Let's Encrypt) ─► servidor.py :8765    │
+                     ├── dominio ────►│ Caddy (TLS, Let's Encrypt) ─► server.py :8765    │
  Casa B: navegador ──┘                │                                │                   │
                                       │   proceso SERVIDOR (asyncio, un hilo)              │
                                       │     ├─ por conexión: tarea lectora + escritora     │
@@ -60,11 +60,11 @@ El servidor **sirve la página del juego** (`build/web`) y el **WebSocket `/ws`*
 - **Mismo núcleo:** la simulación es la misma (`fdc/sim/core.py`).
 - **Dentro de la página:** cada cuadro aplica las órdenes y la última foto de controles, y avanza la física con paso fijo de 1/120 s hasta el momento actual. La física tarda unos 8 µs por paso, así que sobra margen.
 
-**Pantalla de carga** (`web/plantilla.tmpl`). Reemplaza la de pygbag:
+**Pantalla de carga** (`web/template.tmpl`). Reemplaza la de pygbag:
 
 - **Diseño:** el estadio con el logo y los cabezones, una barra de carga retro por etapas ("Llegando al estadio...", "Marcando la cancha...") y una pelota que pica.
 - **Botón:** cuando todo está descargado, aparece **¡TOCÁ PARA JUGAR!**. El navegador exige un clic o una tecla antes de reproducir sonido.
-- **Imágenes:** las genera `tools/construir_web.py` con el mismo código de dibujo del juego.
+- **Imágenes:** las genera `tools/build_web.py` con el mismo código de dibujo del juego.
 - **Salida:** el juego la oculta cuando dibuja su primer cuadro.
 
 **Teclas en el navegador** (`fdc/ui/browser.py`). En Chrome, `Esc` "detiene la carga" de la página y eso congelaba el WebSocket: el partido dejaba de actualizarse justo al pedir la pausa. Ahora la página anula la acción del navegador para `Esc`, `F3` (Buscar), `Tab` (saca el foco) y las flechas (desplazan la página). El evento igual llega al juego.
@@ -77,8 +77,8 @@ Por la red va **JSON**, **nunca `pickle`**, porque `pickle` permite ejecutar có
 
 | Cliente → servidor | Respuesta o efecto |
 |---|---|
-| `hello {username, token?}` | `welcome {username, token, restored}` + `rooms`, o `error` (`nombre_invalido`, `nombre_en_uso`). Con el `token` se **recupera la sesión** (sala y partido) tras un corte. |
-| `list_rooms`, `create_room {name, password?}`, `join_room {room, password?}`, `leave_room` | `rooms` (lista) o `room` (detalle de la sala). Errores: `sala_llena`, `clave_incorrecta`, `sala_inexistente`, `demasiadas_salas`. |
+| `hello {username, token?}` | `welcome {username, token, restored}` + `rooms`, o `error` (`invalid_name`, `already_named`). Con el `token` se **recupera la sesión** (sala y partido) tras un corte. |
+| `list_rooms`, `create_room {name, password?}`, `join_room {room, password?}`, `leave_room` | `rooms` (lista) o `room` (detalle de la sala). Errores: `room_full`, `wrong_password`, `no_such_room`, `too_many_rooms`. |
 | `choose_character {character}`, `ready {ready}` | `room` a los dos. Con ambos listos: `match_start {match, players, you}` a cada uno. |
 | `input {p: [izq, der, saltos, patadas]}` | Foto de controles **reemplazable**. Saltos y patadas viajan como **contadores acumulados**, así que no se pierde ninguna pulsación aunque se pierdan fotos. Se manda sólo cuando cambia, más un latido cada 0,25 s. |
 | `pause_request` / `pause_ready` | `pause_info {status: pedida/activa/ninguna, by_name, left, ready}` a los dos. |
@@ -101,44 +101,44 @@ Del servidor también llegan:
 
 ```bash
 .venv/bin/python -m pip install -r requirements-online.txt   # una sola vez: websockets y pygbag
-.venv/bin/python tools/construir_web.py                      # compila el cliente web en build/web
-.venv/bin/python servidor.py                                  # http://127.0.0.1:8765
+.venv/bin/python tools/build_web.py                      # compila el cliente web en build/web
+.venv/bin/python server.py                                  # http://127.0.0.1:8765
 ```
 
 - **Navegador:** abrí <http://127.0.0.1:8765> en **dos ventanas** (o dos navegadores), elegí nombres distintos, creá una sala con una y unite con la otra. La primera vez hay que hacer clic en la página para que arranque, porque el navegador exige un clic para habilitar el sonido.
 - **`localhost`:** si se escribe `localhost:8765`, el servidor redirige a `127.0.0.1:8765`. pygbag trata a las páginas servidas desde `localhost:8...` como su propio servidor de desarrollo y busca sus paquetes en `localhost:8000`, y ahí el juego no arranca.
-- **Escritorio:** `main.py` también juega online. Por defecto usa `ws://localhost:8765/ws`; se cambia con `--servidor URL` o con la variable `FDC_SERVIDOR`.
+- **Escritorio:** `main.py` también juega online. Por defecto usa `ws://localhost:8765/ws`; se cambia con `--server URL` o con la variable `FDC_SERVER`.
 - **Opciones del servidor:**
-  - `--puerto`;
+  - `--port`;
   - `--host`: 127.0.0.1 para aceptar sólo conexiones locales;
-  - `--duracion S`: partidos cortos para probar;
-  - `--gracia S`: los segundos para volver tras un corte.
-- **Panel del servidor:** <http://127.0.0.1:8765/estado> (ver más abajo). El registro queda en `logs/servidor.log`.
+  - `--duration S`: partidos cortos para probar;
+  - `--grace S`: los segundos para volver tras un corte.
+- **Panel del servidor:** <http://127.0.0.1:8765/status> (ver más abajo). El registro queda en `logs/server.log`.
 
 ## Panel del servidor (para ver la concurrencia en vivo)
 
-El servidor tiene una página que se actualiza sola cada segundo. Sirve igual en la compu que en la NAS con el dominio (`https://futbol.tudominio.com/estado`).
+El servidor tiene una página que se actualiza sola cada segundo. Sirve igual en la compu que en la NAS con el dominio (`https://futbol.tudominio.com/status`).
 
 | Dirección | Quién la ve | Qué muestra |
 |---|---|---|
-| `/estado` | Cualquiera (vista técnica, **sin nombres de jugadores**) | El proceso del servidor (pid, tiempo encendido). Las conexiones abiertas y las que esperan reconexión. **Un proceso de simulación por sala en juego**, con su pid y si está vivo. Las **tareas `asyncio`** agrupadas por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión) y los **hilos** (el principal con el bucle `asyncio`, el ejecutor y los alimentadores de las colas de `multiprocessing`). El tráfico por segundo (mensajes, estados, controles) y el tiempo de ida y vuelta de los **ACK** de cada sala. |
-| `/estado/completo` | Sólo con contraseña | Lo mismo, más los nombres de los jugadores de cada sala y el registro de procesos: cuándo se lanzó, quedó listo (READY) y se cerró cada simulación. |
+| `/status` | Cualquiera (vista técnica, **sin nombres de jugadores**) | El proceso del servidor (pid, tiempo encendido). Las conexiones abiertas y las que esperan reconexión. **Un proceso de simulación por sala en juego**, con su pid y si está vivo. Las **tareas `asyncio`** agrupadas por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión) y los **hilos** (el principal con el bucle `asyncio`, el ejecutor y los alimentadores de las colas de `multiprocessing`). El tráfico por segundo (mensajes, estados, controles) y el tiempo de ida y vuelta de los **ACK** de cada sala. |
+| `/status/full` | Sólo con contraseña | Lo mismo, más los nombres de los jugadores de cada sala y el registro de procesos: cuándo se lanzó, quedó listo (READY) y se cerró cada simulación. |
 
-Los mismos datos están en JSON en `/estado.json` y `/estado/completo.json`.
+Los mismos datos están en JSON en `/status.json` y `/status/full.json`.
 
 **Contraseña de la vista completa.** Se pasa al arrancar el servidor:
 
 ```bash
-.venv/bin/python servidor.py --clave-panel UNA-CLAVE
+.venv/bin/python server.py --panel-password UNA-CLAVE
 ```
 
-También sirve la variable de entorno `FDC_CLAVE_PANEL`, que es mejor en la NAS porque la clave no queda a la vista en los argumentos de la tarea:
+También sirve la variable de entorno `FDC_PANEL_PASSWORD`, que es mejor en la NAS porque la clave no queda a la vista en los argumentos de la tarea:
 
 ```powershell
-setx /M FDC_CLAVE_PANEL "UNA-CLAVE"
+setx /M FDC_PANEL_PASSWORD "UNA-CLAVE"
 ```
 
-El navegador pide usuario y contraseña. El usuario puede ser cualquiera: se controla sólo la contraseña. Si no se configuró ninguna, `/estado/completo` no existe y responde 404, y queda sólo la vista pública.
+El navegador pide usuario y contraseña. El usuario puede ser cualquiera: se controla sólo la contraseña. Si no se configuró ninguna, `/status/full` no existe y responde 404, y queda sólo la vista pública.
 
 **F3 durante un partido online.** Además de lo que muestra en el local (pantalla, fase, `seq`, FPS), el panel F3 muestra los datos de la sala que manda el servidor una vez por segundo:
 
@@ -151,6 +151,8 @@ Así, en la defensa se puede mostrar desde el navegador que cada sala es un proc
 
 ## Ponerlo en la NAS (Windows)
 
+> Guía completa paso a paso, con los cuatro caminos (abrir un puerto, dominio con Cloudflare Tunnel, dominio con Caddy o túnel de prueba) y la solución de problemas: [docs/NAS_DEPLOYMENT.md](../docs/NAS_DEPLOYMENT.md). Abajo queda el resumen.
+
 ### 1. Instalar
 
 1. Instalá **Python 3.13** desde python.org y marcá *Add python.exe to PATH*.
@@ -160,8 +162,8 @@ Así, en la defensa se puede mostrar desde el navegador que cada sala es un proc
 ```powershell
 py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt -r requirements-online.txt
-.venv\Scripts\python tools\construir_web.py
-.venv\Scripts\python servidor.py
+.venv\Scripts\python tools\build_web.py
+.venv\Scripts\python server.py
 ```
 
 - **Dependencias:** el servidor sólo necesita `websockets` (no carga pygame). `pygame` y `pygbag` hacen falta únicamente para compilar el cliente web. También se puede compilar en la Mac y copiar la carpeta `build\web`.
@@ -173,7 +175,7 @@ py -3.13 -m venv .venv
 Con el **Programador de tareas** de Windows:
 
 1. Creá una tarea con el desencadenador **Al iniciar el sistema**.
-2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `servidor.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`. Para la vista completa del panel, definí antes la variable `FDC_CLAVE_PANEL` (ver "Panel del servidor").
+2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `server.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`. Para la vista completa del panel, definí antes la variable `FDC_PANEL_PASSWORD` (ver "Panel del servidor").
 3. En *General*, marcá **Ejecutar tanto si el usuario inició sesión como si no**.
 4. En *Configuración*, elegí **Si la tarea no se ejecuta, reiniciar cada 1 minuto**.
 
@@ -206,11 +208,11 @@ El navegador exige **HTTPS/WSS** fuera de la red local. Lo más simple es **Cadd
 
 ```powershell
 git pull
-.venv\Scripts\python tools\construir_web.py
+.venv\Scripts\python tools\build_web.py
 ```
 
 Después reiniciá la tarea del servidor. Las salas viven en memoria: reiniciar el servidor las cierra.
 
 ### Docker (opcional)
 
-Si preferís un contenedor (Docker Desktop con WSL2 en Windows): imagen `python:3.13-slim`, `pip install websockets`, copiar el proyecto y la carpeta `build/web`, `CMD ["python", "servidor.py"]` y exponer el 8765. Con la tarea programada alcanza; Docker no es necesario.
+Si preferís un contenedor (Docker Desktop con WSL2 en Windows): imagen `python:3.13-slim`, `pip install websockets`, copiar el proyecto y la carpeta `build/web`, `CMD ["python", "server.py"]` y exponer el 8765. Con la tarea programada alcanza; Docker no es necesario.

@@ -23,9 +23,9 @@ from pathlib import Path
 # do not rename
 async def custom_site():
     import embed
-    # Futbol De Cabeza: pantalla de carga propia (ver el HTML más abajo, #fdc-splash)
+    # Futbol De Cabeza: own loading screen (see the HTML below, #fdc-splash)
     platform.document.body.style.background = "#96cdee"
-    platform.window.fdcSplash.stage(66, "archivo")
+    platform.window.fdcSplash.stage(66, "file")
 
     platform.window.transfer.hidden = true
     platform.window.canvas.style.visibility = "visible"
@@ -51,7 +51,7 @@ async def custom_site():
             tar.extractall(path=appdir.as_posix(), filter='tar')
             tar.close()
 
-    platform.window.fdcSplash.stage(76, "cancha")
+    platform.window.fdcSplash.stage(76, "pitch")
 
     # preloader will change to work dir and prepend it to sys.path
     platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
@@ -61,7 +61,7 @@ async def custom_site():
     while embed.counter()<0:
         await asyncio.sleep(.1)
 
-    platform.window.fdcSplash.stage(86, "cancha")
+    platform.window.fdcSplash.stage(86, "pitch")
 
     main = appdir / "assets" / "main.py"
 
@@ -75,7 +75,7 @@ async def custom_site():
         # but we need to fill __file__ that is not yet set
         __import__(__name__).__file__ = main
 
-        # en lugar del aviso de pygbag: el botón "TOCÁ PARA JUGAR" de la pantalla de carga
+        # instead of the pygbag notice: the play button of the loading screen
         platform.window.fdcSplash.ready()
 
         while not platform.window.MM.UME:
@@ -89,10 +89,10 @@ async def custom_site():
     __import__(__name__).__file__ = main
 
 
-    platform.window.fdcSplash.stage(90, "jugadores")
+    platform.window.fdcSplash.stage(90, "players")
 
     def ui_callback(pkg):
-        platform.window.fdcSplash.stage(94, "jugadores")
+        platform.window.fdcSplash.stage(94, "players")
 
     await shell.source(main, callback=ui_callback)
 
@@ -100,7 +100,7 @@ async def custom_site():
     # your main.py has an infinite sync loop somewhere !
 
     platform.window.infobox.style.display = "none"
-    platform.window.fdcSplash.started()   # el juego la oculta al dibujar su primer cuadro
+    platform.window.fdcSplash.started()   # the game hides it on its first frame
     platform.window.config.gui_divider = 1
     platform.window.window_resize()
     print("default.tmpl: done")
@@ -251,39 +251,39 @@ function show_infobox() {
             overflow: hidden;
         }
 
-        /* --- Futbol De Cabeza: pantalla de carga --------------------------- */
+        /* --- Futbol De Cabeza: loading screen ------------------------------ */
         #infobox, #transfer { display: none !important; }
         #fdc-splash {
             position: fixed; inset: 0; z-index: 2000000;
             background: #96cdee;
             transition: opacity .45s steps(5);
         }
-        #fdc-splash.fuera { opacity: 0; pointer-events: none; }
+        #fdc-splash.hidden { opacity: 0; pointer-events: none; }
         #fdc-stage {
             position: absolute; left: 50%; top: 50%;
             width: 1280px; height: 720px; transform-origin: 0 0;
         }
         #fdc-stage img { position: absolute; image-rendering: pixelated; user-select: none; -webkit-user-drag: none; }
         #fdc-bg { left: 0; top: 0; width: 1280px; height: 720px; }
-        #fdc-ball { left: 608px; top: 290px; width: 64px; height: 64px; animation: fdc-pica .7s steps(7) infinite alternate; }
-        @keyframes fdc-pica { from { transform: translateY(0); } to { transform: translateY(-64px); } }
+        #fdc-ball { left: 608px; top: 290px; width: 64px; height: 64px; animation: fdc-bounce .7s steps(7) infinite alternate; }
+        @keyframes fdc-bounce { from { transform: translateY(0); } to { transform: translateY(-64px); } }
         #fdc-msg { left: 0; top: 372px; width: 1280px; height: 48px; object-fit: none; }
         #fdc-bar {
             position: absolute; left: 360px; top: 430px; width: 560px; height: 36px;
             background: #2b2d42; box-shadow: 6px 6px 0 rgba(43,45,66,.55);
         }
-        #fdc-bar div.hueco { position: absolute; inset: 6px; background: #ecdebe; }
+        #fdc-bar div.track { position: absolute; inset: 6px; background: #ecdebe; }
         #fdc-fill {
             position: absolute; left: 6px; top: 6px; bottom: 6px; width: 0;
             background: repeating-linear-gradient(90deg, #ffd23f 0 20px, #dea01e 20px 24px);
             transition: width .3s steps(6);
         }
         #fdc-play { left: 400px; top: 420px; width: 480px; height: 84px; cursor: pointer; display: none;
-                    animation: fdc-late .9s steps(2) infinite; }
+                    animation: fdc-beat .9s steps(2) infinite; }
         #fdc-play:hover { filter: brightness(1.08); }
-        @keyframes fdc-late { 50% { transform: translateY(-4px) scale(1.03); } }
-        #fdc-splash.listo #fdc-play { display: block; }
-        #fdc-splash.listo #fdc-bar, #fdc-splash.listo #fdc-ball { display: none; }
+        @keyframes fdc-beat { 50% { transform: translateY(-4px) scale(1.03); } }
+        #fdc-splash.ready #fdc-play { display: block; }
+        #fdc-splash.ready #fdc-bar, #fdc-splash.ready #fdc-ball { display: none; }
 
         .topright{
            position:absolute;
@@ -335,10 +335,10 @@ function show_infobox() {
     <div id="fdc-splash">
         <div id="fdc-stage">
             <img id="fdc-bg" src="splash.png" alt="">
-            <img id="fdc-ball" src="pelota.png" alt="">
+            <img id="fdc-ball" src="ball.png" alt="">
             <img id="fdc-msg" src="txt_python.png" alt="Cargando">
-            <div id="fdc-bar"><div class="hueco"></div><div id="fdc-fill"></div></div>
-            <img id="fdc-play" src="boton_jugar.png" alt="Tocá para jugar">
+            <div id="fdc-bar"><div class="track"></div><div id="fdc-fill"></div></div>
+            <img id="fdc-play" src="play_button.png" alt="Tocá para jugar">
         </div>
     </div>
 
@@ -425,7 +425,7 @@ frameborder="1"
 
     <script type="application/javascript">
 
-    // --- Futbol De Cabeza: pantalla de carga -----------------------------
+    // --- Futbol De Cabeza: loading screen --------------------------------
     window.fdcSplash = (function () {
         const splash = document.getElementById("fdc-splash")
         const stageEl = document.getElementById("fdc-stage")
@@ -443,16 +443,16 @@ frameborder="1"
         }
         function setMsg(key) { msg.src = "txt_" + key + ".png" }
         function start() {
-            if (window.MM) { MM.UME = 1 }          // el clic o la tecla habilitan el audio
+            if (window.MM) { MM.UME = 1 }          // the click or the key enables audio
             const c = document.getElementById("canvas")
             if (c) c.focus()
-            splash.classList.remove("listo")
-            setMsg("jugadores")
+            splash.classList.remove("ready")
+            setMsg("players")
         }
 
         window.addEventListener("resize", fit)
         fit()
-        // mientras baja Python (WebAssembly), se usa el progreso que informa pygbag
+        // while Python (WebAssembly) downloads, the pygbag progress is used
         poll = setInterval(function () {
             const p = document.getElementById("progress")
             if (phase === "python" && p && p.max) setPct(Math.min(60, 60 * p.value / p.max))
@@ -460,23 +460,23 @@ frameborder="1"
 
         document.getElementById("fdc-play").addEventListener("click", start)
         window.addEventListener("keydown", function (e) {
-            if (splash.classList.contains("listo")) start()
+            if (splash.classList.contains("ready")) start()
         })
 
         return {
             stage: function (p, key) { phase = key; setPct(p); setMsg(key) },
             ready: function () {
-                phase = "listo"; setPct(100); setMsg("listo")
-                if (window.MM && MM.UME) { start(); return }     // el navegador ya permitía audio
-                splash.classList.add("listo")
+                phase = "ready"; setPct(100); setMsg("ready")
+                if (window.MM && MM.UME) { start(); return }     // the browser already allowed audio
+                splash.classList.add("ready")
             },
             started: function () {
-                // red de seguridad: si el juego no avisa, se oculta igual
+                // safety net: if the game does not tell, it is hidden anyway
                 if (!hideTimer) hideTimer = setTimeout(window.fdcSplash.done, 20000)
             },
             done: function () {
                 clearInterval(poll)
-                splash.classList.add("fuera")
+                splash.classList.add("hidden")
                 setTimeout(function () { splash.style.display = "none" }, 600)
             }
         }

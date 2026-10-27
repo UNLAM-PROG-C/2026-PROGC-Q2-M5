@@ -128,7 +128,7 @@
   ],
   "frames": {
    "30": {
-    "file": "botin_30.png",
+    "file": "boot_30.png",
     "size": [
      17,
      18
@@ -139,7 +139,7 @@
     ]
    },
    "20": {
-    "file": "botin_20.png",
+    "file": "boot_20.png",
     "size": [
      18,
      18
@@ -150,7 +150,7 @@
     ]
    },
    "10": {
-    "file": "botin_10.png",
+    "file": "boot_10.png",
     "size": [
      19,
      17
@@ -161,7 +161,7 @@
     ]
    },
    "0": {
-    "file": "botin_0.png",
+    "file": "boot_0.png",
     "size": [
      19,
      17
@@ -172,7 +172,7 @@
     ]
    },
    "-10": {
-    "file": "botin_-10.png",
+    "file": "boot_-10.png",
     "size": [
      19,
      15
@@ -183,7 +183,7 @@
     ]
    },
    "-20": {
-    "file": "botin_-20.png",
+    "file": "boot_-20.png",
     "size": [
      19,
      15
@@ -194,7 +194,7 @@
     ]
    },
    "-30": {
-    "file": "botin_-30.png",
+    "file": "boot_-30.png",
     "size": [
      19,
      15
@@ -205,7 +205,7 @@
     ]
    },
    "-40": {
-    "file": "botin_-40.png",
+    "file": "boot_-40.png",
     "size": [
      18,
      15
@@ -216,7 +216,7 @@
     ]
    },
    "-50": {
-    "file": "botin_-50.png",
+    "file": "boot_-50.png",
     "size": [
      18,
      17
@@ -227,7 +227,7 @@
     ]
    },
    "-60": {
-    "file": "botin_-60.png",
+    "file": "boot_-60.png",
     "size": [
      18,
      17
@@ -238,7 +238,7 @@
     ]
    },
    "-70": {
-    "file": "botin_-70.png",
+    "file": "boot_-70.png",
     "size": [
      18,
      18
@@ -249,7 +249,7 @@
     ]
    },
    "-80": {
-    "file": "botin_-80.png",
+    "file": "boot_-80.png",
     "size": [
      17,
      19
@@ -260,7 +260,7 @@
     ]
    },
    "-90": {
-    "file": "botin_-90.png",
+    "file": "boot_-90.png",
     "size": [
      17,
      19
@@ -271,7 +271,7 @@
     ]
    },
    "-100": {
-    "file": "botin_-100.png",
+    "file": "boot_-100.png",
     "size": [
      15,
      19
@@ -282,7 +282,7 @@
     ]
    },
    "-110": {
-    "file": "botin_-110.png",
+    "file": "boot_-110.png",
     "size": [
      15,
      19
@@ -293,7 +293,7 @@
     ]
    },
    "-120": {
-    "file": "botin_-120.png",
+    "file": "boot_-120.png",
     "size": [
      15,
      19

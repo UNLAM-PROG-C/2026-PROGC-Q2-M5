@@ -1,38 +1,40 @@
-"""Captura de controles de ambos jugadores (en el hilo principal de pygame).
+"""Controls of both players (on the main pygame thread).
 
-Se registran los KEYDOWN/KEYUP en lugar de consultar get_pressed(), para
-poder liberar todo al perder el foco (si no, un jugador podría quedar
-caminando con una tecla "trabada").
+KEYDOWN/KEYUP events are recorded instead of asking get_pressed(), so
+everything can be released when the window loses focus (otherwise a player
+could keep walking with a "stuck" key).
 
-Saltos y patadas se cuentan: cada KEYDOWN incrementa un contador que viaja
-en todas las fotos de controles. Así la simulación puede quedarse sólo con la
-última foto sin perder una pulsación breve.
+Jumps and kicks are counted: each KEYDOWN increments a counter that travels
+in every controls snapshot. So the simulation can keep only the latest
+snapshot without losing a short press.
 """
 import pygame
 
-from ..config import PLAYER_KEYS
+from fdc import config
 
 ACTIONS = ("left", "right", "jump", "kick")
+# Key names shown on screen.
+KEY_NAMES = {"left": "Flecha izq.", "right": "Flecha der.",
+             "up": "Flecha arriba", "down": "Flecha abajo", "escape": "Esc",
+             "space": "Espacio", "return": "Enter"}
+KEY_SHORT = {"left": "Izq", "right": "Der", "up": "Arriba", "down": "Abajo"}
 
 
 def key_code(name):
     return pygame.key.key_code(name)
 
 
-KEY_NAMES = {"left": "Flecha izq.", "right": "Flecha der.", "up": "Flecha arriba",
-             "down": "Flecha abajo", "escape": "Esc", "space": "Espacio", "return": "Enter"}
-KEY_SHORT = {"left": "Izq", "right": "Der", "up": "Arriba", "down": "Abajo"}
-
-
 def key_label(name, short=False):
-    """Nombre legible en español (sin glifos que las fuentes comunes no tienen)."""
+    """Readable Spanish name (no glyphs common fonts lack)."""
     if short and name in KEY_SHORT:
         return KEY_SHORT[name]
     return KEY_NAMES.get(name, name.upper())
 
 
 class InputTracker:
-    def __init__(self, bindings=PLAYER_KEYS):
+    """Keys held and cumulative press counters of each player."""
+
+    def __init__(self, bindings=config.PLAYER_KEYS):
         self.bindings = bindings
         self.keymap = {}
         for idx, keys in enumerate(bindings):
@@ -41,9 +43,10 @@ class InputTracker:
         self.held = [dict.fromkeys(ACTIONS, False) for _ in bindings]
         self.jumps = [0 for _ in bindings]
         self.kicks = [0 for _ in bindings]
-        self.capture = False   # sólo cuenta pulsaciones durante el partido
+        self.capture = False   # presses only count during a match
 
     def handle_event(self, ev):
+        """Records a game key. True if the event was one of them."""
         if ev.type not in (pygame.KEYDOWN, pygame.KEYUP):
             return False
         hit = self.keymap.get(ev.key)
@@ -53,31 +56,36 @@ class InputTracker:
         down = ev.type == pygame.KEYDOWN
         self.held[idx][action] = down
         if down and self.capture:
-            if action == "jump":
-                self.jumps[idx] += 1
-            elif action == "kick":
-                self.kicks[idx] += 1
+            self._count(idx, action)
         return True
 
+    def _count(self, idx, action):
+        if action == "jump":
+            self.jumps[idx] += 1
+        elif action == "kick":
+            self.kicks[idx] += 1
+
     def release_all(self):
-        for h in self.held:
-            for k in h:
-                h[k] = False
+        for held in self.held:
+            for action in held:
+                held[action] = False
 
     def snapshot_single(self, active=True):
-        """Una sola persona usando CUALQUIERA de los dos juegos de teclas
-        (Mundialito): mantenidas combinadas y contadores sumados."""
+        """One person using EITHER set of keys (tournament): held keys
+        combined and counters added."""
         h0, h1 = self.held[0], self.held[1]
         left = active and (h0["left"] or h1["left"])
         right = active and (h0["right"] or h1["right"])
-        return [left, right, self.jumps[0] + self.jumps[1], self.kicks[0] + self.kicks[1]]
+        return [left, right, self.jumps[0] + self.jumps[1],
+                self.kicks[0] + self.kicks[1]]
 
     def snapshot(self, active=True):
-        """[[izq, der, saltos, patadas], ...]; con active=False, sin movimiento."""
+        """[[left, right, jumps, kicks], ...]; active=False: no moving."""
         out = []
-        for i, h in enumerate(self.held):
+        for i, held in enumerate(self.held):
             if active:
-                out.append([h["left"], h["right"], self.jumps[i], self.kicks[i]])
+                out.append([held["left"], held["right"], self.jumps[i],
+                            self.kicks[i]])
             else:
                 out.append([False, False, self.jumps[i], self.kicks[i]])
         return out

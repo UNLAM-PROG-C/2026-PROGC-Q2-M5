@@ -1,19 +1,19 @@
-"""Cliente del modo online (versión de escritorio y navegador).
+"""Client of the online mode (desktop and browser versions).
 
-NetClient no usa pygame: las pantallas online lo consultan en cada cuadro.
-Guarda lo último que se sabe (nombre, salas, sala actual, partido, pausa,
-rival, resultado) para que ningún mensaje se pierda al cambiar de pantalla, y
-se reconecta solo si la conexión se corta (hay RECONNECT_GRACE segundos para
-volver sin perder el lugar).
+NetClient does not use pygame: the online screens ask it every frame. It
+keeps the latest known data (name, rooms, current room, match, pause, rival,
+result) so no message is lost when the screen changes, and it reconnects by
+itself if the connection drops (there are RECONNECT_GRACE seconds to come
+back without losing the place).
 
-Por debajo usa un TRANSPORTE intercambiable:
-  * BrowserTransport: dentro del navegador (pygbag). Usa el WebSocket de
-    JavaScript; lo que llega se acumula en un arreglo JS y Python lo retira una
-    vez por cuadro. En el navegador no hay hilos ni procesos.
-  * ThreadTransport: versión de escritorio. Un hilo lector (bloqueado en la
-    red, sin espera activa) deja lo que llega en una cola ACOTADA; la interfaz
-    la vacía sin bloquear en cada cuadro.
-Los dos entregan eventos ("open" | "msg" | "closed", dato) en orden.
+Below it uses an interchangeable TRANSPORT (Strategy pattern):
+  * BrowserTransport: inside the browser (pygbag). It uses the JavaScript
+    WebSocket; what arrives is stored in a JS array and Python takes it once
+    per frame. There are no threads or processes in the browser.
+  * ThreadTransport: desktop version. A reader thread (blocked on the
+    network, no busy waiting) puts what arrives in a BOUNDED queue; the
+    interface empties it without blocking every frame.
+Both deliver events ("open" | "msg" | "closed", data) in order.
 """
 import json
 import logging
@@ -22,68 +22,85 @@ import sys
 import threading
 import time
 
-from ..config import MS_PER_SECOND, Online
-from . import wire as W
+from fdc import config
+from fdc.online import wire
 
 log = logging.getLogger("fdc.net")
-
+ONLINE = config.Online
 IN_BROWSER = sys.platform == "emscripten"
 
-# códigos de cierre que NO deben provocar reconexión
-NO_RETRY_CODES = {W.CLOSE_REPLACED: "Tu sesión se abrió en otra ventana.",
-                  W.CLOSE_POLICY: "El servidor cortó la conexión.",
-                  W.CLOSE_TRY_AGAIN: "El servidor está lleno: probá más tarde."}
+# Close codes that must NOT cause a reconnection (texts shown on screen).
+NO_RETRY_CODES = {
+    wire.CLOSE_REPLACED: "Tu sesión se abrió en otra ventana.",
+    wire.CLOSE_POLICY: "El servidor cortó la conexión.",
+    wire.CLOSE_TRY_AGAIN: "El servidor está lleno: probá más tarde."}
+CLOSED_TEXT = "conexión cerrada"      # shown when the server gives no reason
 
 
 # ---------------------------------------------------------------------------
-# Transportes
+# Transports
 # ---------------------------------------------------------------------------
 class ThreadTransport:
-    """WebSocket de escritorio (librería websockets) con un hilo lector."""
+    """Desktop WebSocket (websockets library) with a reader thread."""
 
     def __init__(self, url):
         self.url = url
-        self.inbox = queue.Queue(Online.CLIENT_INBOX)   # acotada: si se llena, el hilo espera
+        # Bounded: if it gets full, the thread waits.
+        self.inbox = queue.Queue(ONLINE.CLIENT_INBOX)
         self.stop = threading.Event()
         self.ws = None
-        self.thread = threading.Thread(target=self._run, name="fdc-red", daemon=True)
+        self.thread = threading.Thread(target=self._run, name="fdc-network",
+                                       daemon=True)
         self.thread.start()
 
     def _put(self, item):
         while not self.stop.is_set():
             try:
-                self.inbox.put(item, timeout=Online.INBOX_PUT_WAIT)
+                self.inbox.put(item, timeout=ONLINE.INBOX_PUT_WAIT)
                 return
             except queue.Full:
-                continue           # la interfaz la vacía en el próximo cuadro
+                continue           # the interface empties it next frame
 
     def _run(self):
+        """Body of the reader thread."""
         try:
-            from websockets.sync.client import connect
-            from websockets.exceptions import ConnectionClosed
+            # Optional dependency: only the online mode needs it.
+            # pylint: disable-next=import-outside-toplevel
+            from websockets.sync import client as sync_client
+            # pylint: disable-next=import-outside-toplevel
+            from websockets import exceptions as ws_exceptions
         except ImportError:
-            self._put(("closed", {"code": None, "reason": "Falta la librería websockets: "
-                                  "pip install -r requirements-online.txt"}))
+            self._put(("closed", {"code": None, "reason": (
+                "Falta la librería websockets: pip install -r "
+                "requirements-online.txt")}))
             return
-        code, reason = None, "conexión cerrada"
+        self._put(("closed", self._read_all(sync_client, ws_exceptions)))
+
+    def _read_all(self, sync_client, ws_exceptions):
+        """Reads messages until the connection closes; returns why."""
+        code, reason = None, CLOSED_TEXT
         try:
-            with connect(self.url, open_timeout=Online.CONNECT_TIMEOUT, close_timeout=Online.CLOSE_TIMEOUT,
-                         max_size=Online.CLIENT_MAX_MESSAGE) as ws:
-                self.ws = ws
-                self._put(("open", None))
-                for raw in ws:                    # bloquea en la red (no consume CPU)
-                    self._put(("msg", raw))
-                    if self.stop.is_set():
-                        break
+            with _connect(sync_client, self.url) as ws:
+                self._read_messages(ws)
                 code, reason = ws.close_code, ws.close_reason or reason
-        except ConnectionClosed as exc:
+        except ws_exceptions.ConnectionClosed as exc:
             if exc.rcvd is not None:
                 code, reason = exc.rcvd.code, exc.rcvd.reason or reason
-        except Exception as exc:  # noqa: BLE001 - cualquier falla de red se informa igual
-            reason = (f"No se pudo conectar con {self.url} ({exc})" if self.ws is None else str(exc))
-        self._put(("closed", {"code": code, "reason": reason}))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            reason = (f"No se pudo conectar con {self.url} ({exc})"
+                      if self.ws is None else str(exc))   # any network failure
+        return {"code": code, "reason": reason}
 
-    def receive(self, limit=Online.CLIENT_RECEIVE_BATCH):
+    def _read_messages(self, ws):
+        self.ws = ws
+        self._put(("open", None))
+        for raw in ws:              # blocks on the network (uses no CPU)
+            self._put(("msg", raw))
+            if self.stop.is_set():
+                break
+
+    def receive(self, limit=ONLINE.CLIENT_RECEIVE_BATCH):
+        """Takes up to `limit` pending events without blocking."""
         out = []
         for _ in range(limit):
             try:
@@ -99,8 +116,8 @@ class ThreadTransport:
         try:
             ws.send(text)
             return True
-        except Exception:  # noqa: BLE001 - el hilo lector informa el corte
-            return False
+        except Exception:  # pylint: disable=broad-exception-caught
+            return False   # the reader thread reports the drop
 
     def close(self):
         self.stop.set()
@@ -108,8 +125,15 @@ class ThreadTransport:
         if ws is not None:
             try:
                 ws.close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass       # it was already closed
+
+
+def _connect(sync_client, url):
+    """Opens the desktop WebSocket with the client limits."""
+    return sync_client.connect(url, open_timeout=ONLINE.CONNECT_TIMEOUT,
+                               close_timeout=ONLINE.CLOSE_TIMEOUT,
+                               max_size=ONLINE.CLIENT_MAX_MESSAGE)
 
 
 _JS = r"""
@@ -119,10 +143,16 @@ window.fdcNet = window.fdcNet || {
     var id = this.next++, box = {ws: null, q: []};
     this.socks[id] = box;
     try { box.ws = new WebSocket(url); }
-    catch (e) { box.q.push(['closed', {code: null, reason: String(e)}]); return id; }
+    catch (e) {
+      box.q.push(['closed', {code: null, reason: String(e)}]);
+      return id;
+    }
     box.ws.onopen = function () { box.q.push(['open', null]); };
     box.ws.onmessage = function (e) { box.q.push(['msg', e.data]); };
-    box.ws.onclose = function (e) { box.q.push(['closed', {code: e.code, reason: e.reason || 'conexión cerrada'}]); };
+    box.ws.onclose = function (e) {
+      box.q.push(['closed',
+                  {code: e.code, reason: e.reason || 'conexión cerrada'}]);
+    };
     return id;
   },
   send: function (id, s) {
@@ -141,27 +171,30 @@ window.fdcNet = window.fdcNet || {
     delete this.socks[id];
   },
   defaultUrl: function () {
-    return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    return (location.protocol === 'https:' ? 'wss://' : 'ws://')
+        + location.host + '/ws';
   }
 };
 """
 
 
 def _window():
-    import platform               # en pygbag, "platform" expone el objeto window de JS
+    # pylint: disable-next=import-outside-toplevel
+    import platform     # in pygbag, "platform" exposes the JS window object
     return platform.window
 
 
 class BrowserTransport:
-    """WebSocket del navegador (pygbag)."""
-    _installed = False
+    """Browser WebSocket (pygbag)."""
+    js_installed = False      # the JS helper is installed once per page
 
     def __init__(self, url):
         self.win = _window()
         install_js()
         self.id = int(self.win.fdcNet.open(url))
 
-    def receive(self, limit=Online.CLIENT_RECEIVE_BATCH):
+    def receive(self, limit=ONLINE.CLIENT_RECEIVE_BATCH):
+        del limit  # Unused: JS hands everything that arrived.
         raw = str(self.win.fdcNet.take(self.id))
         if not raw:
             return []
@@ -175,33 +208,35 @@ class BrowserTransport:
 
 
 def install_js():
-    if not BrowserTransport._installed:
+    """Installs the JS helper once per page."""
+    if not BrowserTransport.js_installed:
         _window().eval(_JS)
-        BrowserTransport._installed = True
+        BrowserTransport.js_installed = True
 
 
 def default_url():
-    """En el navegador, el mismo sitio de donde se cargó la página; en el
-    escritorio, config.Online.SERVER_URL (o --servidor / FDC_SERVIDOR)."""
+    """In the browser, the same site the page came from; on the desktop,
+    config.Online.SERVER_URL (or --server / FDC_SERVER)."""
     if IN_BROWSER:
         install_js()
         return str(_window().fdcNet.defaultUrl())
-    return Online.SERVER_URL
+    return ONLINE.SERVER_URL
 
 
 def default_transport():
     return BrowserTransport if IN_BROWSER else ThreadTransport
 
 
-# En el navegador, el token se guarda en sessionStorage (sólo esa pestaña):
-# si se recarga la página por error, se puede volver a la misma sala y
-# partido dentro del plazo de reconexión. En el escritorio no hace falta.
-_SESSION_KEY = "fdc_sesion"
+# In the browser the token is stored in sessionStorage (that tab only): if
+# the page is reloaded by mistake, the player can come back to the same room
+# and match within the reconnection time. The desktop does not need it.
+_SESSION_KEY = "fdc_session"
 
 
 def remember_session(username, token):
     if IN_BROWSER and token:
-        _window().sessionStorage.setItem(_SESSION_KEY, json.dumps([username, token]))
+        _window().sessionStorage.setItem(_SESSION_KEY,
+                                         json.dumps([username, token]))
 
 
 def forget_session():
@@ -210,7 +245,7 @@ def forget_session():
 
 
 def saved_session():
-    """(nombre, token) guardados por esta pestaña, o None."""
+    """(name, token) stored by this tab, or None."""
     if not IN_BROWSER:
         return None
     try:
@@ -222,48 +257,51 @@ def saved_session():
 
 
 # ---------------------------------------------------------------------------
-# Cliente
+# Client
 # ---------------------------------------------------------------------------
-IDLE, CONNECTING, OPEN, RECONNECTING, CLOSED = "inactivo", "conectando", "conectado", "reconectando", "cerrado"
+IDLE, CONNECTING, OPEN, RECONNECTING, CLOSED = (
+    "idle", "connecting", "connected", "reconnecting", "closed")
 
 
 class NetClient:
+    """Connection with the online server and the latest data it sent."""
+
     def __init__(self, url=None, transport=None, clock=time.monotonic):
         self.url = url or default_url()
         self.transport_cls = transport or default_transport()
         self.clock = clock
-        self.transport = None
-        self.status = IDLE
-        self.fatal = None              # texto si la conexión se perdió del todo
-        self.wanted_name = None
-        self.player_id = None
-        self.username = None
-        self.tag = None
-        self.display = None            # "Ale #4821": así lo ven los demás
-        self.token = None
-        self.welcomed = False
-        self.rooms = []
-        self.room = None               # detalle de la sala en la que estoy
-        self.match = None              # último match_start
-        self.pause = {"type": W.PAUSE_INFO, "status": W.PAUSE_NONE}
-        self.opponent = None
-        self.result = None             # último match_over
-        self.room_info = None          # datos de la sala en el servidor (panel F3 del partido)
-        self.last_error = None         # último error del servidor (nombre en uso, clave...)
-        self.lost_at = None
-        self.next_retry = 0.0
-        self.rtt = None
-        self.next_ping = 0.0
+        self.transport, self.status, self.welcomed = None, IDLE, False
+        self.fatal = None       # text if the connection was lost for good
+        self.wanted_name = self.player_id = None
+        self.username = self.tag = self.token = None
+        self.display = None     # "Ale #4821": how the others see the player
+        self._reset_data()
+        self.lost_at, self.rtt = None, None
+        self.next_retry = self.next_ping = 0.0
         self.sent = self.received = self.bad = 0
+        self._handlers = self._message_handlers()
 
-    # ------------------------------------------------------------------ conexión
+    def _reset_data(self):
+        self.rooms = []
+        self.room = None        # detail of the room the player is in
+        self.match = None       # latest match_start
+        self.pause = {"type": wire.PAUSE_INFO, "status": wire.PAUSE_NONE}
+        self.opponent = None
+        self.result = None      # latest match_over
+        self.room_info = None   # room data on the server (match F3 panel)
+        # Latest server error (name taken, password...).
+        self.last_error = None
+
+    # ------------------------------------------------------------ connection
     def connect(self, username, player_id=None):
-        """Abre la conexión (o reusa la actual) y se presenta con el nombre del perfil."""
+        """Opens the connection (or reuses it) and introduces itself with
+        the profile name."""
         self.wanted_name = username
         self.player_id = player_id
         self.fatal = None
         if self.status == OPEN:
-            self.send({"type": W.HELLO, "username": username, "player_id": player_id})
+            self.send({"type": wire.HELLO, "username": username,
+                       "player_id": player_id})
         elif self.status not in (CONNECTING, RECONNECTING):
             self.status = CONNECTING
             self._open()
@@ -272,7 +310,7 @@ class NetClient:
         self.transport = self.transport_cls(self.url)
 
     def close(self):
-        """Salida voluntaria: no se reintenta."""
+        """Voluntary exit: no retries."""
         if self.transport is not None:
             self.transport.close()
         self.transport = None
@@ -286,66 +324,84 @@ class NetClient:
     def connected(self):
         return self.status == OPEN and self.welcomed
 
-    # ------------------------------------------------------------------ envío
+    # --------------------------------------------------------------- sending
     def send(self, msg):
         if self.transport is None or self.status != OPEN:
             return False
-        ok = self.transport.send(W.encode(msg))
+        ok = self.transport.send(wire.encode(msg))
         self.sent += ok
         return ok
 
     def is_me(self, member):
-        """En una sala puede haber dos con el mismo nombre: se compara nombre y etiqueta."""
-        return member["username"] == self.username and member.get("tag") == self.tag
+        """A room may hold two people with the same name: the name and the
+        tag are compared."""
+        return (member["username"] == self.username
+                and member.get("tag") == self.tag)
 
     def send_input(self, p):
-        self.send({"type": W.INPUT, "p": p})
+        self.send({"type": wire.INPUT, "p": p})
 
     def leave_room(self):
-        self.send({"type": "leave_room"})
+        self.send({"type": wire.LEAVE_ROOM})
         self.room = None
         self.match = None
 
     def abandon(self):
-        self.send({"type": W.ABANDON})
+        self.send({"type": wire.ABANDON})
         self.room = None
         self.match = None
 
-    # ------------------------------------------------------------------ recepción
+    # ------------------------------------------------------------- receiving
     def poll(self):
-        """Sin bloquear: procesa lo que llegó y devuelve los mensajes nuevos."""
+        """Without blocking: handles what arrived; returns the new
+        messages."""
         now = self.clock()
+        out = self._receive(now) if self.transport is not None else []
+        if self.status == RECONNECTING:
+            self._retry(now)
+        if self.connected and now >= self.next_ping:
+            self.next_ping = now + ONLINE.PING_EVERY
+            self.send({"type": wire.PING, "t": now})
+        return out
+
+    def _receive(self, now):
         out = []
-        if self.transport is not None:
-            for kind, data in self.transport.receive():
-                if kind == "open":
-                    self.status = OPEN
-                    hello = {"type": W.HELLO, "username": self.wanted_name, "player_id": self.player_id}
-                    if self.token:
-                        hello["token"] = self.token          # recuperar la sesión
-                    self.send(hello)
-                elif kind == "msg":
-                    try:
-                        msg = W.decode(data)
-                    except W.WireError:
-                        self.bad += 1
-                        continue
-                    self.received += 1
+        for kind, data in self.transport.receive():
+            if kind == "open":
+                self._on_open()
+            elif kind == "msg":
+                msg = self._decode(data)
+                if msg is not None:
                     self._apply(msg, now)
                     out.append(msg)
-                elif kind == "closed":
-                    self._on_closed(data or {}, now)
-                    break
-        if self.status == RECONNECTING:
-            if now - self.lost_at > Online.RECONNECT_GRACE:
-                self._give_up("Se perdió la conexión con el servidor.")
-            elif self.transport is None and now >= self.next_retry:
-                self.next_retry = now + Online.RETRY_EVERY
-                self._open()
-        if self.connected and now >= self.next_ping:
-            self.next_ping = now + Online.PING_EVERY
-            self.send({"type": W.PING, "t": now})
+            elif kind == "closed":
+                self._on_closed(data or {}, now)
+                break
         return out
+
+    def _on_open(self):
+        self.status = OPEN
+        hello = {"type": wire.HELLO, "username": self.wanted_name,
+                 "player_id": self.player_id}
+        if self.token:
+            hello["token"] = self.token          # recover the session
+        self.send(hello)
+
+    def _decode(self, data):
+        try:
+            msg = wire.decode(data)
+        except wire.WireError:
+            self.bad += 1
+            return None
+        self.received += 1
+        return msg
+
+    def _retry(self, now):
+        if now - self.lost_at > ONLINE.RECONNECT_GRACE:
+            self._give_up("Se perdió la conexión con el servidor.")
+        elif self.transport is None and now >= self.next_retry:
+            self.next_retry = now + ONLINE.RETRY_EVERY
+            self._open()
 
     def _on_closed(self, info, now):
         if self.transport is not None:
@@ -355,16 +411,20 @@ class NetClient:
         if self.status == IDLE:
             return
         if self.welcomed and code not in NO_RETRY_CODES:
-            if self.status != RECONNECTING:
-                self.status = RECONNECTING
-                self.lost_at = now
-                self.next_retry = now + Online.FIRST_RETRY_DELAY
-                log.info("se cortó la conexión (%s): reintentando", reason)
+            self._start_retrying(now, reason)
             return
-        self._give_up(NO_RETRY_CODES.get(code) or reason or "No se pudo conectar con el servidor.")
+        self._give_up(NO_RETRY_CODES.get(code) or reason
+                      or "No se pudo conectar con el servidor.")
+
+    def _start_retrying(self, now, reason):
+        if self.status != RECONNECTING:
+            self.status = RECONNECTING
+            self.lost_at = now
+            self.next_retry = now + ONLINE.FIRST_RETRY_DELAY
+            log.info("connection lost (%s): retrying", reason)
 
     def _give_up(self, text):
-        log.warning("conexión perdida: %s", text)
+        log.warning("connection lost: %s", text)
         if self.transport is not None:
             self.transport.close()
         self.transport = None
@@ -372,58 +432,95 @@ class NetClient:
         self.fatal = text
         self.welcomed = False
 
+    # ------------------------------------------- what the screens read
+    def _message_handlers(self):
+        """Each message type updates its data (the screens read it)."""
+        return {
+            wire.WELCOME: self._on_welcome, wire.ROOMS: self._on_rooms,
+            wire.ROOM: self._on_room, wire.MATCH_START: self._on_match_start,
+            wire.PAUSE_INFO: self._on_pause, wire.OPPONENT: self._on_opponent,
+            wire.MATCH_OVER: self._on_match_over,
+            wire.ROOM_INFO: self._on_room_info, wire.ERROR: self._on_error,
+            wire.PONG: self._on_pong,
+        }
+
     def _apply(self, msg, now):
-        """Actualiza lo que se sabe. Las pantallas leen estos atributos."""
-        t = msg["type"]
-        if t == W.WELCOME:
-            self.welcomed = True
-            self.username = msg["username"]
-            self.tag = msg.get("tag")
-            self.display = msg.get("display") or self.username
-            self.token = msg.get("token")
-            self.lost_at = None
-            remember_session(self.username, self.token)
-            if not msg.get("restored"):
-                self.room = self.match = None             # sesión nueva: no hay sala ni partido
-        elif t == W.ROOMS:
-            self.rooms = msg["rooms"]
-            self.room = None                              # sólo lo recibe quien está en la lista
-        elif t == W.ROOM:
-            self.room = msg
-        elif t == W.MATCH_START:
-            if self.match is None or self.match["match"] != msg["match"]:
-                self.result = None
-                self.pause = {"type": W.PAUSE_INFO, "status": W.PAUSE_NONE}
-                self.opponent = None
-            self.match = msg
-        elif t == W.PAUSE_INFO:
-            self.pause = dict(msg, at=now)
-        elif t == W.OPPONENT:
-            self.opponent = dict(msg, at=now)
-        elif t == W.MATCH_OVER:
-            self.result = msg
-            self.match = None
-            self.room_info = None
-        elif t == W.ROOM_INFO:
-            self.room_info = msg
-        elif t == W.ERROR:
-            self.last_error = dict(msg, at=now)
-        elif t == W.PONG and isinstance(msg.get("t"), (int, float)):
+        handler = self._handlers.get(msg["type"])
+        if handler is not None:
+            handler(msg, now)
+
+    def _on_welcome(self, msg, now):
+        del now  # Unused.
+        self.welcomed = True
+        self.username = msg["username"]
+        self.tag = msg.get("tag")
+        self.display = msg.get("display") or self.username
+        self.token = msg.get("token")
+        self.lost_at = None
+        remember_session(self.username, self.token)
+        if not msg.get("restored"):
+            self.room = self.match = None    # new session: no room or match
+
+    def _on_rooms(self, msg, now):
+        del now  # Unused.
+        self.rooms = msg["rooms"]
+        self.room = None        # only whoever is on the list receives it
+
+    def _on_room(self, msg, now):
+        del now  # Unused.
+        self.room = msg
+
+    def _on_match_start(self, msg, now):
+        del now  # Unused.
+        if self.match is None or self.match["match"] != msg["match"]:
+            self.result = None
+            self.pause = {"type": wire.PAUSE_INFO, "status": wire.PAUSE_NONE}
+            self.opponent = None
+        self.match = msg
+
+    def _on_pause(self, msg, now):
+        self.pause = dict(msg, at=now)
+
+    def _on_opponent(self, msg, now):
+        self.opponent = dict(msg, at=now)
+
+    def _on_match_over(self, msg, now):
+        del now  # Unused.
+        self.result = msg
+        self.match = None
+        self.room_info = None
+
+    def _on_room_info(self, msg, now):
+        del now  # Unused.
+        self.room_info = msg
+
+    def _on_error(self, msg, now):
+        self.last_error = dict(msg, at=now)
+
+    def _on_pong(self, msg, now):
+        if isinstance(msg.get("t"), (int, float)):
             self.rtt = max(0.0, now - msg["t"])
 
-    # ------------------------------------------------------------------ ayudas
+    # --------------------------------------------------------------- helpers
     def countdown(self, info):
-        """Segundos que faltan según un mensaje con "left" y su hora de llegada."""
+        """Seconds left according to a message with "left" and its
+        arrival time."""
         if not info or info.get("left") is None:
             return None
-        return max(0.0, info["left"] - (self.clock() - info.get("at", self.clock())))
+        return max(0.0, info["left"]
+                   - (self.clock() - info.get("at", self.clock())))
 
     def reconnect_left(self):
         if self.status != RECONNECTING or self.lost_at is None:
             return None
-        return max(0.0, Online.RECONNECT_GRACE - (self.clock() - self.lost_at))
+        return max(0.0, ONLINE.RECONNECT_GRACE - (self.clock() - self.lost_at))
 
     def debug_lines(self):
-        rtt = f"{self.rtt * MS_PER_SECOND:.0f} ms" if self.rtt is not None else "-"
-        return {"url": self.url, "status": self.status, "user": self.display or "-", "rtt": rtt,
-                "traffic": f"{self.sent} enviados / {self.received} recibidos / {self.bad} inválidos"}
+        """Lines of the F3 panel about the connection (shown in Spanish)."""
+        rtt = "-"
+        if self.rtt is not None:
+            rtt = f"{self.rtt * config.MS_PER_SECOND:.0f} ms"
+        return {"url": self.url, "status": self.status,
+                "user": self.display or "-", "rtt": rtt,
+                "traffic": f"{self.sent} enviados / {self.received} "
+                           f"recibidos / {self.bad} inválidos"}

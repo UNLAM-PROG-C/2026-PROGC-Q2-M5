@@ -1,65 +1,85 @@
-"""Núcleo de la simulación, sin transporte.
+"""Simulation core, without transport.
 
-Atiende las órdenes (con su ACK), aplica las fotos de controles, avanza el
-partido un paso fijo y produce estados y eventos. NO sabe cómo viajan los
-mensajes: eso lo define cada subclase.
-  * SimulationServer (fdc/sim/process.py): proceso aparte con colas acotadas.
-    Es lo que usan la versión de escritorio y el servidor online (una por sala).
-  * InlineSimulation (fdc/sim/inline.py): en el navegador, donde no hay
-    procesos, corre dentro de la misma página.
-Así la lógica de la simulación es UNA sola, la misma en los tres lugares.
+It handles the commands (with their ACK), applies the controls snapshots,
+advances the match one fixed step and produces states and events. It does
+NOT know how messages travel: each subclass defines that (Template Method).
+  * SimulationServer (fdc/sim/process.py): its own process with bounded
+    queues. Used by the desktop version and by the online server (one per
+    room).
+  * InlineSimulation (fdc/sim/inline.py): in the browser, where there are no
+    processes, it runs inside the same page.
+So the simulation logic is ONE, the same in the three places.
 """
 import logging
 import os
 import sys
 import time
 
-from .. import config as C
-from .. import protocol as P
-from .match import Match
+from fdc import config
+from fdc import protocol
+from fdc.sim import match
 
 log = logging.getLogger("fdc.sim")
+NO_CHARACTERS = ("?", "?")      # characters when a command did not send them
 
 
 class SimulationCore:
+    """Commands, controls and fixed steps of one match (no transport)."""
+
     def __init__(self, options):
         self.test_mode = bool(options.get("test_mode"))
         self.seed = options.get("seed")
-        self.duration = options.get("duration")   # partidos cortos para pruebas/demostración
+        # Short matches for tests or demonstrations.
+        self.duration = options.get("duration")
         self.match = None
-        self.eid = 0
-        self.seq = 0
-        self.press = [[P.PressCounter(), P.PressCounter()] for _ in range(2)]
+        self.eid = self.seq = 0
+        self.press = [[protocol.PressCounter(), protocol.PressCounter()]
+                      for _ in range(2)]
         self.last_input_time = time.monotonic()
         self.running = True
-        self.dropped_cosmetic = 0
-        self.dropped_states = 0
+        self.dropped_cosmetic = self.dropped_states = 0
+        self.handlers = self._command_handlers()
 
-    # ------------------------------------------------------------------ transporte (subclases)
+    def _command_handlers(self):
+        """Command pattern: each command type has its handler."""
+        return {
+            protocol.CMD_START: self._start, protocol.CMD_RESTART: self._start,
+            protocol.CMD_PAUSE: self._pause, protocol.CMD_RESUME: self._resume,
+            protocol.CMD_END: self._end,
+            protocol.CMD_DEBUG_POWER: self._debug_power,
+            protocol.CMD_DEBUG_CRASH: self._debug_crash,
+            protocol.CMD_SHUTDOWN: self._shutdown,
+        }
+
+    # ------------------------------------------------ transport (subclasses)
     def put_reliable(self, msg):
-        """Entrega garantizada (órdenes confirmadas, goles, poderes...)."""
+        """Guaranteed delivery (acknowledged commands, goals, powers...)."""
         raise NotImplementedError
 
     def put_cosmetic(self, msg):
-        """Entrega si hay lugar; devuelve False si se descartó."""
+        """Delivers if there is room; returns False if it was dropped."""
         raise NotImplementedError
 
     def put_state(self, snap):
-        """Estado reemplazable: "el último gana"."""
+        """Replaceable state: "the newest wins"."""
         raise NotImplementedError
 
-    # ------------------------------------------------------------------ envío
+    # --------------------------------------------------------------- sending
     def ready_event(self):
-        return P.make_event(P.EV_READY, None, None, pid=os.getpid(), protocol=C.PROTOCOL_VERSION,
-                            hz=C.PHYSICS_HZ, test_mode=self.test_mode, seed=self.seed,
-                            pygame_loaded="pygame" in sys.modules)
+        """READY message: pid, protocol, rate and whether pygame is loaded."""
+        return protocol.make_event(
+            protocol.EV_READY, None, None, pid=os.getpid(),
+            protocol=config.PROTOCOL_VERSION, hz=config.PHYSICS_HZ,
+            test_mode=self.test_mode, seed=self.seed,
+            pygame_loaded="pygame" in sys.modules)
 
     def emit(self, etype, match_id=None, **payload):
+        """Sends an event; cosmetic ones may be dropped (and counted)."""
         self.eid += 1
-        msg = P.make_event(etype, self.eid, match_id, **payload)
-        if etype in P.COSMETIC_EVENTS:
+        msg = protocol.make_event(etype, self.eid, match_id, **payload)
+        if etype in protocol.COSMETIC_EVENTS:
             if not self.put_cosmetic(msg):
-                self.dropped_cosmetic += 1   # política explícita: sólo cosméticos
+                self.dropped_cosmetic += 1   # explicit policy: cosmetic only
             return
         self.put_reliable(msg)
 
@@ -71,84 +91,120 @@ class SimulationCore:
         self.put_state(snap)
 
     def flush_match_events(self, events):
-        mid = self.match.id if self.match else None
+        match_id = self.match.id if self.match else None
         for etype, data in events:
-            self.emit(etype, mid, **data)
+            self.emit(etype, match_id, **data)
 
-    # ------------------------------------------------------------------ órdenes
+    # -------------------------------------------------------------- commands
     def handle_command(self, cmd):
-        ctype, cid = cmd.get("type"), cmd.get("cid")
-        ack = lambda ok=True, detail="", match=None: self.put_reliable(P.make_ack(  # noqa: E731
-            cid, ctype, ok, match if match is not None else (self.match.id if self.match else None),
-            detail))
+        """Runs the handler of the command and acknowledges it."""
+        handler = self.handlers.get(cmd.get("type"))
+        if handler is None:
+            self._ack(cmd, False, f"orden desconocida {cmd.get('type')!r}")
+            return
+        handler(cmd)
 
-        if ctype == P.CMD_START or ctype == P.CMD_RESTART:
-            chars = cmd.get("characters") or (self.match.characters if self.match else ("?", "?"))
-            seed = cmd.get("seed", self.seed)
-            # un partido nuevo es un objeto nuevo: no arrastra efectos ni estado viejo
-            self.match = Match(cmd["match"], seed=seed, characters=chars, duration=self.duration,
-                               golden_goal=bool(cmd.get("golden_goal", False)))
-            self.last_input_time = time.monotonic()
-            log.info("%s partido #%s (%s vs %s, semilla %s)", ctype, self.match.id,
-                     chars[0], chars[1], self.match.seed)
-            ack(True, f"semilla {self.match.seed}")
-            self.publish_state()
-        elif ctype == P.CMD_PAUSE:
-            if self.match is None:
-                ok = False
-            elif cmd.get("after_goal"):
-                # online: queda pendiente hasta después del próximo gol
-                ok = self.match.request_pause_after_goal(cmd.get("by"))
-            else:
-                ok = self.match.pause(cmd.get("reason", P.PAUSE_REASON_USER))
-            ack(ok, "" if ok else "no hay partido en curso")
-            if ok:
-                self.publish_state()
-        elif ctype == P.CMD_RESUME:
-            ok = self.match is not None and self.match.resume()
-            self.last_input_time = time.monotonic()
-            ack(ok, "" if ok else "no estaba en pausa")
-            if ok:
-                self.publish_state()
-        elif ctype == P.CMD_END:
-            self.match = None
-            ack(True)
-        elif ctype == P.CMD_DEBUG_POWER:
-            if not self.test_mode or self.match is None:
-                ack(False, "modo de prueba desactivado" if not self.test_mode else "sin partido")
-                return
-            ok, detail, events = self.match.debug_power(cmd.get("power"), cmd.get("mode", "spawn"))
-            ack(ok, detail)
-            self.flush_match_events(events)
-        elif ctype == P.CMD_DEBUG_CRASH:
-            if not self.test_mode:
-                ack(False, "modo de prueba desactivado")
-                return
-            ack(True, "fallo provocado")
-            raise RuntimeError("Fallo provocado desde el modo de prueba (F12)")
-        elif ctype == P.CMD_SHUTDOWN:
-            ack(True)
-            self.running = False
+    def _ack(self, cmd, ok=True, detail=""):
+        """ACK of `cmd` with the current match id (texts are shown)."""
+        match_id = self.match.id if self.match else None
+        self.put_reliable(protocol.make_ack(cmd.get("cid"), cmd.get("type"),
+                                            ok, match_id, detail))
+
+    def _start(self, cmd):
+        """A new match is a new object: no old effects or state remain."""
+        chars = cmd.get("characters") or (
+            self.match.characters if self.match else NO_CHARACTERS)
+        self.match = match.Match(
+            cmd["match"], seed=cmd.get("seed", self.seed), characters=chars,
+            duration=self.duration,
+            golden_goal=bool(cmd.get("golden_goal", False)))
+        self.last_input_time = time.monotonic()
+        log.info("%s match #%s (%s vs %s, seed %s)", cmd.get("type"),
+                 self.match.id, chars[0], chars[1], self.match.seed)
+        self._ack(cmd, True, f"semilla {self.match.seed}")
+        self.publish_state()
+
+    def _pause(self, cmd):
+        if self.match is None:
+            ok = False
+        elif cmd.get("after_goal"):
+            # Online: it waits until after the next goal.
+            ok = self.match.request_pause_after_goal(cmd.get("by"))
         else:
-            ack(False, f"orden desconocida {ctype!r}")
+            ok = self.match.pause(
+                cmd.get("reason", protocol.PAUSE_REASON_USER))
+        self._ack(cmd, ok, "" if ok else "no hay partido en curso")
+        if ok:
+            self.publish_state()
 
-    # ------------------------------------------------------------------ controles y pasos
+    def _resume(self, cmd):
+        ok = self.match is not None and self.match.resume()
+        self.last_input_time = time.monotonic()
+        self._ack(cmd, ok, "" if ok else "no estaba en pausa")
+        if ok:
+            self.publish_state()
+
+    def _end(self, cmd):
+        self.match = None
+        self._ack(cmd, True)
+
+    def _debug_power(self, cmd):
+        if not self.test_mode or self.match is None:
+            self._ack(cmd, False, "modo de prueba desactivado"
+                      if not self.test_mode else "sin partido")
+            return
+        ok, detail, events = self.match.debug_power(
+            cmd.get("power"), cmd.get("mode", "spawn"))
+        self._ack(cmd, ok, detail)
+        self.flush_match_events(events)
+
+    def _debug_crash(self, cmd):
+        if not self.test_mode:
+            self._ack(cmd, False, "modo de prueba desactivado")
+            return
+        self._ack(cmd, True, "fallo provocado")
+        raise RuntimeError("Fallo provocado desde el modo de prueba (F12)")
+
+    def _shutdown(self, cmd):
+        self._ack(cmd, True)
+        self.running = False
+
+    # ---------------------------------------------------- controls and steps
     def apply_inputs(self, latest):
-        """Última foto de controles: los contadores dicen cuántas pulsaciones hubo."""
+        """Latest controls snapshot: counters say how many presses there
+        were."""
         self.last_input_time = time.monotonic()
         for idx, (left, right, jumps, kicks) in enumerate(latest["p"][:2]):
-            new_j = self.press[idx][0].update(jumps)
-            new_k = self.press[idx][1].update(kicks)
+            new_jumps = self.press[idx][0].update(jumps)
+            new_kicks = self.press[idx][1].update(kicks)
             if self.match is not None:
-                self.match.set_input(idx, left, right, new_j, new_k)
+                self.match.set_input(idx, left, right, new_jumps, new_kicks)
 
     def match_running(self):
-        m = self.match
-        return m is not None and not m.paused and m.phase != P.PHASE_FINISHED
+        current = self.match
+        return (current is not None and not current.paused
+                and current.phase != protocol.PHASE_FINISHED)
 
     def step_once(self):
-        """Un paso fijo de física; publica un estado cada STATE_EVERY_TICKS pasos."""
-        events = self.match.step(C.PHYSICS_DT)
+        """One fixed physics step; publishes a state every
+        STATE_EVERY_TICKS steps."""
+        events = self.match.step(config.PHYSICS_DT)
         self.flush_match_events(events)
-        if self.match.tick % C.STATE_EVERY_TICKS == 0 or self.match.phase == P.PHASE_FINISHED:
+        if (self.match.tick % config.STATE_EVERY_TICKS == 0
+                or self.match.phase == protocol.PHASE_FINISHED):
             self.publish_state()
+
+
+def catch_up(sim, now, next_tick):
+    """Runs the fixed steps due until `now` (at most MAX_CATCHUP_STEPS).
+    Returns the time of the next step. Used by the process and the browser."""
+    steps = 0
+    while now >= next_tick and steps < config.MAX_CATCHUP_STEPS:
+        sim.step_once()
+        next_tick += config.PHYSICS_DT
+        steps += 1
+        if not sim.match_running():
+            break
+    if steps >= config.MAX_CATCHUP_STEPS and now >= next_tick:
+        next_tick = now   # too late: drop the delay instead of speeding up
+    return next_tick

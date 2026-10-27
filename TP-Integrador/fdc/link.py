@@ -1,23 +1,23 @@
-"""Contrato entre la interfaz y "algo que simula el partido".
+"""Contract between the interface and "something that simulates the match".
 
-Las pantallas locales (Multijugador local y Mundialito) sólo usan estos
-métodos y atributos. Los implementa SimLink (fdc/ipc.py): un proceso de
-simulación comunicado por colas. El servidor online usa el mismo SimLink, uno
-por sala en juego.
+The local screens (local multiplayer and tournament) only use these methods
+and attributes. SimLink (fdc/ipc.py) implements them: a simulation process
+connected through queues. The online server uses the same SimLink, one per
+room in play.
 
-El partido online no pasa por este contrato: su pantalla (OnlineMatchScreen)
-habla con NetClient (fdc/online/client.py), que además maneja salas, pausa
-pedida, "listo" y reconexión. Los estados y eventos que dibuja son los mismos
-de fdc/protocol.py. Ver docs/ONLINE.md.
+The online match does not go through this contract: its screen
+(OnlineMatchScreen) talks to NetClient (fdc/online/client.py), which also
+handles rooms, requested pauses, "ready" and reconnection. The states and
+events it draws are the same of fdc/protocol.py. See docs/ONLINE.md.
 """
-from abc import ABC, abstractmethod
+import abc
 
 
-class MatchLink(ABC):
-    """Interfaz mínima que necesita la UI.
+class MatchLink(abc.ABC):
+    """Minimal interface the UI needs (Strategy pattern).
 
-    Atributos que la UI lee:
-      ready (bool), ready_info (dict del mensaje READY), error (str|None),
+    Attributes the UI reads:
+      ready (bool), ready_info (dict of the READY message), error (str|None),
       error_detail (str), shutdown_report (dict|None)
     """
 
@@ -27,31 +27,34 @@ class MatchLink(ABC):
     error_detail = ""
     shutdown_report = None
 
-    @abstractmethod
+    @abc.abstractmethod
     def start(self):
-        """Conecta / lanza la simulación (no bloquea: READY llega por poll)."""
+        """Connects / launches the simulation (non-blocking: READY arrives
+        through poll)."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def send_command(self, ctype, **payload):
-        """Orden confiable (start_match, pause, ...). Devuelve su cid o None."""
+        """Reliable command (start_match, pause, ...). Returns its cid or
+        None."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def send_input(self, players):
-        """Foto de controles reemplazable (contadores acumulados de pulsaciones)."""
+        """Replaceable controls snapshot (cumulative press counters)."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def poll(self):
-        """Sin bloquear: (mensajes nuevos, último estado o None)."""
+        """Non-blocking: (new messages, latest state or None)."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def check_health(self):
-        """Devuelve un texto de error si la conexión/simulación falló."""
+        """Returns an error text if the connection/simulation failed."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def stop(self):
-        """Cierre coordinado. Devuelve un informe."""
+        """Coordinated shutdown. Returns a report."""
 
     def restart(self):
+        """Stops the simulation and launches a new one."""
         self.stop()
         self.start()
 
@@ -60,4 +63,5 @@ class MatchLink(ABC):
         return self.error is None
 
     def debug_lines(self):
+        """Extra lines for the F3 panel (none by default)."""
         return {}

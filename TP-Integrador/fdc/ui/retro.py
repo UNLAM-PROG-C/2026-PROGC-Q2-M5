@@ -1,37 +1,41 @@
-"""Utilidades de dibujo retro: píxeles nítidos, paneles con bisel y botones.
+"""Retro drawing helpers: crisp pixels, bevelled panels and boxes.
 
-El mundo se dibuja con "píxeles de arte" de PX = 2 píxeles lógicos: los
-sprites y el fondo se generan a resolución nativa y se agrandan x2 sin
-suavizado.
+The world is drawn with "art pixels" of PX = 2 logical pixels: sprites and
+the background are generated at native resolution and scaled x2 without
+smoothing.
 """
 import pygame
 
-from . import palette as C
+from fdc.ui import palette
 
-PX = 2                  # píxeles lógicos por "píxel de arte" (todo el pixel art se agranda x2)
-ALPHA_CUT = 110         # al pixelar, los píxeles con menos opacidad que esto quedan transparentes
-MASK_THRESHOLD = 20     # opacidad mínima de un píxel para que cuente en el contorno
-DITHER_ALPHA = 90       # opacidad de los puntos de la sombra con trama
-BEVEL_LIGHT = 45        # cuánto más clara es la luz del bisel (arriba e izquierda)
-BEVEL_DARK = 45         # cuánto más oscura es la sombra del bisel (abajo y derecha)
-BOX_SHADOW_ALPHA = 60   # opacidad de la sombra de una caja con bisel
-PANEL_SHADOW_ALPHA = 70  # opacidad de la sombra de un panel
-PANEL_SHADOW_OFFSET = 3  # píxeles de arte que se corre la sombra de un panel
-PANEL_INNER_LINE = 5     # píxeles de arte desde el borde hasta la línea interior del panel
-PANEL_INNER_DARKEN = 28  # cuánto más oscura que el fondo es esa línea interior
-PANEL_PADDING = 8        # píxeles de arte desde el borde hasta el área útil del panel
+PX = 2                  # logical pixels per art pixel (all pixel art is x2)
+# When pixelizing, pixels less opaque than this become transparent.
+ALPHA_CUT = 110
+MASK_THRESHOLD = 20     # minimum opacity of a pixel to count in the outline
+DITHER_ALPHA = 90       # opacity of the dots of the dithered shadow
+BEVEL_LIGHT = 45        # how much lighter the bevel light is (top and left)
+BEVEL_DARK = 45         # how much darker the bevel shade is (bottom, right)
+BOX_SHADOW_ALPHA = 60   # opacity of the shadow of a bevelled box
+PANEL_SHADOW_ALPHA = 70  # opacity of the shadow of a panel
+PANEL_SHADOW_OFFSET = 3  # art pixels the shadow of a panel is shifted
+PANEL_INNER_LINE = 5     # art pixels from the edge to the inner line
+PANEL_INNER_DARKEN = 28  # how much darker than the face the inner line is
+PANEL_PADDING = 8        # art pixels from the edge to the usable area
 
 
 def scale_px(surf, k=PX):
-    return pygame.transform.scale(surf, (surf.get_width() * k, surf.get_height() * k))
+    """Scales a native surface by k without smoothing."""
+    return pygame.transform.scale(
+        surf, (surf.get_width() * k, surf.get_height() * k))
 
 
 def snap(v, k=PX):
+    """Rounds v to the grid of art pixels."""
     return int(round(v / k)) * k
 
 
 def pixelize(surf, native_w, alpha_cut=ALPHA_CUT):
-    """Reduce una ilustración suave a pixel art nativo (alfa binario)."""
+    """Reduces a smooth drawing to native pixel art (binary alpha)."""
     w, h = surf.get_size()
     nh = max(1, round(h * native_w / w))
     small = pygame.transform.smoothscale(surf, (native_w, nh))
@@ -40,19 +44,25 @@ def pixelize(surf, native_w, alpha_cut=ALPHA_CUT):
         for x in range(native_w):
             c = small.get_at((x, y))
             if c.a >= alpha_cut:
-                k = C.MAX_CHANNEL / c.a          # deshace la mezcla con el fondo transparente
-                out.set_at((x, y), (min(C.MAX_CHANNEL, int(c.r * k)), min(C.MAX_CHANNEL, int(c.g * k)),
-                                    min(C.MAX_CHANNEL, int(c.b * k)), C.OPAQUE))
+                out.set_at((x, y), _unblend(c))
     return out
 
 
+def _unblend(c):
+    """Undoes the blend with the transparent background."""
+    k = palette.MAX_CHANNEL / c.a
+    top = palette.MAX_CHANNEL
+    return (min(top, int(c.r * k)), min(top, int(c.g * k)),
+            min(top, int(c.b * k)), palette.OPAQUE)
+
+
 def outline_native(surf, color, width=1):
-    """Contorno exterior de 'width' píxeles (en la misma resolución)."""
+    """Outer outline of 'width' pixels (at the same resolution)."""
     w, h = surf.get_size()
     out = pygame.Surface((w + 2 * width, h + 2 * width), pygame.SRCALPHA)
-    rgb = tuple(color)[:C.RGB_CHANNELS]
-    sil = pygame.mask.from_surface(surf, MASK_THRESHOLD).to_surface(setcolor=(*rgb, C.OPAQUE),
-                                                                    unsetcolor=(0, 0, 0, 0))
+    rgb = tuple(color)[:palette.RGB_CHANNELS]
+    sil = pygame.mask.from_surface(surf, MASK_THRESHOLD).to_surface(
+        setcolor=(*rgb, palette.OPAQUE), unsetcolor=(0, 0, 0, 0))
     for dx in range(-width, width + 1):
         for dy in range(-width, width + 1):
             if dx or dy:
@@ -61,42 +71,54 @@ def outline_native(surf, color, width=1):
     return out
 
 
-def dither_ellipse(w, h, color=C.SHADOW, alpha=DITHER_ALPHA):
-    """Sombra con trama de tablero de ajedrez (estilo 16 bits)."""
+def dither_ellipse(w, h, color=palette.SHADOW, alpha=DITHER_ALPHA):
+    """Shadow with a checkerboard pattern (16-bit style)."""
     s = pygame.Surface((max(2, w), max(2, h)), pygame.SRCALPHA)
     rx, ry = w / 2, h / 2
     for y in range(h):
         for x in range(w):
-            if ((x - rx + 0.5) / rx) ** 2 + ((y - ry + 0.5) / ry) ** 2 <= 1 and (x + y) % 2 == 0:
+            inside = (((x - rx + 0.5) / rx) ** 2
+                      + ((y - ry + 0.5) / ry) ** 2 <= 1)
+            if inside and (x + y) % 2 == 0:
                 s.set_at((x, y), (*color, alpha))
     return s
 
 
-def bevel_box(surf, rect, face, border=C.INK, light=None, dark=None, shadow=True, b=PX):
-    """Caja retro: borde oscuro, luz arriba/izquierda, sombra abajo/derecha."""
+def bevel_box(surf, rect, face, border=palette.INK, light=None, dark=None,
+              shadow=True, b=PX):
+    """Retro box: dark border, light top/left, shade bottom/right."""
     rect = pygame.Rect(rect)
-    light = light or tuple(min(C.MAX_CHANNEL, c + BEVEL_LIGHT) for c in face)
+    light = light or tuple(min(palette.MAX_CHANNEL, c + BEVEL_LIGHT)
+                           for c in face)
     dark = dark or tuple(max(0, c - BEVEL_DARK) for c in face)
     if shadow:
-        sh = pygame.Surface(rect.size, pygame.SRCALPHA)
-        sh.fill((*C.SHADOW, BOX_SHADOW_ALPHA))
-        surf.blit(sh, rect.move(2 * b, 2 * b))
+        _blit_shadow(surf, rect, BOX_SHADOW_ALPHA, 2 * b)
     pygame.draw.rect(surf, border, rect)
     inner = rect.inflate(-2 * b, -2 * b)
     pygame.draw.rect(surf, face, inner)
-    pygame.draw.rect(surf, light, (inner.left, inner.top, inner.width, b))
-    pygame.draw.rect(surf, light, (inner.left, inner.top, b, inner.height))
-    pygame.draw.rect(surf, dark, (inner.left, inner.bottom - b, inner.width, b))
-    pygame.draw.rect(surf, dark, (inner.right - b, inner.top, b, inner.height))
+    _draw_bevel(surf, inner, light, dark, b)
     return inner
 
 
-def panel(surf, rect, face=C.CREAM, border=C.INK, alpha=None):
-    """Panel de diálogo: doble borde clásico."""
-    rect = pygame.Rect(rect)
+def _blit_shadow(surf, rect, alpha, offset):
     sh = pygame.Surface(rect.size, pygame.SRCALPHA)
-    sh.fill((*C.SHADOW, PANEL_SHADOW_ALPHA))
-    surf.blit(sh, rect.move(PANEL_SHADOW_OFFSET * PX, PANEL_SHADOW_OFFSET * PX))
+    sh.fill((*palette.SHADOW, alpha))
+    surf.blit(sh, rect.move(offset, offset))
+
+
+def _draw_bevel(surf, inner, light, dark, b):
+    pygame.draw.rect(surf, light, (inner.left, inner.top, inner.width, b))
+    pygame.draw.rect(surf, light, (inner.left, inner.top, b, inner.height))
+    pygame.draw.rect(surf, dark, (inner.left, inner.bottom - b,
+                                  inner.width, b))
+    pygame.draw.rect(surf, dark, (inner.right - b, inner.top,
+                                  b, inner.height))
+
+
+def panel(surf, rect, face=palette.CREAM, border=palette.INK, alpha=None):
+    """Dialog panel: classic double border. Returns the usable area."""
+    rect = pygame.Rect(rect)
+    _blit_shadow(surf, rect, PANEL_SHADOW_ALPHA, PANEL_SHADOW_OFFSET * PX)
     if alpha is not None:
         layer = pygame.Surface(rect.size, pygame.SRCALPHA)
         layer.fill((*face, alpha))
@@ -105,5 +127,6 @@ def panel(surf, rect, face=C.CREAM, border=C.INK, alpha=None):
         pygame.draw.rect(surf, face, rect)
     pygame.draw.rect(surf, border, rect, 2 * PX)
     inner = rect.inflate(-PANEL_INNER_LINE * PX, -PANEL_INNER_LINE * PX)
-    pygame.draw.rect(surf, tuple(max(0, c - PANEL_INNER_DARKEN) for c in face), inner, PX)
+    pygame.draw.rect(surf, tuple(max(0, c - PANEL_INNER_DARKEN) for c in face),
+                     inner, PX)
     return rect.inflate(-PANEL_PADDING * PX, -PANEL_PADDING * PX)

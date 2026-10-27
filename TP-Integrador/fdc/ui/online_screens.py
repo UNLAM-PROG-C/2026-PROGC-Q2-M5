@@ -1,124 +1,159 @@
-"""Pantallas del modo online (versión de escritorio y navegador).
+"""Online mode screens (desktop and browser version).
 
-Flujo:  nombre de usuario -> lista de salas -> (crear sala) -> sala: elegir
-personaje y "listo" -> partido -> resultado -> revancha / cambiar personaje /
-salir.
+Flow: user name -> room list -> (create room) -> room: choose a character
+and "ready" -> match -> result -> rematch / change character / leave.
 
-Todas leen app.net (NetClient), que se actualiza con cada mensaje del
-servidor: nada se pierde al cambiar de pantalla. La simulación corre en el
-servidor; estas pantallas sólo mandan controles y pedidos (pausa, listo,
-abandonar) y dibujan lo que llega.
+All of them read app.net (NetClient), which is updated with every server
+message: nothing is lost when the screen changes. The simulation runs on
+the server; these screens only send controls and requests (pause, ready,
+abandon) and draw what arrives.
 
-Las medidas son px en la resolución lógica de 1280 x 720 (ver layout.py).
+Measures are px in the 1280 x 720 logical resolution (see layout.py).
 """
 import math
 import time
 
 import pygame
 
-from .. import protocol as P
-from ..config import MS_PER_SECOND, PLAYER_COLORS
-from ..online import client as NC
-from ..online import wire as W
-from ..online.interp import Interpolator
-from ..online.lobby import ROOM_NAME_MAX
-from . import palette as C
-from .assets import draw_text, text_width, wrap
-from .characters import CHARACTER_IDS, CHARACTERS_BY_ID, short_name
-from .layout import (BUTTON_H, BUTTON_SMALL_H, CENTER_X, FONT_BANNER, FONT_GIANT, FONT_LARGE, FONT_SMALL, FONT_TEXT,
-                     FONT_TITLE, FONT_TITLE_L, FONT_TITLE_S, FONT_TITLE_XL, SCREEN_H, SCREEN_MARGIN, SCREEN_W,
-                     TEXT_LINE_H, TEXT_LINE_H_BIG, VEIL_ERROR, VEIL_LIST, VEIL_ONLINE, VEIL_OVERLAY, VEIL_RESULT)
-from .match_screens import (FACING, PLAYER_X, SELECTION_LINE, SELECTION_MARGIN, MatchScreen, SelectScreen, card_rect,
-                            choice_buttons, draw_card)
-from .retro import bevel_box
-from .screens import BackButton, Menu, Screen, bouncing_ball, button, dim, footer, panel, scoreboard, title
-from .sprites import celebrate_pose, idle_pose
-from .widgets import CheckBox, TextField
+from fdc import config
+from fdc import protocol
+from fdc.online import client
+from fdc.online import interp
+from fdc.online import lobby
+from fdc.online import wire
+from fdc.ui import assets
+from fdc.ui import characters
+from fdc.ui import layout
+from fdc.ui import match_screens
+from fdc.ui import palette
+from fdc.ui import retro
+from fdc.ui import screens
+from fdc.ui import sprites
+from fdc.ui import widgets
 
-CONTROLS_HELP = "Moverse: A/D o flechas  -  Saltar: W o flecha arriba  -  Patear: Espacio o P  -  Pausa: Esc"
-ROOM_STATES = {"esperando": "esperando rival", "eligiendo": "eligiendo personajes", "jugando": "jugando"}
-ME_COLOR, RIVAL_COLOR = C.GOLD, C.BLUE        # en la sala todavía no hay lados
-PASSWORD_MAX_LEN = 24              # caracteres que se pueden escribir en una contraseña de sala
-NOTICE_TIME = 4.0                  # s que se muestra un aviso abajo al centro
+CHARACTER_IDS = characters.CHARACTER_IDS
+SELECT = match_screens.SelectScreen
+PLAYER_X = match_screens.PLAYER_X
+FACING = match_screens.FACING
+CONTROLS_HELP = ("Moverse: A/D o flechas  -  Saltar: W o flecha arriba  -  "
+                 "Patear: Espacio o P  -  Pausa: Esc")
+ROOM_STATES = {lobby.WAITING: "esperando rival",
+               lobby.CHOOSING: "eligiendo personajes",
+               lobby.PLAYING: "jugando"}
+# In the room there are no sides yet: my colour and the rival colour.
+ME_COLOR, RIVAL_COLOR = palette.GOLD, palette.BLUE
+PASSWORD_MAX_LEN = 24              # characters of a room password
+NOTICE_TIME = 4.0                  # s a notice is shown at the bottom
+ENTER_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+UP_KEYS = (pygame.K_w, pygame.K_UP)
+DOWN_KEYS = (pygame.K_s, pygame.K_DOWN)
 
-# --- candado de las salas con contraseña: (x, y relativos al centro, ancho, alto)
-LOCK_BODY = (-9, -1, 18, 13)       # cuerpo
-LOCK_SHACKLE = (-6, -11, 12, 12)   # arco de arriba
-LOCK_SHACKLE_LINE = 3              # px: grosor del arco
-LOCK_KEYHOLE = (-2, 3, 4, 5)       # cerradura dorada
-# --- estado de la conexión (arriba a la derecha; abajo durante el partido)
-CHIP_H = 32                        # px: alto
-CHIP_PADDING = 40                  # px que se suman al texto (punto de color y márgenes)
-CHIP_BOTTOM_MARGIN = (12, 8)       # px desde la esquina inferior derecha durante el partido (x, y)
-CHIP_BLINK_HZ = 3                  # parpadeo del punto rojo mientras reconecta
-CHIP_DOT_X = 12                    # punto de color, desde el borde izquierdo
-CHIP_DOT_R = 6                     # px: radio del punto
-CHIP_TEXT_X = 24                   # texto, desde el borde izquierdo
-# --- aviso abajo al centro
-MESSAGE_BLINK_TIME = 0.3           # s finales en los que el aviso parpadea antes de irse
-MESSAGE_BLINK_HZ = 20              # cambios por segundo de ese parpadeo
-MESSAGE_MAX_W = 800                # px: ancho máximo del texto (después pasa al renglón siguiente)
-MESSAGE_PADDING = 40               # px que se suman al texto más largo
-MESSAGE_PAD_Y = 18                 # px que se suman a los renglones
-MESSAGE_BOTTOM = 676               # borde inferior (justo arriba del pie de página)
-MESSAGE_BAR_W = 6                  # franja de color a la izquierda
-MESSAGE_TEXT_Y = 13                # primer renglón, desde arriba del aviso
+# --- lock of the rooms with password: (x, y from the centre, w, h) in px
+LOCK_BODY = (-9, -1, 18, 13)       # body
+LOCK_SHACKLE = (-6, -11, 12, 12)   # arc on top
+LOCK_SHACKLE_LINE = 3              # px: thickness of the arc
+LOCK_KEYHOLE = (-2, 3, 4, 5)       # golden keyhole
+# --- connection status (top right; at the bottom during the match)
+CHIP_H = 32                        # px: height
+CHIP_PADDING = 40                  # px added to the text (dot and margins)
+# px from the bottom right corner during the match (x, y).
+CHIP_BOTTOM_MARGIN = (12, 8)
+CHIP_BLINK_HZ = 3                  # blink of the red dot while reconnecting
+CHIP_DOT_X = 12                    # colour dot, from the left edge (px)
+CHIP_DOT_R = 6                     # px: radius of the dot
+CHIP_TEXT_X = 24                   # text, from the left edge (px)
+# --- notice at the bottom centre
+MESSAGE_BLINK_TIME = 0.3           # last s in which the notice blinks
+MESSAGE_BLINK_HZ = 20              # changes per second of that blink
+MESSAGE_MAX_W = 800                # px: maximum text width (then it wraps)
+MESSAGE_PADDING = 40               # px added to the longest line
+MESSAGE_PAD_Y = 18                 # px added to the lines
+MESSAGE_BOTTOM = 676               # bottom edge (just above the footer)
+MESSAGE_BAR_W = 6                  # colour band on the left (px)
+MESSAGE_TEXT_Y = 13                # first line, from the notice top (px)
 
 
-def lock_icon(surf, center, color=C.INK):
-    """Candado pixel art (salas con contraseña)."""
-    x, y = center
+def _at(center, rect):
+    """Rectangle (dx, dy, width, height) relative to the centre."""
+    dx, dy, w, h = rect
+    return center[0] + dx, center[1] + dy, w, h
 
-    def at(rect):
-        dx, dy, w, h = rect
-        return x + dx, y + dy, w, h
 
-    pygame.draw.rect(surf, color, at(LOCK_BODY))
-    pygame.draw.rect(surf, color, at(LOCK_SHACKLE), LOCK_SHACKLE_LINE)
-    pygame.draw.rect(surf, C.GOLD, at(LOCK_KEYHOLE))
+def lock_icon(surf, center, color=palette.INK):
+    """Pixel art lock (rooms with a password)."""
+    pygame.draw.rect(surf, color, _at(center, LOCK_BODY))
+    pygame.draw.rect(surf, color, _at(center, LOCK_SHACKLE), LOCK_SHACKLE_LINE)
+    pygame.draw.rect(surf, palette.GOLD, _at(center, LOCK_KEYHOLE))
+
+
+def _chip_text(net):
+    """(text, dot colour) of the connection status, or None."""
+    if net.status == client.RECONNECTING:
+        return (f"RECONECTANDO... {net.reconnect_left() or 0:.0f} s",
+                palette.RED)
+    if net.connected:
+        rtt = (f"  {net.rtt * config.MS_PER_SECOND:.0f} ms"
+               if net.rtt is not None else "")
+        return f"{net.display}{rtt}", palette.GREEN
+    if net.status == client.CONNECTING:
+        return "CONECTANDO...", palette.GOLD_DARK
+    return None
+
+
+def _chip_rect(txt, bottom):
+    r = pygame.Rect(0, 0, assets.text_width(txt, layout.FONT_SMALL)
+                    + CHIP_PADDING, CHIP_H)
+    if bottom:
+        margin_x, margin_y = CHIP_BOTTOM_MARGIN
+        r.bottomright = (layout.SCREEN_W - margin_x, layout.SCREEN_H - margin_y)
+    else:
+        r.topright = (layout.SCREEN_W - layout.SCREEN_MARGIN,
+                      layout.SCREEN_MARGIN)
+    return r
 
 
 def status_chip(surf, net, t, bottom=False):
-    """Estado de la conexión (arriba a la derecha, o abajo durante el partido)."""
-    if net.status == NC.RECONNECTING:
-        txt, col = f"RECONECTANDO... {net.reconnect_left() or 0:.0f} s", C.RED
-    elif net.connected:
-        rtt = f"  {net.rtt * MS_PER_SECOND:.0f} ms" if net.rtt is not None else ""
-        txt, col = f"{net.display}{rtt}", C.GREEN
-    elif net.status == NC.CONNECTING:
-        txt, col = "CONECTANDO...", C.GOLD_DARK
-    else:
+    """Connection status (top right, or at the bottom during the match)."""
+    chip = _chip_text(net)
+    if chip is None:
         return
-    r = pygame.Rect(0, 0, text_width(txt, FONT_SMALL) + CHIP_PADDING, CHIP_H)
-    if bottom:
-        margin_x, margin_y = CHIP_BOTTOM_MARGIN
-        r.bottomright = (SCREEN_W - margin_x, SCREEN_H - margin_y)
-    else:
-        r.topright = (SCREEN_W - SCREEN_MARGIN, SCREEN_MARGIN)
-    inner = bevel_box(surf, r, C.CREAM, shadow=False)
-    if net.status != NC.RECONNECTING or int(t * CHIP_BLINK_HZ) % 2 == 0:
-        pygame.draw.circle(surf, col, (inner.left + CHIP_DOT_X, inner.centery), CHIP_DOT_R)
-    draw_text(surf, txt, FONT_SMALL, (inner.left + CHIP_TEXT_X, inner.centery), C.INK, anchor="midleft", outline=None)
+    txt, col = chip
+    r = _chip_rect(txt, bottom)
+    inner = retro.bevel_box(surf, r, palette.CREAM, shadow=False)
+    if net.status != client.RECONNECTING or int(t * CHIP_BLINK_HZ) % 2 == 0:
+        pygame.draw.circle(surf, col, (inner.left + CHIP_DOT_X, inner.centery),
+                           CHIP_DOT_R)
+    assets.draw_text(surf, txt, layout.FONT_SMALL,
+                     (inner.left + CHIP_TEXT_X, inner.centery), palette.INK,
+                     anchor="midleft", outline=None)
 
 
 def message_box(surf, msg):
-    """Aviso breve abajo al centro (errores del servidor, confirmaciones)."""
+    """Short notice at the bottom centre (server errors, confirmations)."""
     txt, col, left = msg
     if left < MESSAGE_BLINK_TIME and int(left * MESSAGE_BLINK_HZ) % 2:
         return
-    lines = wrap(txt, FONT_SMALL, MESSAGE_MAX_W)
-    r = pygame.Rect(0, 0, max(text_width(ln, FONT_SMALL) for ln in lines) + MESSAGE_PADDING,
-                    TEXT_LINE_H * len(lines) + MESSAGE_PAD_Y)
-    r.midbottom = (CENTER_X, MESSAGE_BOTTOM)
-    inner = bevel_box(surf, r, C.CREAM)
-    pygame.draw.rect(surf, col, (inner.left, inner.top, MESSAGE_BAR_W, inner.height))
+    lines = assets.wrap(txt, layout.FONT_SMALL, MESSAGE_MAX_W)
+    width = max(assets.text_width(ln, layout.FONT_SMALL) for ln in lines)
+    r = pygame.Rect(0, 0, width + MESSAGE_PADDING,
+                    layout.TEXT_LINE_H * len(lines) + MESSAGE_PAD_Y)
+    r.midbottom = (layout.CENTER_X, MESSAGE_BOTTOM)
+    inner = retro.bevel_box(surf, r, palette.CREAM)
+    pygame.draw.rect(surf, col, (inner.left, inner.top, MESSAGE_BAR_W,
+                                 inner.height))
+    _message_lines(surf, lines, inner)
+
+
+def _message_lines(surf, lines, inner):
     for k, ln in enumerate(lines):
-        y = inner.top + MESSAGE_TEXT_Y + k * TEXT_LINE_H
-        draw_text(surf, ln, FONT_SMALL, (inner.centerx + MESSAGE_BAR_W // 2, y), C.INK, outline=None)
+        y = inner.top + MESSAGE_TEXT_Y + k * layout.TEXT_LINE_H
+        assets.draw_text(surf, ln, layout.FONT_SMALL,
+                         (inner.centerx + MESSAGE_BAR_W // 2, y), palette.INK,
+                         outline=None)
 
 
 def members(net):
-    """(yo, rival) en la sala actual (cualquiera puede ser None)."""
+    """(me, rival) in the current room (either may be None)."""
     room = net.room
     if not room:
         return None, None
@@ -127,32 +162,51 @@ def members(net):
     return me, rival
 
 
+def _left_click_on(ev, rect):
+    return (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1
+            and rect.collidepoint(ev.pos))
+
+
+def _to_multiplayer(app):
+    """Leaves the online mode and goes back to the multiplayer menu."""
+    app.close_online()
+    app.switch(screens.MultiplayerMenuScreen(app))
+
+
+def _centered_lines(surf, lines, size, top, line_h, color=palette.INK):
+    for k, ln in enumerate(lines):
+        assets.draw_text(surf, ln, size, (layout.CENTER_X, top + k * line_h),
+                         color, outline=None)
+
+
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
-class OnlineScreen(Screen):
-    IN_ROOM = False              # True: si dejo de estar en una sala, vuelvo a la lista
-    NEEDS_CONNECTION = True      # True: si se pierde la conexión, pantalla de error
+class OnlineScreen(screens.Screen):
+    """Base of the online screens: back button, notices and status."""
+    IN_ROOM = False        # True: if I am no longer in a room, back to list
+    NEEDS_CONNECTION = True   # True: if the connection is lost, error screen
     BACK_LABEL = "◄ VOLVER"
 
     def __init__(self, app):
         super().__init__(app)
         self.net = app.online()
-        self.back_button = BackButton(self.back, self.BACK_LABEL)
+        self.back_button = screens.BackButton(self.back, self.BACK_LABEL)
         self.message = None
 
     def back(self):
-        pass
+        """Where the back button goes (each screen decides)."""
 
-    def notify(self, txt, color=C.RED, secs=NOTICE_TIME):
+    def notify(self, txt, color=palette.RED, secs=NOTICE_TIME):
         self.message = (txt, color, secs)
 
     def handle_back(self, ev):
-        """Botón "Volver" o Esc. True si se usó."""
+        """Back button or Esc. True if it was used."""
         if self.back_button.handle_event(ev):
             self.app.audio.play("back")
             return True
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and self.back_button.visible:
+        if (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE
+                and self.back_button.visible):
             self.app.audio.play("back")
             self.back()
             return True
@@ -160,11 +214,11 @@ class OnlineScreen(Screen):
 
     def on_net(self, msg):
         t = msg["type"]
-        if t == W.ERROR:
+        if t == wire.ERROR:
             self.notify(msg["message"])
-        elif t == W.MATCH_START:
+        elif t == wire.MATCH_START:
             self.app.switch(OnlineMatchScreen(self.app, msg))
-        elif t == W.ROOMS and self.IN_ROOM:
+        elif t == wire.ROOMS and self.IN_ROOM:
             self.app.switch(RoomsScreen(self.app, "Ya no estás en esa sala."))
 
     def update(self, dt):
@@ -183,27 +237,28 @@ class OnlineScreen(Screen):
 
 
 # ---------------------------------------------------------------------------
-# Entrada al online: se conecta con el nombre del perfil (elegido al empezar)
+# Online entry: connects with the profile name (chosen at the start)
 # ---------------------------------------------------------------------------
 class OnlineHomeScreen(OnlineScreen):
+    """Connecting... (or why it failed, with a retry button)."""
     NEEDS_CONNECTION = False
-    TITLE_Y = 96                       # "JUGAR ONLINE"
-    BOX = (330, 220, 620, 280)         # recuadro central (x, y, ancho, alto)
-    CONNECTING_Y = 50                  # "Conectando como ...", desde arriba del recuadro
-    BALL_GROUND = 150                  # pelota que pica: piso, desde arriba del recuadro
-    BALL_HOP = 40                      # px que sube
-    BALL_HOP_HZ = 5                    # rebotes por segundo (de ida)
-    BALL_SPIN = 400                    # grados por segundo que gira
-    TAG_NOTE_BOTTOM = 30               # aclaración de la etiqueta, desde abajo del recuadro
-    FAILED_Y = 44                      # "No se pudo entrar al online", desde arriba del recuadro
-    FAILED_DETAIL_Y = 90               # el motivo, desde arriba del recuadro
-    FAILED_LINES = 3                   # renglones del motivo que entran
-    FAILED_MARGIN = 40                 # px de aire a los costados del motivo
-    RETRY_SIZE = (280, BUTTON_H)       # botón "REINTENTAR" (ancho, alto)
-    RETRY_CENTER = (CENTER_X, 440)     # centro de ese botón
-    INFO = (1000, 104)                 # recuadro de ayuda de abajo (ancho, alto)
-    INFO_TOP = 546                     # borde superior de ese recuadro
-    INFO_LINE_Y = (20, 46, 72)         # sus tres renglones, desde arriba del recuadro
+    TITLE_Y = 96                       # title (px)
+    BOX = (330, 220, 620, 280)         # central box (x, y, width, height)
+    CONNECTING_Y = 50                  # connecting line, from the box top
+    BALL_GROUND = 150                  # bouncing ball: floor, from box top
+    BALL_HOP = 40                      # px it rises
+    BALL_HOP_HZ = 5                    # bounces per second (one way)
+    BALL_SPIN = 400                    # degrees per second it turns
+    TAG_NOTE_BOTTOM = 30               # note about tags, from the box bottom
+    FAILED_Y = 44                      # failure line, from the box top (px)
+    FAILED_DETAIL_Y = 90               # the reason, from the box top (px)
+    FAILED_LINES = 3                   # lines of the reason that fit
+    FAILED_MARGIN = 40                 # px of air beside the reason
+    RETRY_SIZE = (280, layout.BUTTON_H)   # retry button (width, height)
+    RETRY_CENTER = (layout.CENTER_X, 440)  # centre of that button (px)
+    INFO = (1000, 104)                 # help box at the bottom (w, h) in px
+    INFO_TOP = 546                     # top edge of that box (px)
+    INFO_LINE_Y = (20, 46, 72)         # its three lines, from the box top
 
     def __init__(self, app):
         super().__init__(app)
@@ -211,9 +266,10 @@ class OnlineHomeScreen(OnlineScreen):
         self.retry_rect.center = self.RETRY_CENTER
         self.hover = False
         self.failed = None
-        saved = NC.saved_session()
-        if saved and self.net.status == NC.IDLE:
-            self.net.token = saved[1]   # se recargó la página: vuelve a su sala y partido
+        saved = client.saved_session()
+        if saved and self.net.status == client.IDLE:
+            # The page was reloaded: back to its room and match.
+            self.net.token = saved[1]
         self.connect()
 
     def connect(self):
@@ -222,26 +278,22 @@ class OnlineHomeScreen(OnlineScreen):
         self.net.connect(profile.name, profile.player_id)
 
     def back(self):
-        self.app.close_online()
-        from .screens import MultiplayerMenuScreen
-        self.app.switch(MultiplayerMenuScreen(self.app))
+        _to_multiplayer(self.app)
 
     def handle_event(self, ev):
-        if self.handle_back(ev):
-            return
-        if self.failed is None:
+        if self.handle_back(ev) or self.failed is None:
             return
         if ev.type == pygame.MOUSEMOTION:
             self.hover = self.retry_rect.collidepoint(ev.pos)
-        elif ((ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.retry_rect.collidepoint(ev.pos))
-              or (ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE))):
+        elif (_left_click_on(ev, self.retry_rect)
+              or (ev.type == pygame.KEYDOWN and ev.key in ENTER_KEYS)):
             self.app.audio.play("confirm")
             self.connect()
 
     def on_net(self, msg):
-        if msg["type"] == W.WELCOME:
+        if msg["type"] == wire.WELCOME:
             self.app.switch(RoomsScreen(self.app))
-        elif msg["type"] == W.ERROR:
+        elif msg["type"] == wire.ERROR:
             self.failed = msg["message"]
 
     def update(self, dt):
@@ -251,67 +303,89 @@ class OnlineHomeScreen(OnlineScreen):
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_ONLINE)
-        title(surf, "JUGAR ONLINE", (CENTER_X, self.TITLE_Y), FONT_TITLE_XL)
-        box = panel(surf, pygame.Rect(self.BOX))
-        name = self.app.profile.name
+        screens.dim(surf, layout.VEIL_ONLINE)
+        screens.title(surf, "JUGAR ONLINE", (layout.CENTER_X, self.TITLE_Y),
+                      layout.FONT_TITLE_XL)
+        box = screens.panel(surf, pygame.Rect(self.BOX))
         if self.failed is None:
-            draw_text(surf, f"Conectando como {name}...", FONT_TEXT, (CENTER_X, box.top + self.CONNECTING_Y), C.INK,
-                      outline=None)
-            bouncing_ball(self.app, surf, self.t, CENTER_X, box.top + self.BALL_GROUND, self.BALL_HOP, self.BALL_HOP_HZ,
-                          self.BALL_SPIN)
-            draw_text(surf, "Si otra persona usa tu mismo nombre, los distingue una etiqueta (#1234).", FONT_SMALL,
-                      (CENTER_X, box.bottom - self.TAG_NOTE_BOTTOM), C.INK_SOFT, outline=None)
+            self._connecting(surf, box)
         else:
-            draw_text(surf, "No se pudo entrar al online", FONT_TEXT, (CENTER_X, box.top + self.FAILED_Y), C.RED,
-                      outline=None)
-            lines = wrap(self.failed, FONT_SMALL, box.width - self.FAILED_MARGIN)[:self.FAILED_LINES]
-            for k, ln in enumerate(lines):
-                draw_text(surf, ln, FONT_SMALL, (CENTER_X, box.top + self.FAILED_DETAIL_Y + k * TEXT_LINE_H), C.INK,
-                          outline=None)
-            button(surf, self.retry_rect, "REINTENTAR", self.hover, True, FONT_TEXT, self.t)
-        info = pygame.Rect((0, 0), self.INFO)
-        info.midtop = (CENTER_X, self.INFO_TOP)
-        inner = panel(surf, info)
-        first, second, third = self.INFO_LINE_Y
-        draw_text(surf, CONTROLS_HELP, FONT_SMALL, (CENTER_X, inner.top + first), C.INK, outline=None)
-        draw_text(surf, "Cada persona juega desde su casa; el servidor sortea los lados al empezar.", FONT_SMALL,
-                  (CENTER_X, inner.top + second), C.INK_SOFT, outline=None)
-        if not self.app.web:
-            draw_text(surf, f"Servidor: {self.net.url}", FONT_SMALL, (CENTER_X, inner.top + third), C.INK_SOFT,
-                      outline=None)
+            self._failed(surf, box)
+        self._info(surf)
         self.draw_common(surf)
 
+    def _connecting(self, surf, box):
+        assets.draw_text(surf, f"Conectando como {self.app.profile.name}...",
+                         layout.FONT_TEXT,
+                         (layout.CENTER_X, box.top + self.CONNECTING_Y),
+                         palette.INK, outline=None)
+        screens.bouncing_ball(self.app, surf, self.t, layout.CENTER_X,
+                              box.top + self.BALL_GROUND, self.BALL_HOP,
+                              self.BALL_HOP_HZ, self.BALL_SPIN)
+        assets.draw_text(surf, "Si otra persona usa tu mismo nombre, los "
+                         "distingue una etiqueta (#1234).", layout.FONT_SMALL,
+                         (layout.CENTER_X, box.bottom - self.TAG_NOTE_BOTTOM),
+                         palette.INK_SOFT, outline=None)
+
+    def _failed(self, surf, box):
+        assets.draw_text(surf, "No se pudo entrar al online", layout.FONT_TEXT,
+                         (layout.CENTER_X, box.top + self.FAILED_Y),
+                         palette.RED, outline=None)
+        lines = assets.wrap(self.failed, layout.FONT_SMALL,
+                            box.width - self.FAILED_MARGIN)[:self.FAILED_LINES]
+        _centered_lines(surf, lines, layout.FONT_SMALL,
+                        box.top + self.FAILED_DETAIL_Y, layout.TEXT_LINE_H)
+        screens.button(surf, self.retry_rect, "REINTENTAR", self.hover, True,
+                       layout.FONT_TEXT, self.t)
+
+    def _info(self, surf):
+        info = pygame.Rect((0, 0), self.INFO)
+        info.midtop = (layout.CENTER_X, self.INFO_TOP)
+        inner = screens.panel(surf, info)
+        lines = [(CONTROLS_HELP, palette.INK),
+                 ("Cada persona juega desde su casa; el servidor sortea los "
+                  "lados al empezar.", palette.INK_SOFT)]
+        if not self.app.web:
+            lines.append((f"Servidor: {self.net.url}", palette.INK_SOFT))
+        for (text, color), y in zip(lines, self.INFO_LINE_Y):
+            assets.draw_text(surf, text, layout.FONT_SMALL,
+                             (layout.CENTER_X, inner.top + y), color,
+                             outline=None)
+
 
 # ---------------------------------------------------------------------------
-# Lista de salas
+# Room list
 # ---------------------------------------------------------------------------
 class RoomsScreen(OnlineScreen):
-    ROW_H = 58                         # px por sala en la lista
-    ROW_GAP = 6                        # px libres entre salas
-    VISIBLE = 6                        # salas visibles a la vez (las demás, con la rueda o W/S)
-    LIST_PADDING = 8                   # px de aire dentro del recuadro de la lista
-    LIST = pygame.Rect(150, 168, 980, VISIBLE * ROW_H + 2 * LIST_PADDING)   # recuadro de la lista
-    HEADER_ROOM = 36                   # px que se agranda el recuadro hacia arriba para los títulos de columna
-    HEADER_Y = 10                      # títulos de columna, desde arriba del recuadro
-    # columnas: (título, x desde el borde izquierdo de la lista)
-    COLUMNS = (("SALA", 30), ("CREADA POR", 400), ("JUGADORES", 650), ("ESTADO", 790))
-    LOCK_X = 16                        # candado, desde el borde izquierdo de la fila
-    NAME_X = 38                        # nombre de la sala, desde el borde izquierdo de la fila
-    OWNER_X = 400                      # quien la creó (columna "CREADA POR")
-    PLAYERS_X = 690                    # "1/2", centrado bajo "JUGADORES"
-    STATE_X = 790                      # estado (columna "ESTADO")
-    PAGER_GAP = 8                      # "1-6 de 9", debajo de la lista
-    TITLE_Y = 64                       # "SALAS"
-    GREETING_Y = 116                   # "Hola, ... Elegí una sala..."
-    BUTTONS_Y = 572                    # botones CREAR SALA / ACTUALIZAR
-    BUTTON_W = 260                     # ancho de esos botones
-    BUTTON_GAP = 20                    # px entre esos botones (y entre los del pedido de contraseña)
-    PROMPT_BOX = (560, 250)            # recuadro para escribir la contraseña (ancho, alto)
-    PROMPT_CENTER = (CENTER_X, 400)    # centro de ese recuadro
-    PROMPT_FIELD = (420, 360, 440, BUTTON_H)   # campo de la contraseña (x, y, ancho, alto)
-    PROMPT_BUTTONS_Y = 448             # botones ENTRAR / CANCELAR
-    PROMPT_BUTTON = (190, 50)          # cada uno de esos botones (ancho, alto)
+    """List of rooms to join, plus create and refresh buttons."""
+    ROW_H = 58                         # px per room in the list
+    ROW_GAP = 6                        # free px between rooms
+    VISIBLE = 6                        # rooms visible at once (wheel or W/S)
+    LIST_PADDING = 8                   # px of air inside the list box
+    # Box of the list (x, y, width, height) in px.
+    LIST = pygame.Rect(150, 168, 980, VISIBLE * ROW_H + 2 * LIST_PADDING)
+    HEADER_ROOM = 36                   # px the box grows up for the headers
+    HEADER_Y = 10                      # column headers, from the box top
+    # Columns: (header, x from the left edge of the list in px).
+    COLUMNS = (("SALA", 30), ("CREADA POR", 400), ("JUGADORES", 650),
+               ("ESTADO", 790))
+    LOCK_X = 16                        # lock, from the left edge of the row
+    NAME_X = 38                        # room name, from the row left edge
+    OWNER_X = 400                      # who created it (owner column)
+    PLAYERS_X = 690                    # "1/2", below the players column
+    STATE_X = 790                      # state (state column)
+    PAGER_GAP = 8                      # page line, below the list (px)
+    TITLE_Y = 64                       # title (px)
+    GREETING_Y = 116                   # greeting line (px)
+    BUTTONS_Y = 572                    # create and refresh buttons (px)
+    BUTTON_W = 260                     # width of those buttons (px)
+    BUTTON_GAP = 20                    # px between those buttons
+    PROMPT_BOX = (560, 250)            # password box (width, height) in px
+    PROMPT_CENTER = (layout.CENTER_X, 400)   # centre of that box (px)
+    # Password field (x, y, width, height) in px.
+    PROMPT_FIELD = (420, 360, 440, layout.BUTTON_H)
+    PROMPT_BUTTONS_Y = 448             # enter and cancel buttons (px)
+    PROMPT_BUTTON = (190, 50)          # each of those buttons (w, h) in px
 
     def __init__(self, app, notice=None):
         super().__init__(app)
@@ -319,30 +393,37 @@ class RoomsScreen(OnlineScreen):
         self.offset = 0
         self.hover_row = None
         self.hover_btn = None
-        self.prompt = None              # (sala, campo de contraseña) para salas privadas
-        w, gap = self.BUTTON_W, self.BUTTON_GAP
-        self.buttons = {"create": pygame.Rect(CENTER_X - w - gap // 2, self.BUTTONS_Y, w, BUTTON_H),
-                        "refresh": pygame.Rect(CENTER_X + gap // 2, self.BUTTONS_Y, w, BUTTON_H)}
+        self.prompt = None       # (room, password field) for private rooms
+        self.buttons = self._button_rects()
         if notice:
-            self.notify(notice, C.GOLD)
+            self.notify(notice, palette.GOLD)
+
+    def _button_rects(self):
+        w, gap = self.BUTTON_W, self.BUTTON_GAP
+        h = layout.BUTTON_H
+        return {"create": pygame.Rect(layout.CENTER_X - w - gap // 2,
+                                      self.BUTTONS_Y, w, h),
+                "refresh": pygame.Rect(layout.CENTER_X + gap // 2,
+                                       self.BUTTONS_Y, w, h)}
 
     @property
     def rooms(self):
         return self.net.rooms
 
     def back(self):
-        """Sale del online: corta la conexión y vuelve a Multijugador (Local / Online)."""
-        self.app.close_online()
-        from .screens import MultiplayerMenuScreen
-        self.app.switch(MultiplayerMenuScreen(self.app))
+        """Leaves the online mode: closes the connection, back to the
+        multiplayer menu (local or online)."""
+        _to_multiplayer(self.app)
 
     def row_rect(self, k):
         pad = self.LIST_PADDING
-        return pygame.Rect(self.LIST.left + pad, self.LIST.top + pad + k * self.ROW_H, self.LIST.width - 2 * pad,
-                           self.ROW_H - self.ROW_GAP)
+        return pygame.Rect(self.LIST.left + pad,
+                           self.LIST.top + pad + k * self.ROW_H,
+                           self.LIST.width - 2 * pad, self.ROW_H - self.ROW_GAP)
 
     def visible_rooms(self):
-        return list(enumerate(self.rooms))[self.offset:self.offset + self.VISIBLE]
+        return list(enumerate(self.rooms))[self.offset:
+                                           self.offset + self.VISIBLE]
 
     def join(self, room):
         if room["players"] >= room["max_players"]:
@@ -351,12 +432,13 @@ class RoomsScreen(OnlineScreen):
             return
         self.app.audio.play("confirm")
         if room["private"]:
-            field = TextField(self.PROMPT_FIELD, f"CONTRASEÑA DE «{room['name']}»", PASSWORD_MAX_LEN, password=True,
-                              sticky=True)
+            field = widgets.TextField(
+                self.PROMPT_FIELD, f"CONTRASEÑA DE «{room['name']}»",
+                PASSWORD_MAX_LEN, password=True, sticky=True)
             field.focus(True)
             self.prompt = (room, field)
             return
-        self.net.send({"type": "join_room", "room": room["room"]})
+        self.net.send({"type": wire.JOIN_ROOM, "room": room["room"]})
 
     def scroll_to_sel(self):
         n = len(self.rooms)
@@ -366,143 +448,204 @@ class RoomsScreen(OnlineScreen):
         elif self.sel >= self.offset + self.VISIBLE:
             self.offset = self.sel - self.VISIBLE + 1
 
+    def _send_password(self, room, field):
+        self.net.send({"type": wire.JOIN_ROOM, "room": room["room"],
+                       "password": field.value})
+        self.prompt = None
+
     def _prompt_event(self, ev):
         room, field = self.prompt
         r = field.handle_event(ev)
         if r == "submit" and field.value:
-            self.net.send({"type": "join_room", "room": room["room"], "password": field.value})
-            self.prompt = None
+            self._send_password(room, field)
         elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
             self.prompt = None
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and not r:
             ok, cancel = self._prompt_buttons()
             if ok.collidepoint(ev.pos) and field.value:
-                self.net.send({"type": "join_room", "room": room["room"], "password": field.value})
-                self.prompt = None
+                self._send_password(room, field)
             elif cancel.collidepoint(ev.pos):
                 self.prompt = None
 
     def _prompt_buttons(self):
         w, h = self.PROMPT_BUTTON
         gap = self.BUTTON_GAP
-        return (pygame.Rect(CENTER_X - w - gap // 2, self.PROMPT_BUTTONS_Y, w, h),
-                pygame.Rect(CENTER_X + gap // 2, self.PROMPT_BUTTONS_Y, w, h))
+        y = self.PROMPT_BUTTONS_Y
+        return (pygame.Rect(layout.CENTER_X - w - gap // 2, y, w, h),
+                pygame.Rect(layout.CENTER_X + gap // 2, y, w, h))
 
     def handle_event(self, ev):
         if self.prompt:
             self._prompt_event(ev)
+        elif self.handle_back(ev):
             return
-        if self.handle_back(ev):
-            return
-        if ev.type == pygame.KEYDOWN:
-            if ev.key in (pygame.K_w, pygame.K_UP):
-                self.sel -= 1
-                self.scroll_to_sel()
-            elif ev.key in (pygame.K_s, pygame.K_DOWN):
-                self.sel += 1
-                self.scroll_to_sel()
-            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) and self.rooms:
-                self.join(self.rooms[self.sel])
-            elif ev.key == pygame.K_c:
-                self.app.switch(CreateRoomScreen(self.app))
+        elif ev.type == pygame.KEYDOWN:
+            self._key(ev.key)
         elif ev.type == pygame.MOUSEWHEEL:
-            self.offset = max(0, min(self.offset - ev.y, max(0, len(self.rooms) - self.VISIBLE)))
+            self.offset = max(0, min(self.offset - ev.y,
+                                     max(0, len(self.rooms) - self.VISIBLE)))
         elif ev.type == pygame.MOUSEMOTION:
-            self.hover_row = next((i for k, (i, _) in enumerate(self.visible_rooms())
-                                   if self.row_rect(k).collidepoint(ev.pos)), None)
-            self.hover_btn = next((n for n, r in self.buttons.items() if r.collidepoint(ev.pos)), None)
+            self._hover(ev.pos)
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            if self.buttons["create"].collidepoint(ev.pos):
-                self.app.audio.play("confirm")
-                self.app.switch(CreateRoomScreen(self.app))
-                return
-            if self.buttons["refresh"].collidepoint(ev.pos):
-                self.app.audio.play("select")
-                self.net.send({"type": "list_rooms"})
-                return
+            self._click(ev.pos)
+
+    def _key(self, key):
+        if key in UP_KEYS or key in DOWN_KEYS:
+            self.sel += -1 if key in UP_KEYS else 1
+            self.scroll_to_sel()
+        elif key in ENTER_KEYS and self.rooms:
+            self.join(self.rooms[self.sel])
+        elif key == pygame.K_c:
+            self.app.switch(CreateRoomScreen(self.app))
+
+    def _hover(self, pos):
+        rows = enumerate(self.visible_rooms())
+        self.hover_row = next((i for k, (i, _) in rows
+                               if self.row_rect(k).collidepoint(pos)), None)
+        self.hover_btn = next((n for n, r in self.buttons.items()
+                               if r.collidepoint(pos)), None)
+
+    def _click(self, pos):
+        if self.buttons["create"].collidepoint(pos):
+            self.app.audio.play("confirm")
+            self.app.switch(CreateRoomScreen(self.app))
+        elif self.buttons["refresh"].collidepoint(pos):
+            self.app.audio.play("select")
+            self.net.send({"type": wire.LIST_ROOMS})
+        else:
             for k, (i, room) in enumerate(self.visible_rooms()):
-                if self.row_rect(k).collidepoint(ev.pos):
+                if self.row_rect(k).collidepoint(pos):
                     self.sel = i
                     self.join(room)
                     return
 
     def on_net(self, msg):
-        if msg["type"] == W.ROOM:
+        if msg["type"] == wire.ROOM:
             self.app.switch(RoomScreen(self.app))
             return
         super().on_net(msg)
-        if msg["type"] == W.ROOMS:
+        if msg["type"] == wire.ROOMS:
             self.scroll_to_sel()
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_LIST)
-        title(surf, "SALAS", (CENTER_X, self.TITLE_Y), FONT_TITLE_L)
-        draw_text(surf, f"Hola, {self.net.display or ''}. Elegí una sala para unirte o creá la tuya.", FONT_SMALL,
-                  (CENTER_X, self.GREETING_Y), C.INK, outline=C.WHITE)
-        inner = panel(surf, self.LIST.inflate(0, self.HEADER_ROOM).move(0, -self.HEADER_ROOM // 2))
-        left = self.LIST.left
-        for txt, x in self.COLUMNS:
-            draw_text(surf, txt, FONT_SMALL, (left + x, inner.top + self.HEADER_Y), C.INK_SOFT, anchor="midleft",
-                      outline=None)
-        if not self.rooms:
-            draw_text(surf, "Todavía no hay salas: ¡creá la primera!", FONT_TEXT, self.LIST.center, C.INK_SOFT,
-                      outline=None)
-        for k, (i, room) in enumerate(self.visible_rooms()):
-            r = self.row_rect(k)
-            full = room["players"] >= room["max_players"]
-            face = C.GOLD if i == self.sel or i == self.hover_row else (C.CREAM_DARK if full else C.WHITE)
-            rin = bevel_box(surf, r, face, shadow=False)
-            if room["private"]:
-                lock_icon(surf, (rin.left + self.LOCK_X, rin.centery))
-            draw_text(surf, room["name"], FONT_TEXT, (rin.left + self.NAME_X, rin.centery), C.INK, anchor="midleft",
-                      outline=None)
-            draw_text(surf, room["owner"], FONT_SMALL, (left + self.OWNER_X, rin.centery), C.INK, anchor="midleft",
-                      outline=None)
-            draw_text(surf, f"{room['players']}/{room['max_players']}", FONT_TEXT, (left + self.PLAYERS_X, rin.centery),
-                      C.INK, outline=None)
-            draw_text(surf, ROOM_STATES.get(room["state"], room["state"]), FONT_SMALL,
-                      (left + self.STATE_X, rin.centery), C.RED if full else C.INK_SOFT, anchor="midleft", outline=None)
-        if len(self.rooms) > self.VISIBLE:
-            draw_text(surf, f"{self.offset + 1}-{min(len(self.rooms), self.offset + self.VISIBLE)} de "
-                            f"{len(self.rooms)} (rueda del mouse o W/S)", FONT_SMALL,
-                      (CENTER_X, self.LIST.bottom + self.PAGER_GAP), C.INK_SOFT, outline=None)
-        button(surf, self.buttons["create"], "CREAR SALA", self.hover_btn == "create", True, FONT_TEXT, self.t)
-        button(surf, self.buttons["refresh"], "ACTUALIZAR", self.hover_btn == "refresh", True, FONT_TEXT, self.t)
-        footer(surf, "Clic o Enter: unirse  -  C: crear sala  -  Esc: volver  -  La lista se actualiza sola")
+        screens.dim(surf, layout.VEIL_LIST)
+        screens.title(surf, "SALAS", (layout.CENTER_X, self.TITLE_Y),
+                      layout.FONT_TITLE_L)
+        assets.draw_text(surf, f"Hola, {self.net.display or ''}. Elegí una "
+                         "sala para unirte o creá la tuya.", layout.FONT_SMALL,
+                         (layout.CENTER_X, self.GREETING_Y), palette.INK,
+                         outline=palette.WHITE)
+        self._list(surf)
+        self._buttons(surf)
         if self.prompt:
-            room, field = self.prompt
-            dim(surf, VEIL_OVERLAY)
-            box = pygame.Rect((0, 0), self.PROMPT_BOX)
-            box.center = self.PROMPT_CENTER
-            panel(surf, box)
-            field.draw(surf, self.t)
-            ok, cancel = self._prompt_buttons()
-            button(surf, ok, "ENTRAR", False, bool(field.value), FONT_TEXT, self.t)
-            button(surf, cancel, "CANCELAR", False, True, FONT_TEXT, self.t)
+            self._draw_prompt(surf)
         self.draw_common(surf)
 
+    def _list(self, surf):
+        inner = screens.panel(surf, self.LIST.inflate(0, self.HEADER_ROOM)
+                              .move(0, -self.HEADER_ROOM // 2))
+        self._headers(surf, inner)
+        if not self.rooms:
+            assets.draw_text(surf, "Todavía no hay salas: ¡creá la primera!",
+                             layout.FONT_TEXT, self.LIST.center,
+                             palette.INK_SOFT, outline=None)
+        for k, (i, room) in enumerate(self.visible_rooms()):
+            self._row(surf, self.row_rect(k), i, room)
+        if len(self.rooms) > self.VISIBLE:
+            self._pager(surf)
+
+    def _headers(self, surf, inner):
+        for txt, x in self.COLUMNS:
+            assets.draw_text(surf, txt, layout.FONT_SMALL,
+                             (self.LIST.left + x, inner.top + self.HEADER_Y),
+                             palette.INK_SOFT, anchor="midleft", outline=None)
+
+    def _row(self, surf, r, i, room):
+        full = room["players"] >= room["max_players"]
+        if i in (self.sel, self.hover_row):
+            face = palette.GOLD
+        else:
+            face = palette.CREAM_DARK if full else palette.WHITE
+        rin = retro.bevel_box(surf, r, face, shadow=False)
+        if room["private"]:
+            lock_icon(surf, (rin.left + self.LOCK_X, rin.centery))
+        assets.draw_text(surf, room["name"], layout.FONT_TEXT,
+                         (rin.left + self.NAME_X, rin.centery), palette.INK,
+                         anchor="midleft", outline=None)
+        self._row_columns(surf, rin.centery, room, full)
+
+    def _row_columns(self, surf, y, room, full):
+        left = self.LIST.left
+        assets.draw_text(surf, room["owner"], layout.FONT_SMALL,
+                         (left + self.OWNER_X, y), palette.INK,
+                         anchor="midleft", outline=None)
+        assets.draw_text(surf, f"{room['players']}/{room['max_players']}",
+                         layout.FONT_TEXT, (left + self.PLAYERS_X, y),
+                         palette.INK, outline=None)
+        assets.draw_text(surf, ROOM_STATES.get(room["state"], room["state"]),
+                         layout.FONT_SMALL, (left + self.STATE_X, y),
+                         palette.RED if full else palette.INK_SOFT,
+                         anchor="midleft", outline=None)
+
+    def _pager(self, surf):
+        last = min(len(self.rooms), self.offset + self.VISIBLE)
+        assets.draw_text(surf, f"{self.offset + 1}-{last} de "
+                         f"{len(self.rooms)} (rueda del mouse o W/S)",
+                         layout.FONT_SMALL,
+                         (layout.CENTER_X, self.LIST.bottom + self.PAGER_GAP),
+                         palette.INK_SOFT, outline=None)
+
+    def _buttons(self, surf):
+        screens.button(surf, self.buttons["create"], "CREAR SALA",
+                       self.hover_btn == "create", True, layout.FONT_TEXT,
+                       self.t)
+        screens.button(surf, self.buttons["refresh"], "ACTUALIZAR",
+                       self.hover_btn == "refresh", True, layout.FONT_TEXT,
+                       self.t)
+        screens.footer(surf, "Clic o Enter: unirse  -  C: crear sala  -  "
+                       "Esc: volver  -  La lista se actualiza sola")
+
+    def _draw_prompt(self, surf):
+        """Box that asks the password of a private room."""
+        field = self.prompt[1]
+        screens.dim(surf, layout.VEIL_OVERLAY)
+        box = pygame.Rect((0, 0), self.PROMPT_BOX)
+        box.center = self.PROMPT_CENTER
+        screens.panel(surf, box)
+        field.draw(surf, self.t)
+        ok, cancel = self._prompt_buttons()
+        screens.button(surf, ok, "ENTRAR", False, bool(field.value),
+                       layout.FONT_TEXT, self.t)
+        screens.button(surf, cancel, "CANCELAR", False, True, layout.FONT_TEXT,
+                       self.t)
+
 
 # ---------------------------------------------------------------------------
-# Crear sala
+# Create a room
 # ---------------------------------------------------------------------------
 class CreateRoomScreen(OnlineScreen):
-    TITLE_Y = 96                       # "CREAR SALA"
-    BOX = (350, 180, 580, 420)         # recuadro del formulario (x, y, ancho, alto)
-    NAME_FIELD = (390, 236, 500, BUTTON_H)     # campo del nombre de la sala (x, y, ancho, alto)
-    PRIVATE_BOX = (390, 326, 360, 40)  # casilla "Con contraseña" (x, y, ancho, alto)
-    PASSWORD_FIELD = (390, 420, 500, BUTTON_H)  # campo de la contraseña (x, y, ancho, alto)
-    FREE_NOTE_Y = 448                  # "Sala libre: ...", en lugar del campo de contraseña
-    CREATE_SIZE = (300, BUTTON_H)      # botón "CREAR" (ancho, alto)
-    CREATE_CENTER = (CENTER_X, 540)    # centro de ese botón
+    """Form: room name and, optionally, a password."""
+    TITLE_Y = 96                       # title (px)
+    BOX = (350, 180, 580, 420)         # form box (x, y, width, height)
+    # Room name field (x, y, width, height) in px.
+    NAME_FIELD = (390, 236, 500, layout.BUTTON_H)
+    PRIVATE_BOX = (390, 326, 360, 40)  # password check box (x, y, w, h)
+    # Password field (x, y, width, height) in px.
+    PASSWORD_FIELD = (390, 420, 500, layout.BUTTON_H)
+    FREE_NOTE_Y = 448                  # free room note, instead of the field
+    CREATE_SIZE = (300, layout.BUTTON_H)   # create button (w, h) in px
+    CREATE_CENTER = (layout.CENTER_X, 540)  # centre of that button (px)
 
     def __init__(self, app):
         super().__init__(app)
         user = self.net.username or ""
-        self.name = TextField(self.NAME_FIELD, "NOMBRE DE LA SALA", ROOM_NAME_MAX,
-                              value=f"Sala de {user}"[:ROOM_NAME_MAX])
-        self.private = CheckBox(self.PRIVATE_BOX, "Con contraseña")
-        self.password = TextField(self.PASSWORD_FIELD, "CONTRASEÑA", PASSWORD_MAX_LEN, password=True)
+        self.name = widgets.TextField(
+            self.NAME_FIELD, "NOMBRE DE LA SALA", lobby.ROOM_NAME_MAX,
+            value=f"Sala de {user}"[:lobby.ROOM_NAME_MAX])
+        self.private = widgets.CheckBox(self.PRIVATE_BOX, "Con contraseña")
+        self.password = widgets.TextField(self.PASSWORD_FIELD, "CONTRASEÑA",
+                                          PASSWORD_MAX_LEN, password=True)
         self.create_rect = pygame.Rect((0, 0), self.CREATE_SIZE)
         self.create_rect.center = self.CREATE_CENTER
         self.hover = False
@@ -516,98 +659,130 @@ class CreateRoomScreen(OnlineScreen):
         if not name:
             self.notify("Escribí un nombre para la sala.")
             return
-        msg = {"type": "create_room", "name": name}
+        msg = {"type": wire.CREATE_ROOM, "name": name}
         if self.private.value:
-            if not self.password.value:
-                self.notify("Escribí la contraseña (o destildá «Con contraseña»).")
-                self.password.focus(True)
+            if not self._password_given():
                 return
             msg["password"] = self.password.value
         self.app.audio.play("confirm")
         self.net.send(msg)
+
+    def _password_given(self):
+        if not self.password.value:
+            self.notify("Escribí la contraseña (o destildá «Con contraseña»).")
+            self.password.focus(True)
+            return False
+        return True
 
     def handle_event(self, ev):
         if self.handle_back(ev):
             return
         self.password.enabled = self.private.value
         if self.private.handle_event(ev):
-            self.app.audio.play("select")
-            self.password.enabled = self.private.value
-            self.name.focus(False)
-            self.password.focus(self.private.value)
+            self._private_toggled()
             return
-        for field, other in ((self.name, self.password), (self.password, self.name)):
-            r = field.handle_event(ev)
-            if r == "submit":
-                if field is self.name and self.private.value and not self.password.value:
-                    self.name.focus(False)
-                    self.password.focus(True)
-                else:
-                    self.create()
-                return
-            if r == "tab":
-                field.focus(False)
-                other.focus(other.enabled)
-                return
-            if r:
-                if field.focused:
-                    other.focus(False)
-                return
+        if self._fields_event(ev):
+            return
         if ev.type == pygame.MOUSEMOTION:
             self.hover = self.create_rect.collidepoint(ev.pos)
-        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.create_rect.collidepoint(ev.pos):
+        elif _left_click_on(ev, self.create_rect):
+            self.create()
+
+    def _private_toggled(self):
+        self.app.audio.play("select")
+        self.password.enabled = self.private.value
+        self.name.focus(False)
+        self.password.focus(self.private.value)
+
+    def _fields_event(self, ev):
+        """True if one of the two text fields used the event."""
+        for field, other in ((self.name, self.password),
+                             (self.password, self.name)):
+            r = field.handle_event(ev)
+            if r == "submit":
+                self._submit(field)
+            elif r == "tab":
+                field.focus(False)
+                other.focus(other.enabled)
+            elif r and field.focused:
+                other.focus(False)
+            if r:
+                return True
+        return False
+
+    def _submit(self, field):
+        """Enter: go to the password if it is missing, or create."""
+        if (field is self.name and self.private.value
+                and not self.password.value):
+            self.name.focus(False)
+            self.password.focus(True)
+        else:
             self.create()
 
     def on_net(self, msg):
-        if msg["type"] == W.ROOM:
+        if msg["type"] == wire.ROOM:
             self.app.switch(RoomScreen(self.app))
             return
         super().on_net(msg)
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_LIST)
-        title(surf, "CREAR SALA", (CENTER_X, self.TITLE_Y), FONT_TITLE_L)
-        panel(surf, pygame.Rect(self.BOX))
+        screens.dim(surf, layout.VEIL_LIST)
+        screens.title(surf, "CREAR SALA", (layout.CENTER_X, self.TITLE_Y),
+                      layout.FONT_TITLE_L)
+        screens.panel(surf, pygame.Rect(self.BOX))
+        self._fields(surf)
+        screens.button(surf, self.create_rect, "CREAR", self.hover, True,
+                       layout.FONT_TEXT, self.t)
+        screens.footer(surf, "Enter: crear  -  Tab: siguiente campo  -  "
+                       "Esc: volver")
+        self.draw_common(surf)
+
+
+    def _fields(self, surf):
         self.name.draw(surf, self.t)
         self.private.draw(surf)
         if self.private.value:
             self.password.draw(surf, self.t)
         else:
-            draw_text(surf, "Sala libre: cualquiera de la lista puede entrar.", FONT_SMALL,
-                      (CENTER_X, self.FREE_NOTE_Y), C.INK_SOFT, outline=None)
-        button(surf, self.create_rect, "CREAR", self.hover, True, FONT_TEXT, self.t)
-        footer(surf, "Enter: crear  -  Tab: siguiente campo  -  Esc: volver")
-        self.draw_common(surf)
+            assets.draw_text(surf, "Sala libre: cualquiera de la lista puede "
+                             "entrar.", layout.FONT_SMALL,
+                             (layout.CENTER_X, self.FREE_NOTE_Y),
+                             palette.INK_SOFT, outline=None)
 
 
 # ---------------------------------------------------------------------------
-# Sala: elegir personaje y confirmar
+# Room: choose a character and confirm
 # ---------------------------------------------------------------------------
 class RoomScreen(OnlineScreen):
-    """Misma disposición que la selección local (match_screens.SelectScreen): yo a la
-    izquierda, el rival a la derecha y la fila de tarjetas abajo."""
+    """Same layout as the local selection (match_screens.SelectScreen): me
+    on the left, the rival on the right and the row of cards below."""
     IN_ROOM = True
     BACK_LABEL = "◄ SALIR"
     LEFT_KEYS = (pygame.K_a, pygame.K_LEFT)
     RIGHT_KEYS = (pygame.K_d, pygame.K_RIGHT)
-    OK_KEYS = (pygame.K_SPACE, pygame.K_p, pygame.K_RETURN, pygame.K_KP_ENTER)
-    RESEND_AFTER = 1.0                 # s: si el servidor todavía no muestra mi personaje, se vuelve a mandar
-    SUBTITLE_Y = 80                    # "Sala libre de ... - Los lados se sortean..."
-    TAG = (320, 70)                    # recuadro con el nombre (más ancho que en la selección local: va la etiqueta)
-    HINT_Y = 466                       # ayuda de teclas, debajo de mis botones
-    QUESTION_Y = 300                   # "?" en el lugar del rival que todavía no está o no eligió
-    DOTS_HZ = 2                        # "ESPERANDO RIVAL...": puntos que se agregan por segundo...
-    MAX_DOTS = 3                       # ...hasta tres
-    RIVAL_INNER_MARGIN = 2             # si los dos eligieron la misma tarjeta, el marco del rival va por dentro
+    OK_KEYS = (pygame.K_SPACE, pygame.K_p, pygame.K_RETURN,
+               pygame.K_KP_ENTER)
+    # s: if the server still does not show my character, it is sent again.
+    RESEND_AFTER = 1.0
+    SUBTITLE_Y = 80                    # kind of room and owner (px)
+    # Box with the name (wider than in the local selection: it has the tag).
+    TAG = (320, 70)
+    HINT_Y = 466                       # key hint, below my buttons (px)
+    QUESTION_Y = 300                   # "?" where the rival is missing (px)
+    DOTS_HZ = 2                        # waiting dots added per second...
+    MAX_DOTS = 3                       # ...up to three
+    # If both chose the same card, the rival frame goes inside (px).
+    RIVAL_INNER_MARGIN = 2
 
     def __init__(self, app):
         super().__init__(app)
         me, _ = members(self.net)
-        pre = (me and me["character"]) or getattr(app, "last_online_char", None) or CHARACTER_IDS[0]
+        pre = ((me and me["character"])
+               or getattr(app, "last_online_char", None) or CHARACTER_IDS[0])
         self.cursor = CHARACTER_IDS.index(pre)
         self.sent_char = None
-        self.sent_at = -math.inf               # todavía no se mandó nada
+        self.sent_at = -math.inf               # nothing was sent yet
         self.hover = None
 
     def back(self):
@@ -615,10 +790,10 @@ class RoomScreen(OnlineScreen):
         self.app.switch(RoomsScreen(self.app))
 
     def choosing(self):
-        return bool(self.net.room) and self.net.room["state"] == "eligiendo"
+        return bool(self.net.room) and self.net.room["state"] == lobby.CHOOSING
 
     def buttons(self):
-        return choice_buttons(PLAYER_X[0])
+        return match_screens.choice_buttons(PLAYER_X[0])
 
     def my_ready(self):
         me, _ = members(self.net)
@@ -631,182 +806,266 @@ class RoomScreen(OnlineScreen):
         self.app.audio.play("select")
 
     def sync_character(self):
-        """Avisa al servidor qué personaje tengo elegido (el rival lo ve al instante)."""
+        """Tells the server which character I have (the rival sees it)."""
         me, _ = members(self.net)
         if not self.choosing() or me is None:
             return
         cid = CHARACTER_IDS[self.cursor]
-        if me["character"] != cid and (cid != self.sent_char or self.t - self.sent_at > self.RESEND_AFTER):
-            self.net.send({"type": "choose_character", "character": cid})
+        stale = self.t - self.sent_at > self.RESEND_AFTER
+        if me["character"] != cid and (cid != self.sent_char or stale):
+            self.net.send({"type": wire.CHOOSE_CHARACTER, "character": cid})
             self.sent_char, self.sent_at = cid, self.t
             self.app.last_online_char = cid
 
     def toggle_ready(self):
         if not self.choosing():
-            self.notify("Esperá a que entre un rival.", C.GOLD)
+            self.notify("Esperá a que entre un rival.", palette.GOLD)
             self.app.audio.play("blocked")
             return
         ready = not self.my_ready()
         if ready:
             self.sync_character()
-        self.net.send({"type": "ready", "ready": ready})
+        self.net.send({"type": wire.READY, "ready": ready})
         self.app.audio.play("confirm" if ready else "back")
 
     def handle_event(self, ev):
         if self.handle_back(ev):
             return
         if ev.type == pygame.KEYDOWN:
-            if ev.key in self.LEFT_KEYS:
-                self.move(-1)
-            elif ev.key in self.RIGHT_KEYS:
-                self.move(1)
-            elif ev.key in self.OK_KEYS:
-                self.toggle_ready()
+            self._key(ev.key)
         elif ev.type == pygame.MOUSEMOTION:
-            self.hover = next((n for n, r in self.buttons().items() if r.collidepoint(ev.pos)), None)
+            self.hover = next((n for n, r in self.buttons().items()
+                               if r.collidepoint(ev.pos)), None)
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            b = self.buttons()
-            if b["ok"].collidepoint(ev.pos):
-                self.toggle_ready()
-            elif b["prev"].collidepoint(ev.pos):
-                self.move(-1)
-            elif b["next"].collidepoint(ev.pos):
-                self.move(1)
-            elif not self.my_ready():
-                for k in range(len(CHARACTER_IDS)):
-                    if card_rect(k).collidepoint(ev.pos):
-                        self.cursor = k
-                        self.app.audio.play("select")
+            self._click(ev.pos)
+
+    def _key(self, key):
+        if key in self.LEFT_KEYS:
+            self.move(-1)
+        elif key in self.RIGHT_KEYS:
+            self.move(1)
+        elif key in self.OK_KEYS:
+            self.toggle_ready()
+
+    def _click(self, pos):
+        b = self.buttons()
+        if b["ok"].collidepoint(pos):
+            self.toggle_ready()
+        elif b["prev"].collidepoint(pos):
+            self.move(-1)
+        elif b["next"].collidepoint(pos):
+            self.move(1)
+        elif not self.my_ready():
+            for k in range(len(CHARACTER_IDS)):
+                if match_screens.card_rect(k).collidepoint(pos):
+                    self.cursor = k
+                    self.app.audio.play("select")
 
     def update(self, dt):
         super().update(dt)
         if not self.my_ready():
             self.sync_character()
 
-    def _player(self, surf, x, cid, facing, ready, color, scale=SelectScreen.PLAYER_SCALE):
-        ang, bob = celebrate_pose(self.t) if ready else idle_pose(self.t)
-        img, (fx, fy) = self.app.sprites.player(cid, facing, ang, bob, color, False, scale)
-        surf.blit(img, (x - fx, SelectScreen.FEET_Y - fy))
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+    def _player(self, surf, x, cid, facing, ready, color,
+                scale=SELECT.PLAYER_SCALE):
+        ang, bob = (sprites.celebrate_pose(self.t) if ready
+                    else sprites.idle_pose(self.t))
+        img, (fx, fy) = self.app.sprites.player(cid, facing, ang, bob, color,
+                                                False, scale)
+        surf.blit(img, (x - fx, SELECT.FEET_Y - fy))
 
     def _pedestal(self, surf, x):
-        ped = pygame.Rect((0, 0), SelectScreen.PEDESTAL)
-        ped.midtop = (x, SelectScreen.PEDESTAL_TOP)
-        bevel_box(surf, ped, C.STRUCT, shadow=True)
+        ped = pygame.Rect((0, 0), SELECT.PEDESTAL)
+        ped.midtop = (x, SELECT.PEDESTAL_TOP)
+        retro.bevel_box(surf, ped, palette.STRUCT, shadow=True)
 
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def _tag(self, surf, x, name, sub, color):
         tag = pygame.Rect((0, 0), self.TAG)
-        tag.midtop = (x, SelectScreen.TAG_TOP)
-        inner = panel(surf, tag)
-        pygame.draw.rect(surf, color, (inner.left, inner.top, inner.width, SelectScreen.TAG_BAR_H))
-        draw_text(surf, name, FONT_TEXT, (x, inner.top + SelectScreen.TAG_NAME_Y), C.INK, outline=None)
-        draw_text(surf, sub, FONT_SMALL, (x, inner.top + SelectScreen.TAG_TEAM_Y), C.INK_SOFT, outline=None)
+        tag.midtop = (x, SELECT.TAG_TOP)
+        inner = screens.panel(surf, tag)
+        pygame.draw.rect(surf, color, (inner.left, inner.top, inner.width,
+                                       SELECT.TAG_BAR_H))
+        assets.draw_text(surf, name, layout.FONT_TEXT,
+                         (x, inner.top + SELECT.TAG_NAME_Y), palette.INK,
+                         outline=None)
+        assets.draw_text(surf, sub, layout.FONT_SMALL,
+                         (x, inner.top + SELECT.TAG_TEAM_Y), palette.INK_SOFT,
+                         outline=None)
 
     def _ready_sign(self, surf, i):
-        """"¡LISTO!" al lado del jugador i (0 = yo, a la izquierda; 1 = el rival)."""
-        x = PLAYER_X[i] + SelectScreen.READY_X * FACING[i]
-        draw_text(surf, "¡LISTO!", FONT_LARGE, (x, SelectScreen.READY_Y), C.GREEN, kind="title", outline=C.INK,
-                  shadow=True)
+        """Ready sign next to player i (0 = me, on the left; 1 = rival)."""
+        x = PLAYER_X[i] + SELECT.READY_X * FACING[i]
+        assets.draw_text(surf, "¡LISTO!", layout.FONT_LARGE,
+                         (x, SELECT.READY_Y), palette.GREEN, kind="title",
+                         outline=palette.INK, shadow=True)
 
     def _question(self, surf):
-        draw_text(surf, "?", FONT_GIANT, (PLAYER_X[1], self.QUESTION_Y), C.WHITE, kind="title", outline=C.INK,
-                  shadow=True)
+        assets.draw_text(surf, "?", layout.FONT_GIANT,
+                         (PLAYER_X[1], self.QUESTION_Y), palette.WHITE,
+                         kind="title", outline=palette.INK, shadow=True)
 
     def draw(self, surf):
         room = self.net.room
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_OVERLAY)
+        screens.dim(surf, layout.VEIL_OVERLAY)
         if not room:
             self.draw_common(surf)
             return
         me, rival = members(self.net)
-        title(surf, room["name"].upper(), (CENTER_X, SelectScreen.TITLE_Y), FONT_TITLE_S)
+        self._header(surf, room)
+        self._me(surf, bool(me and me["ready"]))
+        self._rival(surf, rival)
+        self._middle(surf)
+        self._cards(surf, rival)
+        self._bottom(surf, room, me, rival)
+
+    def _bottom(self, surf, room, me, rival):
+        """Go sign when both are ready, footer and common parts."""
+        if (room["state"] == lobby.CHOOSING and me and rival and me["ready"]
+                and rival["ready"]):
+            _go_sign(surf)
+        screens.footer(surf, "Esc: salir de la sala  -  Mouse: botones y "
+                       "tarjetas")
+        self.draw_common(surf)
+
+    def _header(self, surf, room):
+        screens.title(surf, room["name"].upper(),
+                      (layout.CENTER_X, SELECT.TITLE_Y), layout.FONT_TITLE_S)
         kind = "con contraseña" if room["private"] else "libre"
-        draw_text(surf, f"Sala {kind} de {room['owner']}  -  Los lados se sortean al empezar el partido", FONT_SMALL,
-                  (CENTER_X, self.SUBTITLE_Y), C.INK, outline=C.WHITE)
-        # yo
-        my_x, rival_x = PLAYER_X
+        assets.draw_text(surf, f"Sala {kind} de {room['owner']}  -  Los lados "
+                         "se sortean al empezar el partido", layout.FONT_SMALL,
+                         (layout.CENTER_X, self.SUBTITLE_Y), palette.INK,
+                         outline=palette.WHITE)
+
+    def _me(self, surf, ready):
+        my_x = PLAYER_X[0]
         cid = CHARACTER_IDS[self.cursor]
-        ready = bool(me and me["ready"])
         self._pedestal(surf, my_x)
         self._player(surf, my_x, cid, FACING[0], ready, ME_COLOR)
-        self._tag(surf, my_x, self.net.display or "", short_name(CHARACTERS_BY_ID[cid]), ME_COLOR)
-        b = self.buttons()
-        can = self.choosing()
-        button(surf, b["prev"], "◄", self.hover == "prev", not ready, FONT_TEXT, self.t)
-        button(surf, b["ok"], "CANCELAR" if ready else "¡LISTO!", self.hover == "ok", can, FONT_TEXT, self.t)
-        button(surf, b["next"], "►", self.hover == "next", not ready, FONT_TEXT, self.t)
+        self._tag(surf, my_x, self.net.display or "",
+                  characters.short_name(characters.CHARACTERS_BY_ID[cid]),
+                  ME_COLOR)
+        self._my_buttons(surf, ready)
         if ready:
             self._ready_sign(surf, 0)
-        # rival
+
+    def _my_buttons(self, surf, ready):
+        b = self.buttons()
+        t, font = self.t, layout.FONT_TEXT
+        screens.button(surf, b["prev"], "◄", self.hover == "prev", not ready,
+                       font, t)
+        screens.button(surf, b["ok"], "CANCELAR" if ready else "¡LISTO!",
+                       self.hover == "ok", self.choosing(), font, t)
+        screens.button(surf, b["next"], "►", self.hover == "next", not ready,
+                       font, t)
+
+    def _rival(self, surf, rival):
+        rival_x = PLAYER_X[1]
         if rival is None:
-            dots = "." * (1 + int(self.t * self.DOTS_HZ) % self.MAX_DOTS)
-            self._tag(surf, rival_x, "ESPERANDO RIVAL" + dots, "La sala aparece en la lista de salas", RIVAL_COLOR)
-            self._question(surf)
+            self._no_rival(surf, rival_x)
+            return
+        self._pedestal(surf, rival_x)
+        self._rival_character(surf, rival, rival_x)
+        self._tag(surf, rival_x, rival["display"], _rival_note(rival),
+                  RIVAL_COLOR)
+        if rival["ready"]:
+            self._ready_sign(surf, 1)
+
+    def _rival_character(self, surf, rival, rival_x):
+        rc = rival["character"]
+        if rc:
+            self._player(surf, rival_x, rc, FACING[1], rival["ready"],
+                         RIVAL_COLOR)
         else:
-            rc = rival["character"]
-            sub = short_name(CHARACTERS_BY_ID[rc]) if rc else "eligiendo personaje..."
-            if not rival.get("connected", True):
-                sub = "desconectado: esperando que vuelva"
-            self._pedestal(surf, rival_x)
-            if rc:
-                self._player(surf, rival_x, rc, FACING[1], rival["ready"], RIVAL_COLOR)
-            else:
-                self._question(surf)
-            self._tag(surf, rival_x, rival["display"], sub, RIVAL_COLOR)
-            if rival["ready"]:
-                self._ready_sign(surf, 1)
-        draw_text(surf, "VS", FONT_BANNER, (CENTER_X, SelectScreen.VS_Y), C.WHITE, kind="title", outline=C.INK,
-                  shadow=True)
-        hint = ("A/D o flechas: elegir  -  Espacio, P o Enter: listo" if can
+            self._question(surf)
+
+    def _no_rival(self, surf, rival_x):
+        dots = "." * (1 + int(self.t * self.DOTS_HZ) % self.MAX_DOTS)
+        self._tag(surf, rival_x, "ESPERANDO RIVAL" + dots,
+                  "La sala aparece en la lista de salas", RIVAL_COLOR)
+        self._question(surf)
+
+    def _middle(self, surf):
+        """VS sign and the key hint below my buttons."""
+        assets.draw_text(surf, "VS", layout.FONT_BANNER,
+                         (layout.CENTER_X, SELECT.VS_Y), palette.WHITE,
+                         kind="title", outline=palette.INK, shadow=True)
+        hint = ("A/D o flechas: elegir  -  Espacio, P o Enter: listo"
+                if self.choosing()
                 else "Cuando entre un rival van a poder confirmar")
-        draw_text(surf, hint, FONT_SMALL, (my_x, self.HINT_Y), C.INK, outline=C.WHITE)
-        # tarjetas
-        sp = self.app.sprites
+        assets.draw_text(surf, hint, layout.FONT_SMALL,
+                         (PLAYER_X[0], self.HINT_Y), palette.INK,
+                         outline=palette.WHITE)
+
+    def _cards(self, surf, rival):
         for k, c in enumerate(CHARACTER_IDS):
             mine = k == self.cursor
             theirs = rival is not None and rival["character"] == c
-            rr = draw_card(surf, sp, k, mine or theirs)
+            rr = match_screens.draw_card(surf, self.app.sprites, k,
+                                         mine or theirs)
             if mine:
-                pygame.draw.rect(surf, ME_COLOR, rr.inflate(2 * SELECTION_MARGIN, 2 * SELECTION_MARGIN), SELECTION_LINE)
+                _frame(surf, rr, ME_COLOR, match_screens.SELECTION_MARGIN)
             if theirs:
-                margin = self.RIVAL_INNER_MARGIN if mine else SELECTION_MARGIN
-                pygame.draw.rect(surf, RIVAL_COLOR, rr.inflate(2 * margin, 2 * margin), SELECTION_LINE)
-        if room["state"] == "eligiendo" and me and rival and me["ready"] and rival["ready"]:
-            draw_text(surf, "¡A LA CANCHA!", FONT_TITLE_S, (CENTER_X, SelectScreen.GO_Y), C.GOLD, kind="title",
-                      outline=C.INK, shadow=True)
-        footer(surf, "Esc: salir de la sala  -  Mouse: botones y tarjetas")
-        self.draw_common(surf)
+                _frame(surf, rr, RIVAL_COLOR,
+                       self.RIVAL_INNER_MARGIN if mine
+                       else match_screens.SELECTION_MARGIN)
+
+
+def _go_sign(surf):
+    assets.draw_text(surf, "¡A LA CANCHA!", layout.FONT_TITLE_S,
+                     (layout.CENTER_X, SELECT.GO_Y), palette.GOLD,
+                     kind="title", outline=palette.INK, shadow=True)
+
+
+def _frame(surf, rr, color, margin):
+    pygame.draw.rect(surf, color, rr.inflate(2 * margin, 2 * margin),
+                     match_screens.SELECTION_LINE)
+
+
+def _rival_note(rival):
+    """Second line of the rival tag."""
+    if not rival.get("connected", True):
+        return "desconectado: esperando que vuelva"
+    rc = rival["character"]
+    if rc:
+        return characters.short_name(characters.CHARACTERS_BY_ID[rc])
+    return "eligiendo personaje..."
 
 
 # ---------------------------------------------------------------------------
-# Partido online
+# Online match
 # ---------------------------------------------------------------------------
-class OnlineMatchScreen(MatchScreen):
-    """La simulación corre en el servidor: acá sólo se mandan controles y
-    pedidos, y se dibuja (suavizado) lo que llega."""
-
-    INPUT_KEEPALIVE = 0.25     # s: aunque no cambie nada, se repite la foto de controles
-    SIDE_BANNER_TIME = 5.0             # s que se muestra "JUGÁS A LA IZQUIERDA/DERECHA" al empezar
-    SIDE_BANNER_Y = 440                # altura de ese cartel
-    FORFEIT_WAIT = 1.0                 # s entre el fin por abandono y el resultado (por tiempo: FINAL_WAIT)
-    MATCH_BUTTON_W = 150               # ancho de los botones "II PAUSA" y "ABANDONAR"
-    MATCH_BUTTON_GAP = 8               # px entre esos dos botones (uno debajo del otro)
-    PAUSE_MENU_CENTER = (CENTER_X, 500)  # botones "Estoy listo" / "Abandonar" de la pausa
-    PAUSE_MENU_W = 340                 # ancho de esos botones
-    MENU_BUTTON_H = 50                 # alto de los botones de la pausa y de la confirmación
-    MENU_GAP = 12                      # px entre esos botones
-    CONFIRM_MENU_CENTER = (CENTER_X, 440)  # botones de "¿ABANDONAR?"
-    CONFIRM_MENU_W = 380               # ancho de esos botones
-    OVERLAY_CENTER = (CENTER_X, 400)   # centro de los carteles (pausa, sin conexión, abandonar)
-    CONFIRM_BOX = (560, 260)           # cartel "¿ABANDONAR?" (ancho, alto)
-    CONFIRM_TITLE_Y = 34               # título, desde arriba del cartel
-    CONFIRM_TEXT_Y = 80                # explicación, desde arriba del cartel
-    OVERLAY_W = 600                    # ancho del cartel de pausa o de conexión cortada
-    OVERLAY_H = 230                    # alto del cartel de conexión cortada...
-    OVERLAY_PAUSE_H = 360              # ...y del de pausa (lleva botones)
-    OVERLAY_TITLE_Y = 40               # título, desde arriba del cartel
-    OVERLAY_TEXT_Y = 92                # primer renglón, desde arriba del cartel
-    READY_LINES_Y = 156                # "Ale: LISTO" de cada jugador, desde arriba del cartel de pausa
+class OnlineMatchScreen(match_screens.MatchScreen):
+    """The simulation runs on the server: here only controls and requests
+    are sent, and what arrives is drawn (smoothed)."""
+    INPUT_KEEPALIVE = 0.25     # s: the controls are repeated even if equal
+    SIDE_BANNER_TIME = 5.0             # s the side sign is shown at start
+    SIDE_BANNER_Y = 440                # height of that sign (px)
+    # s from the end by forfeit to the result (by time: FINAL_WAIT).
+    FORFEIT_WAIT = 1.0
+    MATCH_BUTTON_W = 150               # width of the pause and quit buttons
+    MATCH_BUTTON_GAP = 8               # px between those two buttons
+    # Ready and quit buttons of the pause (px).
+    PAUSE_MENU_CENTER = (layout.CENTER_X, 500)
+    PAUSE_MENU_W = 340                 # width of those buttons (px)
+    MENU_BUTTON_H = 50                 # height of pause and confirm buttons
+    MENU_GAP = 12                      # px between those buttons
+    # Buttons of the quit confirmation (px).
+    CONFIRM_MENU_CENTER = (layout.CENTER_X, 440)
+    CONFIRM_MENU_W = 380               # width of those buttons (px)
+    # Centre of the signs (pause, disconnected, quit) in px.
+    OVERLAY_CENTER = (layout.CENTER_X, 400)
+    CONFIRM_BOX = (560, 260)           # quit confirmation (width, height)
+    CONFIRM_TITLE_Y = 34               # title, from the box top (px)
+    CONFIRM_TEXT_Y = 80                # explanation, from the box top (px)
+    OVERLAY_W = 600                    # width of the pause/connection sign
+    OVERLAY_H = 230                    # height of the connection sign...
+    OVERLAY_PAUSE_H = 360              # ...and of the pause one (has buttons)
+    OVERLAY_TITLE_Y = 40               # title, from the sign top (px)
+    OVERLAY_TEXT_Y = 92                # first line, from the sign top (px)
+    READY_LINES_Y = 156                # ready line of each player (px)
 
     def __init__(self, app, start):
         players = sorted(start["players"], key=lambda p: p["side"])
@@ -817,22 +1076,37 @@ class OnlineMatchScreen(MatchScreen):
         self.net = app.online()
         self.match_id = start["match"]
         self.filter.expect(self.match_id)
-        self.deduper = P.EventDeduper()
-        self.interp = Interpolator()
+        self._init_online()
+        self._online_buttons()
+
+    def _init_online(self):
+        self.deduper = protocol.EventDeduper()
+        self.interp = interp.Interpolator()
         self.last_sent = None
         self.last_sent_t = -1.0
         self.confirm = None
         self.side_banner = self.SIDE_BANNER_TIME
-        top, w = BackButton.TOP, self.MATCH_BUTTON_W
-        self.pause_button = BackButton(self.request_pause, "II PAUSA", rect=(SCREEN_MARGIN, top, w, BUTTON_SMALL_H))
-        self.quit_button = BackButton(self.ask_abandon, "ABANDONAR",
-                                      rect=(SCREEN_MARGIN, top + BUTTON_SMALL_H + self.MATCH_BUTTON_GAP, w,
-                                            BUTTON_SMALL_H))
-        self.pause_menu = Menu([("Estoy listo", self.ready_pause), ("Abandonar", self.ask_abandon)],
-                               self.PAUSE_MENU_CENTER, width=self.PAUSE_MENU_W, height=self.MENU_BUTTON_H,
-                               gap=self.MENU_GAP, size=FONT_TEXT)
 
-    # ------------------------------------------------------------------ ganchos de MatchScreen
+    def _online_buttons(self):
+        top, w = screens.BackButton.TOP, self.MATCH_BUTTON_W
+        h = layout.BUTTON_SMALL_H
+        self.pause_button = screens.BackButton(
+            self.request_pause, "II PAUSA",
+            rect=(layout.SCREEN_MARGIN, top, w, h))
+        self.quit_button = screens.BackButton(
+            self.ask_abandon, "ABANDONAR",
+            rect=(layout.SCREEN_MARGIN, top + h + self.MATCH_BUTTON_GAP, w, h))
+        self.pause_menu = self._menu(
+            [("Estoy listo", self.ready_pause),
+             ("Abandonar", self.ask_abandon)],
+            self.PAUSE_MENU_CENTER, self.PAUSE_MENU_W)
+
+    def _menu(self, items, center, width):
+        return screens.Menu(items, center, width=width,
+                            height=self.MENU_BUTTON_H, gap=self.MENU_GAP,
+                            size=layout.FONT_TEXT)
+
+    # ------------------------------------------------------------ hooks
     def pause_items(self):
         return []
 
@@ -844,73 +1118,93 @@ class OnlineMatchScreen(MatchScreen):
         self.waiting = None
 
     def on_link(self, msgs, state):
-        pass                                     # el proceso local no participa del online
+        """The local process takes no part in the online match."""
 
     def on_focus_lost(self):
-        pass                                     # online no se pausa al perder el foco
+        """Online, the match is not paused when the focus is lost."""
 
     def _on_event(self, m):
-        if m["type"] == P.EV_PAUSED:
-            return                               # la pausa online llega como pause_info
+        if m["type"] == protocol.EV_PAUSED:
+            return              # the online pause arrives as pause_info
         super()._on_event(m)
 
-    # ------------------------------------------------------------------ red
+    # ------------------------------------------------------------ network
     def on_net(self, msg):
         t = msg["type"]
-        if t == W.STATE:
-            if msg.get("match") == self.match_id and self.filter.accept(msg):
-                self.state = msg
-                self.interp.push(msg, time.monotonic())
-        elif t == W.EVENT:
-            e = msg["e"]
-            if e.get("match") != self.match_id:
-                self.ignored_events += 1
-            elif self.deduper.fresh(e):
-                self._on_event(e)
-        elif t == W.MATCH_OVER and msg.get("match") == self.match_id:
-            if self.end_info is None:
-                self.end_info = msg
-                self.end_timer = self.FINAL_WAIT if msg["reason"] == W.END_TIME else self.FORFEIT_WAIT
-                self.app.audio.play("whistle_end")
-        elif t == W.MATCH_START and msg["match"] != self.match_id:
-            self.app.switch(OnlineMatchScreen(self.app, msg))
-        elif t == W.PAUSE_INFO and msg["status"] == W.PAUSE_ACTIVE:
+        if t == wire.STATE:
+            self._on_state(msg)
+        elif t == wire.EVENT:
+            self._on_remote_event(msg["e"])
+        elif t in (wire.MATCH_OVER, wire.MATCH_START):
+            self._on_match_change(msg)
+        elif t == wire.PAUSE_INFO and msg["status"] == wire.PAUSE_ACTIVE:
             self.app.input.release_all()
-        elif t == W.ROOMS:
+        elif t == wire.ROOMS:
             self.app.switch(RoomsScreen(self.app, "Ya no estás en esa sala."))
-        elif t == W.ERROR:
-            self.toast(msg["message"], C.RED)
+        elif t == wire.ERROR:
+            self.toast(msg["message"], palette.RED)
 
-    # ------------------------------------------------------------------ acciones
+    def _on_match_change(self, msg):
+        """End of this match, or a new one (a rematch) started."""
+        if msg["type"] == wire.MATCH_OVER:
+            if msg.get("match") == self.match_id:
+                self._on_match_over(msg)
+        elif msg["match"] != self.match_id:
+            self.app.switch(OnlineMatchScreen(self.app, msg))
+
+    def _on_state(self, msg):
+        if msg.get("match") == self.match_id and self.filter.accept(msg):
+            self.state = msg
+            self.interp.push(msg, time.monotonic())
+
+    def _on_remote_event(self, e):
+        if e.get("match") != self.match_id:
+            self.ignored_events += 1
+        elif self.deduper.fresh(e):
+            self._on_event(e)
+
+    def _on_match_over(self, msg):
+        if self.end_info is None:
+            self.end_info = msg
+            self.end_timer = (self.FINAL_WAIT
+                              if msg["reason"] == wire.END_TIME
+                              else self.FORFEIT_WAIT)
+            self.app.audio.play("whistle_end")
+
+    # ------------------------------------------------------------ actions
     def overlay(self):
-        """Qué cartel tapa el partido: None, "self", "opponent" o "pause"."""
-        if self.net.status == NC.RECONNECTING:
+        """Which sign covers the match: None, "self", "opponent" or
+        "pause"."""
+        if self.net.status == client.RECONNECTING:
             return "self"
         opp = self.net.opponent
         if opp and not opp["connected"]:
             return "opponent"
-        if self.net.pause.get("status") == W.PAUSE_ACTIVE:
+        if self.net.pause.get("status") == wire.PAUSE_ACTIVE:
             return "pause"
         return None
 
     def request_pause(self, reason=None):
+        del reason  # Unused: online there is only one kind of pause.
         if self.state is None or self.end_info is not None:
             return
-        if self.net.pause.get("status") != W.PAUSE_NONE:
+        if self.net.pause.get("status") != wire.PAUSE_NONE:
             return
-        self.net.send({"type": W.PAUSE_REQUEST})
+        self.net.send({"type": wire.PAUSE_REQUEST})
         self.app.audio.play("confirm")
-        self.toast("Pediste la pausa: se activa después del próximo gol", C.GOLD)
+        self.toast("Pediste la pausa: se activa después del próximo gol",
+                   palette.GOLD)
 
     def ready_pause(self):
-        self.net.send({"type": W.PAUSE_READY})
+        self.net.send({"type": wire.PAUSE_READY})
 
     def ask_abandon(self):
         if self.end_info is not None:
             return
-        self.confirm = Menu([("No, seguir jugando", self.close_confirm), ("Sí, abandonar", self.abandon)],
-                            self.CONFIRM_MENU_CENTER, width=self.CONFIRM_MENU_W, height=self.MENU_BUTTON_H,
-                            gap=self.MENU_GAP, size=FONT_TEXT)
+        self.confirm = self._menu(
+            [("No, seguir jugando", self.close_confirm),
+             ("Sí, abandonar", self.abandon)],
+            self.CONFIRM_MENU_CENTER, self.CONFIRM_MENU_W)
 
     def close_confirm(self):
         self.confirm = None
@@ -919,150 +1213,217 @@ class OnlineMatchScreen(MatchScreen):
         self.net.abandon()
         self.app.switch(RoomsScreen(self.app, "Abandonaste el partido."))
 
+    def _update_buttons(self, overlay):
+        self.quit_button.visible = self.end_info is None
+        self.pause_button.visible = (
+            overlay is None and self.end_info is None
+            and self.net.pause.get("status") == wire.PAUSE_NONE)
+
     def handle_event(self, ev):
         if self.confirm is not None:
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-                self.confirm = None
-            else:
-                self.confirm.handle_event(ev, self.app.audio)
+            self._confirm_event(ev)
             return
         overlay = self.overlay()
-        self.quit_button.visible = self.end_info is None
-        self.pause_button.visible = (overlay is None and self.end_info is None
-                                     and self.net.pause.get("status") == W.PAUSE_NONE)
-        if self.quit_button.handle_event(ev) or self.pause_button.handle_event(ev):
+        self._update_buttons(overlay)
+        if (self.quit_button.handle_event(ev)
+                or self.pause_button.handle_event(ev)):
             return
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            if overlay == "pause":
-                self.ready_pause()
-            elif overlay is None:
-                self.request_pause()
-            return
-        if overlay == "pause":
+            self._escape_online(overlay)
+        elif overlay == "pause":
             self.pause_menu.handle_event(ev, self.app.audio)
 
-    # ------------------------------------------------------------------ ciclo
-    def update(self, dt):
-        Screen.update(self, dt)
-        self.renderer.update(dt)
-        self.app.fx.update(dt)
-        self.side_banner -= dt
-        for tst in self.toasts:
-            tst[2] -= dt
-        self.toasts = [t for t in self.toasts if t[2] > 0]
-        overlay = self.overlay()
-        self.pause_menu.enabled = overlay == "pause" and self.confirm is None
-        self.pause_menu.update(dt)
-        if self.confirm is not None:
-            self.confirm.update(dt)
-        st = self.state
-        active = (st is not None and overlay is None and self.confirm is None and not st["paused"]
-                  and st["phase"] == P.PHASE_PLAYING)
-        snap = self.app.input.snapshot_single(active)       # valen las dos combinaciones de teclas
-        now = time.monotonic()
-        if snap != self.last_sent or now - self.last_sent_t > self.INPUT_KEEPALIVE:
-            self.net.send_input(snap)                       # sólo cuando cambia (y un latido)
-            self.last_sent, self.last_sent_t = snap, now
-        self.app.audio.crowd(st is not None and not st["paused"] and overlay is None)
-        if st and st["phase"] == P.PHASE_COUNTDOWN and not st["paused"]:
-            n = math.ceil(st["phase_left"])
-            if n != self.last_count:
-                self.last_count = n
-                self.app.audio.play("beep")
+    def _confirm_event(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+            self.confirm = None
         else:
-            self.last_count = None
-        if st:
-            for p in st["players"]:
-                if p["frozen"]:
-                    self.app.fx.frozen(self.t, p["x"], p["y"], p["scale"])
-        pause = self.net.pause
-        self.renderer.center_note = (f"{pause.get('by_name')} pidió la pausa"
-                                     if pause.get("status") == W.PAUSE_PENDING and self.end_info is None else None)
+            self.confirm.handle_event(ev, self.app.audio)
+
+    def _escape_online(self, overlay):
+        if overlay == "pause":
+            self.ready_pause()
+        elif overlay is None:
+            self.request_pause()
+
+    # ------------------------------------------------------------ cycle
+    def update(self, dt):
+        screens.Screen.update(self, dt)
+        self.tick_effects(dt)
+        self.side_banner -= dt
+        overlay = self.overlay()
+        self._update_menus(dt, overlay)
+        self._send_online_controls(overlay)
+        self.match_sounds_and_snow()
+        self._pause_note()
+        self._check_end(dt)
+
+    def _check_end(self, dt):
+        """Goes to the result after the wait, or to the error screen."""
         if self.end_info is not None:
             self.end_timer -= dt
             if self.end_timer <= 0:
-                self.app.switch(OnlineResultScreen(self.app, self.start_msg, self.end_info))
+                self.app.switch(OnlineResultScreen(self.app, self.start_msg,
+                                                   self.end_info))
                 return
         if self.net.fatal:
             self.app.switch(OnlineErrorScreen(self.app, self.net.fatal))
 
-    # ------------------------------------------------------------------ dibujo
+    def _update_menus(self, dt, overlay):
+        self.pause_menu.enabled = overlay == "pause" and self.confirm is None
+        self.pause_menu.update(dt)
+        if self.confirm is not None:
+            self.confirm.update(dt)
+
+    def _send_online_controls(self, overlay):
+        """Controls go only when they change (plus a heartbeat); both key
+        sets are valid."""
+        st = self.state
+        active = (st is not None and overlay is None and self.confirm is None
+                  and not st["paused"]
+                  and st["phase"] == protocol.PHASE_PLAYING)
+        snap = self.app.input.snapshot_single(active)
+        now = time.monotonic()
+        heartbeat = now - self.last_sent_t > self.INPUT_KEEPALIVE
+        if snap != self.last_sent or heartbeat:
+            self.net.send_input(snap)
+            self.last_sent, self.last_sent_t = snap, now
+        self.app.audio.crowd(st is not None and not st["paused"]
+                             and overlay is None)
+
+    def _pause_note(self):
+        pause = self.net.pause
+        pending = (pause.get("status") == wire.PAUSE_PENDING
+                   and self.end_info is None)
+        self.renderer.center_note = (f"{pause.get('by_name')} pidió la pausa"
+                                     if pending else None)
+
+    # ------------------------------------------------------------ drawing
     def draw(self, surf):
         st = self.state
         if st is None:
-            surf.blit(self.app.background, (0, 0))
-            dim(surf, VEIL_OVERLAY)
-            title(surf, "Preparando partido...", (CENTER_X, self.MESSAGE_Y), FONT_LARGE, C.WHITE)
-            draw_text(surf, "Esperando al servidor", FONT_SMALL, (CENTER_X, self.MESSAGE_NOTE_Y), C.INK,
-                      outline=C.WHITE)
-            status_chip(surf, self.net, self.t, bottom=True)
+            self._draw_waiting_server(surf)
             return
         view = self.interp.sample(time.monotonic()) or st
-        off = self.app.fx.shake_offset()
-        self.renderer.draw_world(surf, view, off)
-        self.app.fx.draw(surf, off)
-        self.renderer.draw_hud(surf, st)
-        self.renderer.draw_center_messages(surf, st)
-        self._draw_toasts(surf)
+        self.draw_match(surf, view, st)
         overlay = self.overlay()
-        if self.side_banner > 0 and overlay is None and self.end_info is None:
-            side = "IZQUIERDA" if self.you == 0 else "DERECHA"
-            draw_text(surf, f"JUGÁS A LA {side}", FONT_TITLE_S, (CENTER_X, self.SIDE_BANNER_Y),
-                      PLAYER_COLORS[self.you], kind="title", outline=C.INK, shadow=True)
-        if self.end_info is not None:
-            head = "¡FINAL DEL PARTIDO!" if self.end_info["reason"] == W.END_TIME else "¡PARTIDO TERMINADO!"
-            title(surf, head, (CENTER_X, self.MESSAGE_Y), FONT_TITLE_L, C.WHITE)
-        self.quit_button.visible = self.end_info is None
-        self.pause_button.visible = (overlay is None and self.end_info is None
-                                     and self.net.pause.get("status") == W.PAUSE_NONE)
-        self.pause_button.draw(surf, self.t)
-        self.quit_button.draw(surf, self.t)
+        self._signs(surf, overlay)
+        self._draw_buttons(surf, overlay)
+        self._draw_dialogs(surf, overlay)
+
+    def _draw_dialogs(self, surf, overlay):
+        """Pause or connection sign, quit confirmation and status."""
         if overlay is not None:
             self._draw_overlay(surf, overlay)
         if self.confirm is not None:
-            dim(surf, VEIL_OVERLAY)
-            box = pygame.Rect((0, 0), self.CONFIRM_BOX)
-            box.center = self.OVERLAY_CENTER
-            inner = panel(surf, box)
-            title(surf, "¿ABANDONAR?", (CENTER_X, inner.top + self.CONFIRM_TITLE_Y), FONT_TITLE_S, C.RED)
-            draw_text(surf, "Si abandonás, perdés el partido y salís de la sala.", FONT_SMALL,
-                      (CENTER_X, inner.top + self.CONFIRM_TEXT_Y), C.INK, outline=None)
-            self.confirm.draw(surf)
+            self._draw_confirm(surf)
         status_chip(surf, self.net, self.t, bottom=True)
 
+    def _draw_buttons(self, surf, overlay):
+        self._update_buttons(overlay)
+        self.pause_button.draw(surf, self.t)
+        self.quit_button.draw(surf, self.t)
+
+    def _draw_waiting_server(self, surf):
+        surf.blit(self.app.background, (0, 0))
+        screens.dim(surf, layout.VEIL_OVERLAY)
+        screens.title(surf, "Preparando partido...",
+                      (layout.CENTER_X, self.MESSAGE_Y), layout.FONT_LARGE,
+                      palette.WHITE)
+        assets.draw_text(surf, "Esperando al servidor", layout.FONT_SMALL,
+                         (layout.CENTER_X, self.MESSAGE_NOTE_Y), palette.INK,
+                         outline=palette.WHITE)
+        status_chip(surf, self.net, self.t, bottom=True)
+
+    def _signs(self, surf, overlay):
+        """Side sign at the start and the end of match sign."""
+        if self.side_banner > 0 and overlay is None and self.end_info is None:
+            side = "IZQUIERDA" if self.you == 0 else "DERECHA"
+            assets.draw_text(surf, f"JUGÁS A LA {side}", layout.FONT_TITLE_S,
+                             (layout.CENTER_X, self.SIDE_BANNER_Y),
+                             config.PLAYER_COLORS[self.you], kind="title",
+                             outline=palette.INK, shadow=True)
+        if self.end_info is not None:
+            head = ("¡FINAL DEL PARTIDO!"
+                    if self.end_info["reason"] == wire.END_TIME
+                    else "¡PARTIDO TERMINADO!")
+            screens.title(surf, head, (layout.CENTER_X, self.MESSAGE_Y),
+                          layout.FONT_TITLE_L, palette.WHITE)
+
+    def _draw_confirm(self, surf):
+        screens.dim(surf, layout.VEIL_OVERLAY)
+        box = pygame.Rect((0, 0), self.CONFIRM_BOX)
+        box.center = self.OVERLAY_CENTER
+        inner = screens.panel(surf, box)
+        screens.title(surf, "¿ABANDONAR?",
+                      (layout.CENTER_X, inner.top + self.CONFIRM_TITLE_Y),
+                      layout.FONT_TITLE_S, palette.RED)
+        assets.draw_text(surf, "Si abandonás, perdés el partido y salís de la "
+                         "sala.", layout.FONT_SMALL,
+                         (layout.CENTER_X, inner.top + self.CONFIRM_TEXT_Y),
+                         palette.INK, outline=None)
+        self.confirm.draw(surf)
+
     def _draw_overlay(self, surf, overlay):
-        dim(surf, VEIL_OVERLAY)
-        r = pygame.Rect(0, 0, self.OVERLAY_W, self.OVERLAY_PAUSE_H if overlay == "pause" else self.OVERLAY_H)
+        screens.dim(surf, layout.VEIL_OVERLAY)
+        height = self.OVERLAY_PAUSE_H if overlay == "pause" else self.OVERLAY_H
+        r = pygame.Rect(0, 0, self.OVERLAY_W, height)
         r.center = self.OVERLAY_CENTER
-        inner = panel(surf, r)
+        inner = screens.panel(surf, r)
         title_y = inner.top + self.OVERLAY_TITLE_Y
         if overlay == "self":
-            left = self.net.reconnect_left() or 0
-            title(surf, "SE CORTÓ TU CONEXIÓN", (CENTER_X, title_y), FONT_LARGE, C.RED)
-            lines = [f"Reconectando... ({left:.0f} s)", "El partido está en pausa para los dos.",
-                     "Si no volvés a tiempo, perdés por abandono."]
+            lines = self._self_lost(surf, title_y)
         elif overlay == "opponent":
-            opp = self.net.opponent
-            left = self.net.countdown(opp) or 0
-            title(surf, "SIN CONEXIÓN", (CENTER_X, title_y), FONT_TITLE_S, C.RED)
-            lines = [f"{opp['name']} perdió la conexión.", f"Esperando que vuelva: {left:.0f} s",
-                     "Si no vuelve, ganás por abandono."]
+            lines = self._opponent_lost(surf, title_y)
         else:
-            p = self.net.pause
-            left = self.net.countdown(p) or 0
-            title(surf, "PAUSA", (CENTER_X, title_y), FONT_TITLE)
-            lines = [f"Pedida por {p.get('by_name')}.",
-                     f"Se sigue jugando en {left:.0f} s o cuando los dos estén listos."]
-            for i in (0, 1):
-                ok = p.get("ready", [False, False])[i]
-                draw_text(surf, f"{self.names[i]}: {'LISTO' if ok else 'esperando...'}", FONT_TEXT,
-                          (CENTER_X, inner.top + self.READY_LINES_Y + i * TEXT_LINE_H_BIG),
-                          C.GREEN if ok else C.INK_SOFT, outline=None)
-            self.pause_menu.draw(surf)
+            lines = self._pause_box(surf, title_y, inner)
+        self._overlay_lines(surf, lines, inner, overlay != "pause")
+
+    def _overlay_lines(self, surf, lines, inner, big_first):
         for k, ln in enumerate(lines):
-            big = overlay != "pause" and k == 0
-            draw_text(surf, ln, FONT_TEXT if big else FONT_SMALL,
-                      (CENTER_X, inner.top + self.OVERLAY_TEXT_Y + k * TEXT_LINE_H_BIG), C.INK, outline=None)
+            big = big_first and k == 0
+            assets.draw_text(surf, ln, layout.FONT_TEXT if big
+                             else layout.FONT_SMALL,
+                             (layout.CENTER_X, inner.top + self.OVERLAY_TEXT_Y
+                              + k * layout.TEXT_LINE_H_BIG), palette.INK,
+                             outline=None)
+
+    def _self_lost(self, surf, title_y):
+        left = self.net.reconnect_left() or 0
+        screens.title(surf, "SE CORTÓ TU CONEXIÓN", (layout.CENTER_X, title_y),
+                      layout.FONT_LARGE, palette.RED)
+        return [f"Reconectando... ({left:.0f} s)",
+                "El partido está en pausa para los dos.",
+                "Si no volvés a tiempo, perdés por abandono."]
+
+    def _opponent_lost(self, surf, title_y):
+        opp = self.net.opponent
+        left = self.net.countdown(opp) or 0
+        screens.title(surf, "SIN CONEXIÓN", (layout.CENTER_X, title_y),
+                      layout.FONT_TITLE_S, palette.RED)
+        return [f"{opp['name']} perdió la conexión.",
+                f"Esperando que vuelva: {left:.0f} s",
+                "Si no vuelve, ganás por abandono."]
+
+    def _pause_box(self, surf, title_y, inner):
+        p = self.net.pause
+        left = self.net.countdown(p) or 0
+        screens.title(surf, "PAUSA", (layout.CENTER_X, title_y),
+                      layout.FONT_TITLE)
+        for i in (0, 1):
+            self._ready_line(surf, inner, i, p.get("ready", [False, False])[i])
+        self.pause_menu.draw(surf)
+        return [f"Pedida por {p.get('by_name')}.",
+                f"Se sigue jugando en {left:.0f} s o cuando los dos estén "
+                "listos."]
+
+    def _ready_line(self, surf, inner, i, ok):
+        assets.draw_text(surf, f"{self.names[i]}: "
+                         f"{'LISTO' if ok else 'esperando...'}",
+                         layout.FONT_TEXT,
+                         (layout.CENTER_X, inner.top + self.READY_LINES_Y
+                          + i * layout.TEXT_LINE_H_BIG),
+                         palette.GREEN if ok else palette.INK_SOFT,
+                         outline=None)
 
     def debug_info(self):
         info = super().debug_info()
@@ -1071,32 +1432,34 @@ class OnlineMatchScreen(MatchScreen):
 
 
 # ---------------------------------------------------------------------------
-# Resultado (revancha con lados sorteados de nuevo)
+# Result (rematch with the sides drawn again)
 # ---------------------------------------------------------------------------
 class OnlineResultScreen(OnlineScreen):
+    """Result of an online match, with rematch and room options."""
     IN_ROOM = True
     BACK_LABEL = "◄ SALIR"
-    MENU_CENTER = (CENTER_X, 590)      # botones Revancha / Cambiar personaje / Salir
-    MENU_W = 380                       # ancho de esos botones
-    MENU_BUTTON_H = 48                 # alto de esos botones (son tres, debajo del aviso)
-    MENU_GAP = 10                      # px entre esos botones
-    PLAYER_X = (290, 990)              # x de cada jugador
-    FEET_Y = 450                       # y de los pies de los jugadores
-    WINNER_SCALE = 2.0                 # el ganador se ve más grande...
-    LOSER_SCALE = 1.6                  # ...que el que perdió (o los dos, si empataron)
-    CHARACTER_Y = 478                  # nombre del personaje de cada jugador
-    NAME_Y = 504                       # nombre de la persona
-    CONFETTI_EVERY = 1.4               # s entre tandas de papelitos sobre el ganador
-    CONFETTI_Y = 230                   # altura de donde salen esos papelitos
-    HEADLINE_Y = 64                    # "¡GANÓ ...!" / "¡EMPATE!"
-    SUBTITLE_Y = 124                   # "¡Ganaste!" / "Perdiste" / "... abandonó el partido"
-    SCORE_CENTER = (CENTER_X, 270)     # tablero con el resultado
-    SCORE_W = 300                      # ancho del tablero
-    NOTE_W = 440                       # aviso de la revancha: ancho...
-    NOTE_TEXT_W = 400                  # ...y ancho máximo de su texto
-    NOTE_PAD_Y = 16                    # px que se suman a los renglones del aviso
-    NOTE_TOP = 342                     # borde superior del aviso
-    NOTE_TEXT_Y = 11                   # primer renglón, desde arriba del aviso
+    # Rematch, change character and leave buttons (px).
+    MENU_CENTER = (layout.CENTER_X, 590)
+    MENU_W = 380                       # width of those buttons (px)
+    MENU_BUTTON_H = 48                 # height (three, below the note)
+    MENU_GAP = 10                      # px between those buttons
+    PLAYER_X = (290, 990)              # x of each player (px)
+    FEET_Y = 450                       # y of the players feet (px)
+    WINNER_SCALE = 2.0                 # the winner looks bigger...
+    LOSER_SCALE = 1.6                  # ...than the loser (or both, if draw)
+    CHARACTER_Y = 478                  # character name of each player (px)
+    NAME_Y = 504                       # name of the person (px)
+    CONFETTI_EVERY = 1.4               # s between confetti over the winner
+    CONFETTI_Y = 230                   # height of that confetti (px)
+    HEADLINE_Y = 64                    # winner or draw sign (px)
+    SUBTITLE_Y = 124                   # won/lost/forfeit line (px)
+    SCORE_CENTER = (layout.CENTER_X, 270)   # board with the result (px)
+    SCORE_W = 300                      # width of the board (px)
+    NOTE_W = 440                       # rematch note: width...
+    NOTE_TEXT_W = 400                  # ...and maximum width of its text
+    NOTE_PAD_Y = 16                    # px added to the note lines
+    NOTE_TOP = 342                     # top edge of the note (px)
+    NOTE_TEXT_Y = 11                   # first line, from the note top (px)
 
     def __init__(self, app, start, over):
         super().__init__(app)
@@ -1116,7 +1479,7 @@ class OnlineResultScreen(OnlineScreen):
         self.app.fx.clear()
 
     def char_name(self, i):
-        n = short_name(CHARACTERS_BY_ID[self.chars[i]])
+        n = characters.short_name(characters.CHARACTERS_BY_ID[self.chars[i]])
         if self.chars[0] == self.chars[1]:
             n += " (izq.)" if i == 0 else " (der.)"
         return n
@@ -1127,27 +1490,35 @@ class OnlineResultScreen(OnlineScreen):
 
     def rematch(self):
         me, rival = members(self.net)
-        if me is None or rival is None or self.net.room["state"] != "eligiendo":
+        if (me is None or rival is None
+                or self.net.room["state"] != lobby.CHOOSING):
             return
-        self.net.send({"type": "ready", "ready": not me["ready"]})
+        self.net.send({"type": wire.READY, "ready": not me["ready"]})
 
     def to_room(self):
         self.app.switch(RoomScreen(self.app))
 
     def build_menu(self):
+        """Rebuilds the menu only when the rival or my ready change."""
         me, rival = members(self.net)
         key = (rival is not None, bool(me and me["ready"]))
         if key == self.menu_key:
             return
         self.menu_key = key
         if rival is not None:
-            items = [("Cancelar revancha" if key[1] else "Revancha", self.rematch),
-                     ("Cambiar personaje", self.to_room), ("Salir de la sala", self.back)]
+            items = [("Cancelar revancha" if key[1] else "Revancha",
+                      self.rematch), ("Cambiar personaje", self.to_room),
+                     ("Salir de la sala", self.back)]
         else:
-            items = [("Esperar otro rival", self.to_room), ("Salir de la sala", self.back)]
+            items = [("Esperar otro rival", self.to_room),
+                     ("Salir de la sala", self.back)]
+        self._set_menu(items)
+
+    def _set_menu(self, items):
         sel = self.menu.sel if self.menu else 0
-        self.menu = Menu(items, self.MENU_CENTER, width=self.MENU_W, height=self.MENU_BUTTON_H, gap=self.MENU_GAP,
-                         size=FONT_TEXT)
+        self.menu = screens.Menu(items, self.MENU_CENTER, width=self.MENU_W,
+                                 height=self.MENU_BUTTON_H, gap=self.MENU_GAP,
+                                 size=layout.FONT_TEXT)
         self.menu.sel = min(sel, len(items) - 1)
 
     def handle_event(self, ev):
@@ -1165,79 +1536,105 @@ class OnlineResultScreen(OnlineScreen):
         if self.winner is not None and self.confetti_t <= 0:
             self.confetti_t = self.CONFETTI_EVERY
             x = self.PLAYER_X[self.winner]
-            self.app.fx.confetti(x, self.CONFETTI_Y, [PLAYER_COLORS[self.winner], C.WHITE, C.GOLD])
+            self.app.fx.confetti(x, self.CONFETTI_Y,
+                                 [config.PLAYER_COLORS[self.winner],
+                                  palette.WHITE, palette.GOLD])
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_RESULT)
-        sp = self.app.sprites
+        screens.dim(surf, layout.VEIL_RESULT)
         for i in (0, 1):
-            x = self.PLAYER_X[i]
-            win = self.winner == i
-            ang, bob = celebrate_pose(self.t) if win else idle_pose(self.t, i)
-            img, (fx, fy) = sp.player(self.chars[i], FACING[i], ang, bob, PLAYER_COLORS[i], False,
-                                      self.WINNER_SCALE if win else self.LOSER_SCALE)
-            surf.blit(img, (x - fx, self.FEET_Y - fy))
-            draw_text(surf, self.char_name(i), FONT_TEXT, (x, self.CHARACTER_Y), PLAYER_COLORS[i], outline=C.INK)
-            draw_text(surf, self.names[i], FONT_SMALL, (x, self.NAME_Y), C.INK, outline=C.WHITE)
+            self._player(surf, i)
         self.app.fx.draw(surf)
-        if self.winner is None:
-            head, col = "¡EMPATE!", C.WHITE
-        else:
-            head, col = f"¡GANÓ {self.char_name(self.winner).upper()}!", PLAYER_COLORS[self.winner]
-        title(surf, head, (CENTER_X, self.HEADLINE_Y), FONT_TITLE_L, col)
-        if self.over["reason"] == W.END_FORFEIT:
-            sub = f"{self.over.get('by_name')} abandonó el partido"
-        elif self.over["reason"] == W.END_ERROR:
-            sub = "El partido se cortó por un problema del servidor"
-        elif self.winner is None:
-            sub = "Nadie ganó esta vez"
-        else:
-            sub = "¡Ganaste!" if self.winner == self.you else "Perdiste"
-        draw_text(surf, sub, FONT_TEXT, (CENTER_X, self.SUBTITLE_Y), C.INK, outline=C.WHITE)
-        scoreboard(surf, self.SCORE_CENTER, self.SCORE_W, f"{self.score[0]}-{self.score[1]}")
-        me, rival = members(self.net)
-        if rival is None:
-            status = "Tu rival se fue de la sala: podés esperar a otro."
-        elif rival["ready"] and me and me["ready"]:
-            status = "¡Revancha! Sorteando los lados..."
-        elif rival["ready"]:
-            status = f"{rival['display']} quiere la revancha"
-        elif me and me["ready"]:
-            status = f"Esperando a {rival['display']}..."
-        else:
-            status = "Revancha: mismos personajes y los lados se sortean de nuevo"
-        lines = wrap(status, FONT_SMALL, self.NOTE_TEXT_W)
-        note = pygame.Rect(0, 0, self.NOTE_W, TEXT_LINE_H * len(lines) + self.NOTE_PAD_Y)
-        note.midtop = (CENTER_X, self.NOTE_TOP)
-        inner = bevel_box(surf, note, C.CREAM, shadow=False)
-        for k, ln in enumerate(lines):
-            draw_text(surf, ln, FONT_SMALL, (CENTER_X, inner.top + self.NOTE_TEXT_Y + k * TEXT_LINE_H), C.INK,
-                      outline=None)
+        self._headline(surf)
+        screens.scoreboard(surf, self.SCORE_CENTER, self.SCORE_W,
+                           f"{self.score[0]}-{self.score[1]}")
+        self._note(surf)
         if self.menu:
             self.menu.draw(surf)
         self.draw_common(surf)
 
+    def _player(self, surf, i):
+        x = self.PLAYER_X[i]
+        win = self.winner == i
+        ang, bob = (sprites.celebrate_pose(self.t) if win
+                    else sprites.idle_pose(self.t, i))
+        img, (fx, fy) = self.app.sprites.player(
+            self.chars[i], FACING[i], ang, bob, config.PLAYER_COLORS[i], False,
+            self.WINNER_SCALE if win else self.LOSER_SCALE)
+        surf.blit(img, (x - fx, self.FEET_Y - fy))
+        assets.draw_text(surf, self.char_name(i), layout.FONT_TEXT,
+                         (x, self.CHARACTER_Y), config.PLAYER_COLORS[i],
+                         outline=palette.INK)
+        assets.draw_text(surf, self.names[i], layout.FONT_SMALL,
+                         (x, self.NAME_Y), palette.INK, outline=palette.WHITE)
+
+    def _headline(self, surf):
+        if self.winner is None:
+            head, col = "¡EMPATE!", palette.WHITE
+        else:
+            head = f"¡GANÓ {self.char_name(self.winner).upper()}!"
+            col = config.PLAYER_COLORS[self.winner]
+        screens.title(surf, head, (layout.CENTER_X, self.HEADLINE_Y),
+                      layout.FONT_TITLE_L, col)
+        assets.draw_text(surf, self._subtitle(), layout.FONT_TEXT,
+                         (layout.CENTER_X, self.SUBTITLE_Y), palette.INK,
+                         outline=palette.WHITE)
+
+    def _subtitle(self):
+        if self.over["reason"] == wire.END_FORFEIT:
+            return f"{self.over.get('by_name')} abandonó el partido"
+        if self.over["reason"] == wire.END_ERROR:
+            return "El partido se cortó por un problema del servidor"
+        if self.winner is None:
+            return "Nadie ganó esta vez"
+        return "¡Ganaste!" if self.winner == self.you else "Perdiste"
+
+    def _rematch_status(self):
+        me, rival = members(self.net)
+        if rival is None:
+            return "Tu rival se fue de la sala: podés esperar a otro."
+        if rival["ready"] and me and me["ready"]:
+            return "¡Revancha! Sorteando los lados..."
+        if rival["ready"]:
+            return f"{rival['display']} quiere la revancha"
+        if me and me["ready"]:
+            return f"Esperando a {rival['display']}..."
+        return "Revancha: mismos personajes y los lados se sortean de nuevo"
+
+    def _note(self, surf):
+        lines = assets.wrap(self._rematch_status(), layout.FONT_SMALL,
+                            self.NOTE_TEXT_W)
+        note = pygame.Rect(0, 0, self.NOTE_W,
+                           layout.TEXT_LINE_H * len(lines) + self.NOTE_PAD_Y)
+        note.midtop = (layout.CENTER_X, self.NOTE_TOP)
+        inner = retro.bevel_box(surf, note, palette.CREAM, shadow=False)
+        _centered_lines(surf, lines, layout.FONT_SMALL,
+                        inner.top + self.NOTE_TEXT_Y, layout.TEXT_LINE_H)
+
 
 # ---------------------------------------------------------------------------
-# Conexión perdida
+# Connection lost
 # ---------------------------------------------------------------------------
-class OnlineErrorScreen(Screen):
-    MENU_CENTER = (CENTER_X, 520)      # botones Reintentar / Volver
-    MENU_W = 300                       # ancho de esos botones
-    BOX = (900, 240)                   # recuadro del mensaje (ancho, alto)
-    BOX_TOP = 150                      # borde superior del recuadro
-    TITLE_Y = 40                       # "SIN CONEXIÓN", desde arriba del recuadro
-    MESSAGE_Y = 104                    # primer renglón del motivo, desde arriba del recuadro
-    MESSAGE_MARGIN = 40                # px de aire a los costados del motivo
-    MESSAGE_LINE_H = 32                # px entre renglones del motivo
-    HINT_BOTTOM = 22                   # "Revisá tu internet...", desde abajo del recuadro
+class OnlineErrorScreen(screens.Screen):
+    """The connection was lost for good: retry or go back."""
+    MENU_CENTER = (layout.CENTER_X, 520)   # retry and back buttons (px)
+    MENU_W = 300                       # width of those buttons (px)
+    BOX = (900, 240)                   # message box (width, height) in px
+    BOX_TOP = 150                      # top edge of the box (px)
+    TITLE_Y = 40                       # title, from the box top (px)
+    MESSAGE_Y = 104                    # first line of the reason (px)
+    MESSAGE_MARGIN = 40                # px of air beside the reason
+    MESSAGE_LINE_H = 32                # px between lines of the reason
+    HINT_BOTTOM = 22                   # hint, from the box bottom (px)
 
     def __init__(self, app, message):
         super().__init__(app)
         self.message = message
-        self.menu = Menu([("Reintentar", self.retry), ("Volver", self.back)], self.MENU_CENTER, width=self.MENU_W)
-        self.back_button = BackButton(self.back)
+        self.menu = screens.Menu([("Reintentar", self.retry),
+                                  ("Volver", self.back)], self.MENU_CENTER,
+                                 width=self.MENU_W)
+        self.back_button = screens.BackButton(self.back)
 
     def enter(self):
         self.app.audio.crowd(False)
@@ -1248,9 +1645,7 @@ class OnlineErrorScreen(Screen):
         self.app.switch(OnlineHomeScreen(self.app))
 
     def back(self):
-        self.app.close_online()
-        from .screens import MultiplayerMenuScreen
-        self.app.switch(MultiplayerMenuScreen(self.app))
+        _to_multiplayer(self.app)
 
     def handle_event(self, ev):
         if self.back_button.handle_event(ev):
@@ -1266,16 +1661,24 @@ class OnlineErrorScreen(Screen):
 
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
-        dim(surf, VEIL_ERROR)
+        screens.dim(surf, layout.VEIL_ERROR)
         r = pygame.Rect((0, 0), self.BOX)
-        r.midtop = (CENTER_X, self.BOX_TOP)
-        inner = panel(surf, r, face=C.ERROR_PANEL, border=C.RED)
-        title(surf, "SIN CONEXIÓN", (CENTER_X, inner.top + self.TITLE_Y), FONT_TITLE, C.RED)
-        y = inner.top + self.MESSAGE_Y
-        for ln in wrap(self.message, FONT_TEXT, inner.width - self.MESSAGE_MARGIN):
-            draw_text(surf, ln, FONT_TEXT, (CENTER_X, y), C.INK, outline=None)
-            y += self.MESSAGE_LINE_H
-        draw_text(surf, "Revisá tu internet o que el servidor esté encendido.", FONT_SMALL,
-                  (CENTER_X, inner.bottom - self.HINT_BOTTOM), C.INK_SOFT, outline=None)
+        r.midtop = (layout.CENTER_X, self.BOX_TOP)
+        inner = screens.panel(surf, r, face=palette.ERROR_PANEL,
+                              border=palette.RED)
+        self._texts(surf, inner)
+        assets.draw_text(surf, "Revisá tu internet o que el servidor esté "
+                         "encendido.", layout.FONT_SMALL,
+                         (layout.CENTER_X, inner.bottom - self.HINT_BOTTOM),
+                         palette.INK_SOFT, outline=None)
         self.menu.draw(surf)
         self.back_button.draw(surf, self.t)
+
+    def _texts(self, surf, inner):
+        screens.title(surf, "SIN CONEXIÓN",
+                      (layout.CENTER_X, inner.top + self.TITLE_Y),
+                      layout.FONT_TITLE, palette.RED)
+        lines = assets.wrap(self.message, layout.FONT_TEXT,
+                            inner.width - self.MESSAGE_MARGIN)
+        _centered_lines(surf, lines, layout.FONT_TEXT,
+                        inner.top + self.MESSAGE_Y, self.MESSAGE_LINE_H)

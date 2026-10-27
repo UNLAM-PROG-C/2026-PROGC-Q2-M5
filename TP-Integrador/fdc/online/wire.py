@@ -1,55 +1,63 @@
-"""Mensajes del modo online: qué viaja por el WebSocket y cómo se valida.
+"""Online mode messages: what travels on the WebSocket and how it is checked.
 
-Por la red va SIEMPRE JSON (texto), nunca pickle: pickle permite ejecutar
-código ajeno. El servidor desconfía de todo lo que llega: cada mensaje se
-decodifica, se controla su forma y se descarta si no la cumple.
+The network ALWAYS carries JSON (text), never pickle: pickle can run foreign
+code. The server distrusts everything that arrives: each message is decoded,
+its shape is checked and it is dropped if it does not match.
 
-Lo usan el servidor (fdc/online/server.py) y el cliente (fdc/online/client.py),
-también dentro del navegador (pygbag): no importa pygame ni librerías de red.
+Used by the server (fdc/online/server.py) and the client
+(fdc/online/client.py), also inside the browser (pygbag): it imports neither
+pygame nor network libraries.
 
-Cliente -> servidor
+Client -> server
     hello {username, player_id, token?}
-                                    presentarse con el nombre del perfil (o volver,
-                                    con el token recibido); player_id da la etiqueta
-    list_rooms / create_room / join_room / leave_room / choose_character / ready
-                                    salas (ver fdc/online/lobby.py)
-    input {p: [izq, der, saltos, patadas]}
-                                    foto de controles REEMPLAZABLE con contadores
-                                    acumulados (no se pierden pulsaciones)
-    pause_request                   pedir pausa: se activa después del próximo gol
-    pause_ready                     "listo" durante la pausa
-    abandon                         abandonar el partido (pierde)
-    ping {t}                        medir la latencia
+                                introduce itself with the profile name (or
+                                come back with the received token);
+                                player_id gives the tag
+    list_rooms / create_room / join_room / leave_room / choose_character /
+    ready                       rooms (see fdc/online/lobby.py)
+    input {p: [left, right, jumps, kicks]}
+                                REPLACEABLE controls snapshot with cumulative
+                                counters (no press is lost)
+    pause_request               ask for a pause: it starts after the next goal
+    pause_ready                 "ready" during the pause
+    abandon                     leave the match (loses)
+    ping {t}                    measure the latency
 
-Servidor -> cliente
+Server -> client
     welcome {username, tag, display, token, restored}
     rooms {rooms}   room {...}   error {code, message}
-    opponent_left                   el rival se fue de la sala
+    opponent_left               the rival left the room
     match_start {room, match, players, you}
-    state {...}                     foto del partido (reemplazable: "el último gana")
-    ev {e}                          evento del partido (gol, poder, rebote...) con "eid"
-    pause_info {status, by, left, ready}  pausa pedida / activa / terminada
-    opponent {connected, left}      el rival perdió la conexión (o volvió)
+    state {...}                 match snapshot (replaceable: "the newest wins")
+    ev {e}                      match event (goal, power, bounce...) with "eid"
+    pause_info {status, by, left, ready}  pause requested / active / over
+    opponent {connected, left}  the rival lost the connection (or came back)
     match_over {score, winner, reason, by}
-    sala_info {...}                 una vez por segundo durante el partido: datos de la
-                                    sala en el servidor (pid de su proceso, estados por
-                                    segundo, tiempo de los ACK...) para el panel F3
+    room_info {...}             once per second during the match: data of the
+                                room on the server (pid of its process, states
+                                per second, ACK times...) for the F3 panel
     pong {t}
 """
 import json
 
-# --- cliente -> servidor
+# --- client -> server
 HELLO = "hello"
 INPUT = "input"
 PAUSE_REQUEST = "pause_request"
 PAUSE_READY = "pause_ready"
 ABANDON = "abandon"
 PING = "ping"
-LOBBY_TYPES = frozenset({"hello", "list_rooms", "create_room", "join_room", "leave_room",
-                         "choose_character", "ready"})
+LIST_ROOMS = "list_rooms"
+CREATE_ROOM = "create_room"
+JOIN_ROOM = "join_room"
+LEAVE_ROOM = "leave_room"
+CHOOSE_CHARACTER = "choose_character"
+READY = "ready"
+LOBBY_TYPES = frozenset({HELLO, LIST_ROOMS, CREATE_ROOM, JOIN_ROOM, LEAVE_ROOM,
+                         CHOOSE_CHARACTER, READY})
 CLIENT_TYPES = LOBBY_TYPES | {INPUT, PAUSE_REQUEST, PAUSE_READY, ABANDON, PING}
 
-# --- servidor -> cliente
+# --- server -> client
 WELCOME = "welcome"
 ROOMS = "rooms"
 ROOM = "room"
@@ -61,62 +69,67 @@ EVENT = "ev"
 PAUSE_INFO = "pause_info"
 OPPONENT = "opponent"
 MATCH_OVER = "match_over"
-ROOM_INFO = "sala_info"
+ROOM_INFO = "room_info"
 PONG = "pong"
 
-# códigos de cierre del WebSocket (RFC 6455; de 4000 a 4999 son propios)
-CLOSE_POLICY = 1008           # violó las reglas: demasiados mensajes o no lee lo que se le manda
-CLOSE_TRY_AGAIN = 1013        # servidor lleno: conviene probar más tarde
-CLOSE_REPLACED = 4000         # su sesión se abrió en otra ventana
+# WebSocket close codes (RFC 6455; 4000 to 4999 are our own).
+CLOSE_POLICY = 1008     # broke the rules: too many messages or not reading
+CLOSE_TRY_AGAIN = 1013  # server full: better try later
+CLOSE_REPLACED = 4000   # its session was opened in another window
 
-# estados de la pausa online (pause_info.status)
-PAUSE_PENDING = "pedida"      # alguien la pidió: se activa tras el próximo gol
-PAUSE_ACTIVE = "activa"       # partido detenido: "listo" de los dos o 30 s
-PAUSE_NONE = "ninguna"
+# States of the online pause (pause_info.status).
+PAUSE_PENDING = "pending"   # someone asked: it starts after the next goal
+PAUSE_ACTIVE = "active"     # match stopped: "ready" from both or 30 s
+PAUSE_NONE = "none"
 
-# motivos de fin (match_over.reason)
-END_TIME = "tiempo"
-END_FORFEIT = "abandono"
+# Reasons of the end (match_over.reason).
+END_TIME = "time"
+END_FORFEIT = "forfeit"
 END_ERROR = "error"
 
-MAX_COUNTER = 10 ** 9       # tope de los contadores de saltos y patadas (más es un mensaje falso)
-INPUT_FIELDS = 4            # foto de controles: izquierda, derecha, saltos, patadas
-POSITION_DECIMALS = 1       # décimas de píxel alcanzan para dibujar
-FINE_DECIMALS = 3           # el avance de la patada y la escala necesitan más precisión
-FULL_TURN = 360.0           # grados: el ángulo de la pelota se manda entre 0 y 360
+# Cap of the jump and kick counters (more means a forged message).
+MAX_COUNTER = 10 ** 9
+INPUT_FIELDS = 4        # controls snapshot: left, right, jumps, kicks
+POSITION_DECIMALS = 1   # tenths of a pixel are enough to draw
+FINE_DECIMALS = 3       # the kick progress and the scale need more precision
+FULL_TURN = 360.0       # degrees: the ball angle is sent between 0 and 360
+# Internal data of the simulation process that the browser does not need.
+_STATE_SKIP = ("dropped_states", "dropped_cosmetic")
 
 
 class WireError(ValueError):
-    """Mensaje mal formado: se descarta (y se cuenta)."""
+    """Malformed message: it is dropped (and counted)."""
 
 
 def encode(msg):
+    """Compact JSON text of a message."""
     return json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
 
 
 def decode(raw, allowed=None):
-    """Texto JSON -> diccionario con "type". Lanza WireError si no sirve."""
+    """JSON text -> dictionary with "type". Raises WireError if unusable."""
     if not isinstance(raw, str):
-        raise WireError("se esperaba texto")
+        raise WireError("text expected")
     try:
         msg = json.loads(raw)
     except ValueError as exc:
-        raise WireError(f"JSON inválido: {exc}") from None
+        raise WireError(f"invalid JSON: {exc}") from None
     if not isinstance(msg, dict) or not isinstance(msg.get("type"), str):
-        raise WireError("falta el tipo de mensaje")
+        raise WireError("missing message type")
     if allowed is not None and msg["type"] not in allowed:
-        raise WireError(f"tipo desconocido: {msg['type']!r}")
+        raise WireError(f"unknown type: {msg['type']!r}")
     return msg
 
 
 def clean_input(p):
-    """Valida una foto de controles: [bool, bool, entero >= 0, entero >= 0]."""
+    """Checks a controls snapshot: [bool, bool, int >= 0, int >= 0]."""
     if not isinstance(p, (list, tuple)) or len(p) != INPUT_FIELDS:
-        raise WireError("controles mal formados")
+        raise WireError("malformed controls")
     left, right, jumps, kicks = p
-    for c in (jumps, kicks):
-        if isinstance(c, bool) or not isinstance(c, int) or not 0 <= c <= MAX_COUNTER:
-            raise WireError("contador inválido")
+    for counter in (jumps, kicks):
+        if (isinstance(counter, bool) or not isinstance(counter, int)
+                or not 0 <= counter <= MAX_COUNTER):
+            raise WireError("invalid counter")
     return [bool(left), bool(right), jumps, kicks]
 
 
@@ -130,19 +143,16 @@ def _round(obj):
     return obj
 
 
-# datos internos del proceso de simulación que no le sirven al navegador
-_STATE_SKIP = ("dropped_states", "dropped_cosmetic")
-
-
 def compact_state(state):
-    """Estado de la simulación listo para la red: sin datos internos y con
-    decimales recortados (≈40 % menos de bytes por segundo)."""
+    """Simulation state ready for the network: without internal data and
+    with fewer decimals (≈40 % fewer bytes per second)."""
     out = {k: v for k, v in state.items() if k not in _STATE_SKIP}
     out = _round(out)
     out["type"] = STATE
-    # el ángulo de la pelota y el avance de la patada necesitan más precisión
-    out["ball"]["angle"] = round(state["ball"]["angle"] % FULL_TURN, POSITION_DECIMALS)
-    for p, src in zip(out["players"], state["players"]):
-        p["kick"] = round(src["kick"], FINE_DECIMALS)
-        p["scale"] = round(src["scale"], FINE_DECIMALS)
+    # The ball angle and the kick progress need more precision.
+    out["ball"]["angle"] = round(state["ball"]["angle"] % FULL_TURN,
+                                 POSITION_DECIMALS)
+    for player, source in zip(out["players"], state["players"]):
+        player["kick"] = round(source["kick"], FINE_DECIMALS)
+        player["scale"] = round(source["scale"], FINE_DECIMALS)
     return out

@@ -3,5 +3,5 @@ __pycache__/
 .venv/
 logs/
 
-# cliente web compilado (tools/construir_web.py)
+# Compiled web client (tools/build_web.py).
 build/

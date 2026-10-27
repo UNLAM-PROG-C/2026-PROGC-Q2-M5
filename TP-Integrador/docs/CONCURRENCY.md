@@ -23,7 +23,7 @@ Este documento explica **todo lo que corre al mismo tiempo** en el juego: la ver
 ## 2. Mapa general
 
 ```
- VERSIÓN DE ESCRITORIO (main.py)                         SERVIDOR ONLINE (servidor.py, en la NAS)
+ VERSIÓN DE ESCRITORIO (main.py)                         SERVIDOR ONLINE (server.py)         
  ┌──────────────────────────────┐                        ┌────────────────────────────────────────────────┐
  │ PROCESO 1: interfaz (pygame) │                        │ PROCESO SERVIDOR: un hilo con el bucle asyncio │
  │  hilo principal: ventana,    │   4 colas acotadas     │  ├ por conexión: tarea lectora + tarea escritora│
@@ -121,7 +121,7 @@ No hay espera activa en ningún lado: ningún bucle pregunta "¿llegó algo?" si
 | **Alimentador de cola** (`QueueFeederThread`) | En cada proceso que **pone** en una cola de `multiprocessing` | `multiprocessing` (automático) | Pasa los mensajes del búfer local al pipe que une los procesos. Por eso `put` no bloquea mientras se escribe en el pipe. Hay uno por cola que se escribe: en la UI para `cmd_q` e `input_q`, en la simulación para `state_q` y `event_q`. |
 | Principal del servidor | Servidor | Python | El bucle `asyncio`: todas las conexiones, el `Lobby` y los puentes de las salas. |
 | **Ejecutor** (`ThreadPoolExecutor` de `asyncio`) | Servidor | `run_in_executor` / `asyncio.to_thread` | Lanzar y cerrar procesos de sala (`SimLink.start` y `SimLink.stop` pueden tardar), y leer los archivos de la página. Así el bucle no se congela para el resto. |
-| **Lector de red** (`fdc-red`) | Escritorio jugando online | `ThreadTransport` (`fdc/online/client.py`) | Queda bloqueado esperando mensajes del servidor (sin gastar CPU) y los deja en una cola acotada de 512. La interfaz la vacía sin bloquear en cada cuadro. |
+| **Lector de red** (`fdc-network`) | Escritorio jugando online | `ThreadTransport` (`fdc/online/client.py`) | Queda bloqueado esperando mensajes del servidor (sin gastar CPU) y los deja en una cola acotada de 512. La interfaz la vacía sin bloquear en cada cuadro. |
 | Hilo interno de `websockets` | Escritorio jugando online | La librería `websockets` (cliente sincrónico) | Recibe los marcos de la conexión y responde los pings. |
 | Audio de SDL | Proceso de la interfaz | SDL, al iniciar `pygame.mixer` | Mezcla y reproduce los sonidos sin trabar el dibujo. No lo controla el juego. |
 
@@ -244,11 +244,11 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 
 ## 11. Cómo verlo funcionando
 
-- **Dos procesos:** `.venv/bin/python main.py --depuracion` y apretá F3. Se ven los pid de los dos procesos, que la simulación no cargó pygame, el último ACK con su tiempo de ida y vuelta, los controles reemplazados y los estados ignorados.
-- **Panel del servidor (online, desde el navegador):** `/estado` muestra en vivo un proceso de simulación por sala con su pid, las tareas `asyncio` por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión), los hilos, el tráfico por segundo y el tiempo de los ACK. `/estado/completo` (con contraseña: `--clave-panel` o `FDC_CLAVE_PANEL`) agrega los jugadores y el registro de procesos. Sirve también en la NAS con el dominio. Detalles en [ONLINE.md](ONLINE.md#panel-del-servidor-para-ver-la-concurrencia-en-vivo).
+- **Dos procesos:** `.venv/bin/python main.py --debug` y apretá F3. Se ven los pid de los dos procesos, que la simulación no cargó pygame, el último ACK con su tiempo de ida y vuelta, los controles reemplazados y los estados ignorados.
+- **Panel del servidor (online, desde el navegador):** `/status` muestra en vivo un proceso de simulación por sala con su pid, las tareas `asyncio` por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión), los hilos, el tráfico por segundo y el tiempo de los ACK. `/status/full` (con contraseña: `--panel-password` o `FDC_PANEL_PASSWORD`) agrega los jugadores y el registro de procesos. Sirve también en la NAS con el dominio. Detalles en [ONLINE.md](ONLINE.md#panel-del-servidor-para-ver-la-concurrencia-en-vivo).
 - **F3 en un partido online:** muestra el pid del servidor y el del proceso de simulación de la sala, los estados y controles por segundo y el último ACK.
 - **En la terminal:** `ps -ef | grep multiprocessing` muestra el proceso de simulación (y en el servidor, uno por sala en juego).
-- **Registros:** `logs/fdc.log` (escritorio) y `logs/servidor.log` (servidor). Ahí se ve cuándo se lanza y se cierra cada proceso, con `method: ordenado, bye: True`.
+- **Registros:** `logs/fdc.log` (escritorio) y `logs/server.log` (servidor). Ahí se ve cuándo se lanza y se cierra cada proceso, con `'method': 'orderly', 'bye': True`.
 - **Pruebas automáticas:**
   - `tests/test_process.py`: procesos reales, cierre y huérfanos.
   - `tests/test_online.py`: servidor real con conexiones reales, desconexión y reconexión.
@@ -267,9 +267,9 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 | Simulación en el navegador | `fdc/sim/inline.py` → `InlineLink.poll`, `_advance` |
 | Protocolo (contadores, filtros, deduplicación) | `fdc/protocol.py` → `PressCounter`, `StateFilter`, `EventDeduper` |
 | Servidor: conexiones y salas | `fdc/online/server.py` → `GameServer.handler`, `route`, `_connection_lost`, `_expire_later` |
-| Servidor: cola de salida | `fdc/online/server.py` → `Session.send_text`, `_write_loop` |
-| Servidor: puente con la sala | `fdc/online/server.py` → `RoomRunner.tick`, `request_pause`, `player_away`, `forfeit` |
-| Servidor: panel y datos de la sala (F3) | `fdc/online/server.py` → `GameServer.panel_data`, `_stats_loop`, `RoomRunner.room_info`; página `fdc/online/panel.html` |
+| Servidor: cola de salida | `fdc/online/session.py` → `Session.send_text`, `_write_loop` |
+| Servidor: puente con la sala | `fdc/online/room_runner.py` → `RoomRunner.tick`, `request_pause`, `player_away`, `forfeit` |
+| Servidor: panel y datos de la sala (F3) | `fdc/online/panel.py` → `panel_data`; `fdc/online/server.py` → `GameServer._stats_loop`; `fdc/online/room_runner.py` → `RoomRunner.room_info`; página `fdc/online/panel.html` |
 | Salas (lógica pura) | `fdc/online/lobby.py` → `Lobby.handle` |
 | Cliente de red | `fdc/online/client.py` → `ThreadTransport`, `BrowserTransport`, `NetClient.poll` |
 | Bucle de la interfaz | `fdc/ui/app.py` → `App.frame`, `run`, `run_async`, `FrameLimiter` |

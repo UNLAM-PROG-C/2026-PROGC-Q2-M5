@@ -1,38 +1,39 @@
-"""Protocolo de mensajes entre la interfaz (UI) y la simulación (SIM).
+"""Message protocol between the user interface (UI) and the simulation (SIM).
 
-Todos los mensajes son diccionarios pequeños y serializables con pickle, con
-una clave "type". Hay cuatro canales (colas) con políticas distintas:
+Every message is a small dictionary, serializable with pickle, with a "type"
+key. There are four channels (queues) with different policies:
 
-    UI -> SIM  cmd_q    ÓRDENES      confiables: put con tiempo límite, nunca se
-                                     descartan; cada una lleva "cid" y recibe ACK.
-    UI -> SIM  input_q  CONTROLES    reemplazables: put_nowait; si la cola está
-                                     llena se descarta ESA foto. No se pierde
-                                     ninguna pulsación porque saltos y patadas
-                                     viajan como CONTADORES acumulados.
-    SIM -> UI  state_q  ESTADOS      reemplazables: "el último gana". Llevan
-                                     número de partido ("match") y de
-                                     actualización ("seq").
-    SIM -> UI  event_q  EVENTOS      confirmaciones y hechos del partido con id
-                                     único ("eid"). Los críticos se entregan
-                                     siempre; los cosméticos (sonido de rebote)
-                                     pueden descartarse si la cola se llena.
+    UI -> SIM  cmd_q    COMMANDS   reliable: put with a timeout, never
+                                   dropped; each one has a "cid" and gets an
+                                   ACK.
+    UI -> SIM  input_q  CONTROLS   replaceable: put_nowait; if the queue is
+                                   full THAT snapshot is dropped. No press is
+                                   lost because jumps and kicks travel as
+                                   CUMULATIVE counters.
+    SIM -> UI  state_q  STATES     replaceable: "the newest wins". They carry
+                                   the match number ("match") and the update
+                                   number ("seq").
+    SIM -> UI  event_q  EVENTS     acknowledgements and match facts with a
+                                   unique id ("eid"). Critical ones are always
+                                   delivered; cosmetic ones (bounce sounds)
+                                   may be dropped if the queue is full.
 
-Además un multiprocessing.Event (stop_event) solicita el cierre.
+A multiprocessing.Event (stop_event) also asks for the shutdown.
 """
 
-# --- Órdenes UI -> SIM -------------------------------------------------------
+# --- Commands UI -> SIM ------------------------------------------------------
 CMD_START = "start_match"
 CMD_PAUSE = "pause"
 CMD_RESUME = "resume"
 CMD_RESTART = "restart"
 CMD_END = "end_match"
 CMD_SHUTDOWN = "shutdown"
-CMD_DEBUG_POWER = "debug_power"    # sólo modo de prueba
-CMD_DEBUG_CRASH = "debug_crash"    # sólo modo de prueba
+CMD_DEBUG_POWER = "debug_power"    # test mode only
+CMD_DEBUG_CRASH = "debug_crash"    # test mode only
 COMMANDS = (CMD_START, CMD_PAUSE, CMD_RESUME, CMD_RESTART, CMD_END,
-            CMD_SHUTDOWN, CMD_DEBUG_POWER, CMD_DEBUG_CRASH)
+                        CMD_SHUTDOWN, CMD_DEBUG_POWER, CMD_DEBUG_CRASH)
 
-# --- Controles UI -> SIM -----------------------------------------------------
+# --- Controls UI -> SIM ------------------------------------------------------
 MSG_INPUT = "input"
 
 # --- SIM -> UI ---------------------------------------------------------------
@@ -44,86 +45,93 @@ EV_BYE = "bye"
 EV_KICKOFF = "kickoff"
 EV_GOAL = "goal"
 EV_MATCH_END = "match_end"
-EV_GOLDEN_GOAL = "golden_goal"    # empate al terminar: el próximo gol gana
-EV_PAUSED = "paused"             # pausa decidida por la simulación (watchdog)
+EV_GOLDEN_GOAL = "golden_goal"   # draw at the end: the next goal wins
+EV_PAUSED = "paused"             # pause decided by the simulation (watchdog)
 EV_POWER_SPAWN = "power_spawn"
-EV_POWER = "power"               # activación de un poder
+EV_POWER = "power"               # a power was activated
 EV_POWER_EXPIRED = "power_expired"
 EV_PICKUP_EXPIRED = "pickup_expired"
 EV_BOMB_ARMED = "bomb_armed"
 EV_BOMB_EXPLODE = "bomb_explode"
-EV_KICK = "kick"                 # cosmético
-EV_KICK_BLOCKED = "kick_blocked"  # cosmético
-EV_TOUCH = "touch"               # cosmético (rebotes, cabezazos)
+EV_KICK = "kick"                 # cosmetic
+EV_KICK_BLOCKED = "kick_blocked"  # cosmetic
+EV_TOUCH = "touch"               # cosmetic (bounces, headers)
 
-# Eventos cosméticos: si la cola está llena se descartan (y se cuentan).
+# Cosmetic events: if the queue is full they are dropped (and counted).
 COSMETIC_EVENTS = frozenset({EV_KICK, EV_KICK_BLOCKED, EV_TOUCH})
 
-# Fases del partido (las decide la simulación)
+# Match phases (decided by the simulation).
 PHASE_COUNTDOWN = "countdown"
 PHASE_PLAYING = "playing"
 PHASE_GOAL = "goal"
 PHASE_FINISHED = "finished"
 
-PAUSE_REASON_USER = "usuario"
-PAUSE_REASON_FOCUS = "foco"
-PAUSE_REASON_WATCHDOG = "sin_controles"
-PAUSE_REASON_REQUEST = "pedida"          # online: pedida por un jugador, se activa tras un gol
-PAUSE_REASON_DISCONNECT = "desconexion"  # online: un jugador perdió la conexión
+PAUSE_REASON_USER = "user"
+PAUSE_REASON_FOCUS = "focus"
+PAUSE_REASON_WATCHDOG = "no_input"
+# Online: asked by a player, it starts after the next goal.
+PAUSE_REASON_REQUEST = "requested"
+# Online: a player lost the connection.
+PAUSE_REASON_DISCONNECT = "disconnect"
 
 
 # ---------------------------------------------------------------------------
-# Constructores (UI)
+# Builders (UI)
 # ---------------------------------------------------------------------------
 def make_command(ctype, cid, **payload):
+    """Returns a command message; raises ValueError for unknown types."""
     if ctype not in COMMANDS:
-        raise ValueError(f"orden desconocida: {ctype}")
+        raise ValueError(f"unknown command: {ctype}")
     msg = {"type": ctype, "cid": cid}
     msg.update(payload)
     return msg
 
 
 def make_input(iseq, players):
-    """players: [[izq, der, contador_saltos, contador_patadas], [...]]"""
+    """players: [[left, right, jump_counter, kick_counter], [...]]."""
     return {"type": MSG_INPUT, "iseq": iseq,
             "p": [list(p) for p in players]}
 
 
 # ---------------------------------------------------------------------------
-# Constructores (SIM)
+# Builders (SIM)
 # ---------------------------------------------------------------------------
 def make_ack(cid, cmd, ok=True, match=None, detail=""):
+    """Acknowledgement of the command with id `cid`."""
     return {"type": EV_ACK, "cid": cid, "cmd": cmd, "ok": ok,
             "match": match, "detail": detail}
 
 
 def make_event(etype, eid, match=None, **payload):
+    """Event message with a unique, increasing id."""
     msg = {"type": etype, "eid": eid, "match": match}
     msg.update(payload)
     return msg
 
 
 def is_cosmetic(msg):
+    """True for events that may be dropped when the queue is full."""
     return msg.get("type") in COSMETIC_EVENTS
 
 
 # ---------------------------------------------------------------------------
-# Lógica pura de recepción (se usa en la UI y se prueba sin procesos)
+# Pure receiving logic (used by the UI and tested without processes)
 # ---------------------------------------------------------------------------
 class PressCounter:
-    """Convierte contadores acumulados de pulsaciones en pulsaciones nuevas.
+    """Turns cumulative press counters into new presses.
 
-    La UI incrementa un contador por cada KEYDOWN de salto o patada. Aunque la
-    SIM sólo lea la última foto de controles (compactación), la diferencia de
-    contadores le dice cuántas pulsaciones ocurrieron desde la anterior.
+    The UI increments a counter on each jump or kick KEYDOWN. Even if the SIM
+    only reads the latest controls snapshot (compaction), the difference
+    between counters tells how many presses happened since the previous one.
     """
 
     def __init__(self):
         self.last = None
 
     def update(self, count):
+        """Returns how many presses happened since the previous snapshot."""
         if self.last is None or count < self.last:
-            # primera foto (o la UI reinició sus contadores): tomar como base
+            # First snapshot (or the UI restarted its counters): new baseline.
             self.last = count
             return 0
         new = count - self.last
@@ -132,7 +140,7 @@ class PressCounter:
 
 
 class StateFilter:
-    """Acepta sólo estados del partido actual y más nuevos que el último."""
+    """Accepts only states of the current match, newer than the last one."""
 
     def __init__(self):
         self.match = None
@@ -142,11 +150,12 @@ class StateFilter:
         self.rejected_stale = 0
 
     def expect(self, match_id):
-        """A partir de ahora sólo vale este partido (inicio, revancha o reinicio)."""
+        """From now on only this match is valid (start, rematch or restart)."""
         self.match = match_id
         self.last_seq = -1
 
     def accept(self, state):
+        """True if `state` belongs to the expected match and is newer."""
         if self.match is None or state.get("match") != self.match:
             self.rejected_old_match += 1
             return False
@@ -160,10 +169,10 @@ class StateFilter:
 
 
 class EventDeduper:
-    """Garantiza que cada evento se procese una sola vez.
+    """Guarantees that each event is handled only once.
 
-    Los eid son crecientes dentro de un proceso de simulación (un único
-    productor y cola FIFO), así que alcanza con recordar el último.
+    The eids grow inside one simulation process (a single producer and a FIFO
+    queue), so remembering the last one is enough.
     """
 
     def __init__(self):
@@ -174,6 +183,7 @@ class EventDeduper:
         self.last_eid = -1
 
     def fresh(self, msg):
+        """True the first time an event is seen; False for repeats."""
         eid = msg.get("eid")
         if eid is None:
             return True

@@ -1,0 +1,2 @@
+# Development tools (not needed to play): style checks.
+pylint==4.1.3
