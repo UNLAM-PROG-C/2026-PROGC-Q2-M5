@@ -5,3 +5,6 @@ logs/
 
 # Compiled web client (tools/build_web.py).
 build/
+
+# macOS folder metadata.
+.DS_Store
