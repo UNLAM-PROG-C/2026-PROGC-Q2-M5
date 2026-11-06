@@ -107,12 +107,18 @@ def main(argv=None):
     return app.run_app(options)
 
 
+def _prepare_toolchain(options):
+    """nvcc and cl.exe in the PATH (jugar.bat does not activate them)."""
+    if options.backend == "cpu" or options.no_gpu:
+        return
+    from fdc.gpu import env    # pylint: disable=import-outside-toplevel
+    env.setup()
+
+
 def _apply_gpu_options(options):
     """--backend, --block and --render: before the effects start."""
-    # pylint: disable-next=import-outside-toplevel
-    from fdc.gpu import backend, env
-    if not (options.backend == "cpu" or options.no_gpu):
-        env.setup()        # nvcc and cl.exe in the PATH (jugar.bat has no activator)
+    from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
+    _prepare_toolchain(options)
     if options.backend == "cpu":
         options.force_cpu = True
     if options.block:
