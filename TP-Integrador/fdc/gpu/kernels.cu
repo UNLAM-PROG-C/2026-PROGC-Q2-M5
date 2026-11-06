@@ -625,10 +625,15 @@ __global__ void k_ice_apply(const unsigned char *src, const float *edges,
 // Lámparas de la cátedra: un hilo por píxel, índice 2D, borde y luz en
 // memoria global. Cada lámpara (x, y, radio, potencia) suma su luz y el
 // total multiplica al píxel: es la noche y también el apagón.
+// `tope` > 0 hace que la suma se acerque a ese tope sin pasarlo nunca
+// (cada lámpara suma una fracción de lo que falta): seis lámparas juntas
+// no pueden dejar el píxel más claro que el día ni quemar el sprite.
+// `tope` = 0 deja la suma clásica del apagón, que no tiene techo.
 #define SPOT_MAX 8          // lámparas que se recorren por píxel
 __global__ void k_spotlights(const unsigned char *src, unsigned char *dst,
                              int w, int h, const float *lights, int n,
-                             float ambient, float tr, float tg, float tb)
+                             float ambient, float tr, float tg, float tb,
+                             float tope)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -642,7 +647,11 @@ __global__ void k_spotlights(const unsigned char *src, unsigned char *dst,
         float d2 = (dx * dx + dy * dy) / (r * r);
         if (d2 < 1.0f) {
             float fall = 1.0f - d2;     // caída suave desde el centro
-            light += power * fall * fall;
+            if (tope > 0.0f) {
+                light += power * fall * fall * (tope - light);
+            } else {
+                light += power * fall * fall;
+            }
         }
     }
     int i = (y * w + x) * CH;

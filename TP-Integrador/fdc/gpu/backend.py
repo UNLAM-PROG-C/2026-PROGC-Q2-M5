@@ -494,7 +494,7 @@ class Gpu(primitives.Primitives):
                                 block=BLOCK)
 
     # -------------------------------------------------- pods and night (F3/F4)
-    def spotlights(self, img, lights, ambient, tint):
+    def spotlights(self, img, lights, ambient, tint, cap=0.0):
         """Light of every lamp (0..1) times the pixel and the warm colour."""
         h, w = img.shape[:2]
         shape = (h, w, CHANNELS)
@@ -504,8 +504,8 @@ class Gpu(primitives.Primitives):
         red, green, blue = (np.float32(c) for c in tint)
         self._fn("k_spotlights")(src, out, np.int32(w), np.int32(h), lamps,
                                  np.int32(count), np.float32(ambient),
-                                 red, green, blue, grid=self._grid(w, h),
-                                 block=BLOCK)
+                                 red, green, blue, np.float32(cap),
+                                 grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
     def _lamp_buffer(self, lights):

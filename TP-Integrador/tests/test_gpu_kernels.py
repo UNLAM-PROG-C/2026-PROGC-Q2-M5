@@ -25,6 +25,8 @@ RING_MEAN = 15.0        # the shock ring also adds brightness
 SOFT = 4                # px: the warps are tested on a soft image
 GAIN = 1.0              # light weight
 STAND_ROW = 20          # y of the test frame where the stands end
+SPOT_CAP = 0.85         # top of the light of the night (k_spotlights)
+SPOT_TOP = int(SPOT_CAP * 255) + 2   # brightest byte a capped light gives
 
 HAVE_GPU = env.setup() and backend.available()
 REASON = "no CUDA or no toolchain here (see INSTALACION.md)"
@@ -239,6 +241,18 @@ class PowerAndNightTest(unittest.TestCase):
         params = (0.15, (1.0, 0.86, 0.66))
         self.assertClose(self.gpu.spotlights(self.img, lights, *params),
                          self.cpu.spotlights(self.img, lights, *params), 2)
+
+    def test_spotlights_with_a_cap(self):
+        """Lamps on top of each other never pass the cap of the night."""
+        lights = ((20.0, 20.0, 40.0, 0.9), (24.0, 22.0, 40.0, 0.9),
+                  (28.0, 20.0, 40.0, 0.9))
+        params = (0.25, (1.0, 0.92, 0.80), SPOT_CAP)
+        ours = self.gpu.spotlights(self.img, lights, *params)
+        ref = self.cpu.spotlights(self.img, lights, *params)
+        self.assertClose(ours, ref, 2)
+        self.assertLessEqual(int(ours.max()), SPOT_TOP)
+        free = self.gpu.spotlights(self.img, lights, *params[:2])
+        self.assertGreater(int(free.max()), int(ours.max()))
 
     def test_fire(self):
         args = (40.0, 30.0, 30.0, 0.5, 4.0)

@@ -85,13 +85,21 @@ def _grid_xy(w, h):
     return xs.astype(np.float32), ys.astype(np.float32)
 
 
-def _light_field(xs, ys, lights, ambient):
-    """Light 0..1 of each pixel: ambient plus every lamp (kernel formula)."""
+def _light_field(xs, ys, lights, ambient, cap=0.0):
+    """Light 0..1 of each pixel: ambient plus every lamp (kernel formula).
+
+    With `cap` > 0 each lamp adds a share of what is missing, so the sum
+    gets close to the cap and never passes it (the night).  Without it the
+    sum is the classic one of the blackout, which has no ceiling.
+    """
     total = np.full(xs.shape, ambient, np.float32)
     for x, y, radius, power in list(lights)[:SPOT_MAX]:
         d2 = ((xs - x) ** 2 + (ys - y) ** 2) / (radius * radius)
         fall = np.clip(1.0 - d2, 0.0, None)
-        total += power * fall * fall
+        add = power * fall * fall
+        if cap > 0.0:
+            add = add * (cap - total)
+        total += add
     return total
 
 
@@ -184,11 +192,15 @@ class Primitives:
         return _to_byte(np.clip(mixed, 0.0, 1.0))
 
     # ------------------------------------------------ pods and night (F3/F4)
-    def spotlights(self, img, lights, ambient, tint):
-        """Multiplies the light of every lamp (0..1) and the warm colour."""
+    def spotlights(self, img, lights, ambient, tint, cap=0.0):
+        """Multiplies the light of every lamp (0..1) and the warm colour.
+
+        `cap` > 0 is the night: the lamps add up towards the cap and never
+        pass it, so the brightest pixel of the frame stays below the day.
+        """
         h, w = img.shape[:2]
         xs, ys = _grid_xy(w, h)
-        light = _light_field(xs, ys, lights, ambient)
+        light = _light_field(xs, ys, lights, ambient, cap)
         colour = np.array(tint, np.float32)
         return _to_byte(np.clip(_rgb(img) * light[..., None] * colour,
                                 0.0, 1.0))
