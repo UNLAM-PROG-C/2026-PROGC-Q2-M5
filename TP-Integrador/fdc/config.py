@@ -382,13 +382,16 @@ class Gpu:
     ENABLED = os.environ.get("FDC_GPU", "1") != "0"   # FDC_GPU=0 turns it off
     QUALITY = os.environ.get("FDC_GPU_QUALITY", "media")   # baja|media|alta
     QUALITIES = ("baja", "media", "alta")   # from the cheapest to the richest
-    GLOW_THRESHOLD = 0.62   # from this luma (0-1) a pixel glows
-    GLOW_RADIUS = 3         # px of the halo blur
+    GLOW_THRESHOLD = 0.85   # from this luma (0-1) a pixel glows
+    GLOW_RADIUS = 2         # px of the halo blur
     GLOW_PASSES = 2         # box blurs of the halo
-    EXPOSURE = 1.08         # brightness before the gamma
+    EXPOSURE = 1.0          # brightness before the gamma
     GAMMA = 1.0             # gamma curve of the composite
-    VIGNETTE = 0.35         # darkening of the corners
-    GLOW_STRENGTH = 0.65    # weight of the halo in the composite
+    VIGNETTE = 0.25         # darkening of the corners
+    GLOW_STRENGTH = 0.25    # weight of the halo in a normal frame
+    GLOW_STRENGTH_FX = 0.6  # weight of the halo with a goal or a power
+    GLOW_MIN_STRENGTH = 0.3   # below this the halo pass is skipped
+    GLOW_SAT_GAIN = 1.5     # saturated colours glow more (white: no halo)
     PARTICLE_GAIN = 1.0     # weight of the sparks
     LIGHT_GAIN = 0.9        # weight of the spotlights
     PARTICLES = 1200        # particles alive at most
@@ -397,14 +400,14 @@ class Gpu:
     PARTICLE_LIFE = (0.18, 0.55)     # s: life of a spark
     PARTICLE_GRAVITY = 420.0         # px/s^2 (y grows downwards)
     PARTICLE_PER_TOUCH = 10          # sparks of a kick or a bounce
-    HEAT_AMP = 2.5          # px: depth of the heat waves
+    HEAT_AMP = 1.0          # px: depth of the heat waves (only with Fuego)
     HEAT_PERIOD = 26.0      # px: wavelength of the heat waves
     HEAT_SPEED = 2.4        # rad/s: how fast the waves move
     RIPPLE_AMP = 5.0        # px: depth of the replay ripple
     RIPPLE_PERIOD = 46.0    # px: wavelength of the replay ripple
     TRAIL_ALPHA = 0.35      # s: how much of the previous frame stays
     FREEZE_LIGHT = (0.45, 0.75, 1.0)   # rgb of the ice spotlight
-    FREEZE_RADIUS = 260.0   # px: radius of the ice spotlight
+    FREEZE_RADIUS = 200.0   # px: radius of the ice spotlight
     BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
     # 80 x 45 cells of 16 px: the grid of the spec (one cell per 16 px).
     HEATMAP_COLS = 80       # cells of the heat map, across
@@ -417,8 +420,8 @@ class Gpu:
     FADE_OUT = 0.3          # s of the smooth exit at the end of a power
     HEAD_ABOVE = 65.0       # px above the feet: centre of the head
     ICE_TINT = (0.55, 0.85, 1.0)   # rgb of the ice tint
-    ICE_STRENGTH = 0.55     # weight of the tint on the image (0-1)
-    ICE_EDGES = 0.9         # weight of the bright edges (0-1)
+    ICE_STRENGTH = 0.30     # weight of the tint on the image (0-1)
+    ICE_EDGES = 0.5         # weight of the bright edges (0-1)
     BLACKOUT_AMBIENT = 0.06   # light left far from the heads (0-1)
     BLACKOUT_RADIUS = 150.0   # px: radius of the blackout light
     BLACKOUT_TINT = (1.0, 1.0, 1.0)   # rgb multiplier of the blackout
@@ -433,8 +436,8 @@ class Gpu:
     NIGHT_Y = 20.0            # px: height of the spotlights
     NIGHT_RADIUS = 420.0      # px: radius of each spotlight
     NIGHT_POWER = 0.9         # intensity of each spotlight (0-1)
-    NIGHT_AMBIENT = 0.15      # light between the spotlights (0-1)
-    NIGHT_TINT = (1.0, 0.86, 0.66)   # warm rgb of the night lights
+    NIGHT_AMBIENT = 0.25      # light between the spotlights (0-1)
+    NIGHT_TINT = (1.0, 0.92, 0.80)   # warm rgb of the night lights
     AUTOEXPOSURE_TARGET = 110.0   # mean luma the night tries to reach
     AUTOEXPOSURE_MIN = 0.6        # lowest gain
     AUTOEXPOSURE_MAX = 2.5        # highest gain
@@ -529,21 +532,22 @@ class Gpu:
     CROWD_SHOULDER_EDGE = 1.0  # px of the darker line on top of the shirt
     CROWD_SHOULDER_SHADE = 0.78   # how much that line darkens the shirt
     CROWD_STEP = 5.0          # px: dark step at the bottom of each row
-    CROWD_FILL = 78           # % of the seats with somebody
+    CROWD_FILL = 62           # % of the seats with somebody
     CROWD_JUMP = 2.0          # px of the little jump of each person
     CROWD_JUMP_HZ = 1.7       # jumps per second
     CROWD_GOAL_JUMP = 5.0     # extra px of the jumping stand on a goal
     CROWD_GOAL_HZ = 3.2       # extra jumps per second while celebrating
-    CROWD_FLAGS = 17          # one flag every N seats (few and big)
+    CROWD_FLAGS = 28          # one flag every N seats (few and big)
     CROWD_FLAG = (17, 12)     # px: width and height of a flag
     CROWD_POLE = 20.0         # px: the pole goes this far above the shoulder
     CROWD_WAVE = 2.0          # px the flags flutter
-    CROWD_SHADE_TOP = 0.62    # darkness of the last row (up, far away)
+    CROWD_SHADE_TOP = 0.5     # darkness of the last row (up, far away)
     CROWD_SHADE_BOTTOM = 1.0  # ... and of the first one (down, near)
-    CROWD_VAR_MIN = 0.86      # brightness of the dullest shirt
+    CROWD_VAR_MIN = 0.78      # brightness of the dullest shirt
     CROWD_VAR_RANGE = 0.20    # extra brightness the hash may add
+
     # Shirts are duller and darker than the players' (they must not compete).
-    CROWD_SHIRTS = ((0.70, 0.42, 0.22), (0.62, 0.30, 0.44))
+    CROWD_SHIRTS = ((0.66, 0.41, 0.23), (0.62, 0.30, 0.44))
     CROWD_SKINS = ((0.60, 0.44, 0.34), (0.78, 0.61, 0.47),   # skin tones
                    (0.93, 0.77, 0.63))
     CROWD_HAIRS = ((0.09, 0.07, 0.06), (0.27, 0.17, 0.10),   # hair tones

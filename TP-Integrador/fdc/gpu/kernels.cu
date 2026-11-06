@@ -55,6 +55,9 @@ __global__ void blur_cols(const unsigned char *src, unsigned char *dst,
 }
 
 // ---------------------------------------------------------------- brillo/glow
+// Ganancia de saturacion del halo: lo blanco (carteles, lineas) no brilla y
+// lo saturado (chispas, hielo) brilla mas. Se recorta a 1.
+#define GLOW_SAT_GAIN 1.5f
 // Pasa solo lo que supera el umbral, a media resolucion (muestrea 1 de cada
 // 2x2 pixeles): el halo no necesita detalle.
 __global__ void bright_pass(const unsigned char *src, float *dst,
@@ -67,6 +70,10 @@ __global__ void bright_pass(const unsigned char *src, float *dst,
     float l = (0.299f * src[i] + 0.587f * src[i + 1]
                + 0.114f * src[i + 2]) / 255.0f;
     float k = l > threshold ? (l - threshold) / (1.0f - threshold) : 0.0f;
+    float hi = fmaxf(src[i], fmaxf(src[i + 1], src[i + 2])) / 255.0f;
+    float lo = fminf(src[i], fminf(src[i + 1], src[i + 2])) / 255.0f;
+    float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;
+    k *= fminf(sat * GLOW_SAT_GAIN, 1.0f);   // sin halo sobre lo blanco
     int o = (y * hw + x) * CH;
     dst[o] = src[i] * k / 255.0f;
     dst[o + 1] = src[i + 1] * k / 255.0f;
@@ -316,19 +323,24 @@ __global__ void luma_hist(const unsigned char *src, int *hist, int w, int h)
     atomicAdd(&hist[bin], 1);
 }
 
-// Estiramiento de contraste entre dos niveles (los calcula la CPU).
+// Estiramiento de contraste entre dos niveles (los calcula la CPU). La vineta
+// va aca para no tener que pagar una pasada extra cuando no hay glow.
 __global__ void stretch(const unsigned char *src, unsigned char *out, int w,
-                        int h, float lo, float hi)
+                        int h, float lo, float hi, float vignette)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x >= w || y >= h) return;
     int i = (y * w + x) * CH;
     float span = hi - lo > 1.0f ? hi - lo : 1.0f;
+    float cx = (x / (float)w) - 0.5f;
+    float cy = (y / (float)h) - 0.5f;
+    float d = sqrtf(cx * cx + cy * cy) * 1.41421356f;
+    float v = 1.0f - vignette * d * d;
     for (int k = 0; k < CH; ++k) {
         float p = (src[i + k] - lo) / span;
         p = p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
-        out[i + k] = (unsigned char)(p * 255.0f);
+        out[i + k] = (unsigned char)(p * v * 255.0f);
     }
 }
 

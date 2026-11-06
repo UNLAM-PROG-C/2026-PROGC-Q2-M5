@@ -293,7 +293,7 @@ class Gpu(primitives.Primitives):
                               grid=self._grid(w, h), block=BLOCK)
         return self._get(hist, (BINS,), np.int32)
 
-    def stretch(self, img, lo, hi):
+    def stretch(self, img, lo, hi, vignette=0.0):
         """Contrast stretch between two levels (from the histogram)."""
         h, w = img.shape[:2]
         shape = (h, w, CHANNELS)
@@ -301,6 +301,7 @@ class Gpu(primitives.Primitives):
         out = self._buf("str_out", shape, np.uint8)
         self._fn("stretch")(src, out, np.int32(w), np.int32(h),
                             np.float32(lo), np.float32(hi),
+                            np.float32(vignette),
                             grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 

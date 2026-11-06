@@ -15,6 +15,7 @@ BIT_HALF_H = 4          # column of the half height of a paper bit
 HALF = 0.5              # used to build the vignette and the heat ramp
 LUMA_R, LUMA_G, LUMA_B = 0.299, 0.587, 0.114   # luminance (Rec. 601)
 EPS = 1e-6              # smallest divisor (never divide by zero)
+GLOW_SAT_GAIN = 1.5     # saturated colours glow this much more (white: none)
 RAMP_LOW = 0.25         # heat ramp: where the green reaches the top
 RAMP_MID = 0.75         # heat ramp: where the red starts to go down
 RAMP_SLOPE = 4.0        # heat ramp: slope of the green and red
@@ -84,6 +85,14 @@ def _clamp(img):
     return np.clip(img * BYTE_MAX, 0.0, BYTE_MAX).astype(np.uint8)
 
 
+def _saturation(rgb):
+    """How colourful each pixel is (0 on white, 1 on a pure colour)."""
+    high = rgb.max(axis=-1)
+    low = rgb.min(axis=-1)
+    sat = (high - low) / np.maximum(high, EPS)
+    return np.clip(sat * GLOW_SAT_GAIN, 0.0, 1.0)
+
+
 def _box_axis(img, radius, axis):
     """Mean of the existing samples of [i-radius, i+radius] (clamped)."""
     if radius <= 0:
@@ -140,6 +149,7 @@ class Cpu(primitives.Primitives):
                 + LUMA_B * small[..., 2])
         span = max(1.0 - threshold, EPS)
         over = np.clip((luma - threshold) / span, 0.0, 1.0)
+        over = over * _saturation(small)      # white boards and lines: no halo
         field = small * over[..., None]
         for _ in range(passes):
             field = _box_axis(field, radius, 1)
@@ -222,10 +232,13 @@ class Cpu(primitives.Primitives):
         return np.bincount(bins.ravel(),
                            minlength=int(BYTE_MAX) + 1).astype(np.int32)
 
-    def stretch(self, img, lo, hi):
-        """Contrast stretch between two levels."""
+    def stretch(self, img, lo, hi, vignette=0.0):
+        """Contrast stretch between two levels (the vignette comes last)."""
         span = max(hi - lo, 1.0)
-        return _clamp(np.clip((img.astype(np.float32) - lo) / span, 0.0, 1.0))
+        out = np.clip((img.astype(np.float32) - lo) / span, 0.0, 1.0)
+        h, w = img.shape[:2]
+        return _clamp(np.minimum(out * _vignette(h, w, vignette)[..., None],
+                                 1.0))
 
     def minimap(self, img, cols, rows):
         """Average of each block, as a float grid (rows, cols, 3)."""

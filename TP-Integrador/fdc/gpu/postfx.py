@@ -32,7 +32,7 @@ CHANNELS = 3            # rgb (the images of the chain)
 WHITE = 255             # channel value of the flash
 LIGHT_FIELDS = 7        # x, y, radius, power, r, g, b
 CLIP = 0.005            # fraction of pixels left outside the contrast range
-LIGHT_POWER = 0.8       # 0-1: strength of the spotlight of a power
+LIGHT_POWER = 0.55      # 0-1: strength of the spotlight of a power
 TOUCH_SPEED = 120.0     # px/s: from this impact a touch makes sparks
 GOAL_SPARKS = 40        # sparks of a goal
 BOMB_SPARKS = 26        # sparks of an explosion
@@ -46,6 +46,10 @@ _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión
                  "fire": "fuego", "night": "noche", "shock": "onda",
                  "trail": "estela", "crt": "repetición", "var": "VAR"}
 _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
+# Glow with a goal or a power, and its vineta: the histogram applies it at the
+# end of the chain, so a frame without halo does not pay an extra pass.
+SPECTACLE_FX = ("ice", "blackout", "confusion", "fire", "night")
+SHOW_VIGNETTE = 0.0     # the glow stage never darkens the corners
 # Breathing of the powers (F11): the three numbers the formula needs.
 PULSE_ONE = 1.0         # no breathing (OPTIMIZADO and AUTO)
 PULSE_HALF = 0.5        # the sine goes between -PULSE_HALF and +PULSE_HALF
@@ -600,8 +604,8 @@ class PostFx:
         if self.fx.ice <= 0:
             return image
         gpu = config.Gpu
-        amount = gpu.ICE_STRENGTH * self.fx.ice * self.punch()
-        strength = gpu.ICE_EDGES * self.fx.ice * self.punch()
+        amount = gpu.ICE_STRENGTH * self.fx.ice
+        strength = gpu.ICE_EDGES * self.fx.ice
         return self._timed("ice", self.ops.ice, image, min(1.0, strength),
                            gpu.ICE_TINT,
                            min(1.0, amount * self._pulse(gpu.ICE_PULSE)))
@@ -662,12 +666,24 @@ class PostFx:
         return out
 
     def _glow(self, image):
+        """Halo: barely there in a normal frame, strong on a goal or a power."""
         gpu = config.Gpu
-        params = (gpu.EXPOSURE, gpu.GAMMA, gpu.VIGNETTE,
-                  gpu.GLOW_STRENGTH * self.punch())
+        strength = (gpu.GLOW_STRENGTH_FX if self._spectacle()
+                    else gpu.GLOW_STRENGTH)
+        if strength < gpu.GLOW_MIN_STRENGTH:
+            return image             # no halo: the pass is not paid
+        # The histogram applies the vignette at the end of the chain.
+        params = (gpu.EXPOSURE, gpu.GAMMA, SHOW_VIGNETTE, strength)
         return self.ops.glow_composite(image, gpu.GLOW_THRESHOLD,
                                        gpu.GLOW_RADIUS, gpu.GLOW_PASSES,
                                        params)
+
+    def _spectacle(self):
+        """True on a goal or a power: only there the halo adds something."""
+        if self.celebration is not None:
+            return True
+        return any(_is_on(getattr(self.fx, name, None))
+                   for name in SPECTACLE_FX)
 
     def _sparks(self, image):
         pos, col = self.particles.live()
@@ -690,6 +706,9 @@ class PostFx:
                                config.Gpu.LIGHT_GAIN * self.punch())
 
     def _heat(self, image):
+        """Heat waves: only with the Fuego power (the stands stay still)."""
+        if not _is_on(self.fx.fire):
+            return image
         gpu = config.Gpu
         return self.ops.heat(image, self.phase, gpu.HEAT_AMP, gpu.HEAT_PERIOD)
 
@@ -699,9 +718,12 @@ class PostFx:
         return self._ball_trail(image, config.Gpu.TRAIL_MIN_SPEED)
 
     def _contrast(self, image):
+        """Histogram stretch and, at the end, the vignette of the guide."""
         hist = self.ops.histogram(image)
         low, high = _levels(hist, image.size)
-        return self.ops.stretch(image, low, high) if high > low else image
+        if high <= low:
+            return image
+        return self.ops.stretch(image, low, high, config.Gpu.VIGNETTE)
 
     def _light_table(self):
         """Soft glow of the freeze powers (x, y, radius, power, r, g, b)."""
@@ -764,6 +786,15 @@ def _wanted(options):
 def _no_lights():
     """Empty table of spotlights (x, y, radius, power, r, g, b)."""
     return np.zeros((0, LIGHT_FIELDS), np.float32)
+
+
+def _is_on(value):
+    """True if an effect parameter is active (float, light or table)."""
+    if value is None or value is False:
+        return False
+    if isinstance(value, np.ndarray):
+        return bool(value.size and np.any(value))
+    return bool(value)
 
 
 def _make_ops(force_cpu=False):
