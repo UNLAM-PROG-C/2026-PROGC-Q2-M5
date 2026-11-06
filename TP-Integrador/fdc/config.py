@@ -42,6 +42,7 @@ FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
 GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
 OVERLAY_KEY = "f2"          # F2: performance overlay off -> compact -> full
+QUALITY_KEY = "f10"         # F10: quality mode FULL <-> OPTIMIZADO <-> AUTO
 NIGHT_KEY = "n"             # F8 is "give power to P1" in --test mode
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
@@ -167,6 +168,11 @@ class MatchRules:
     GOAL_COUNTDOWN = 2.0    # s: countdown after a goal
     RESUME_COUNTDOWN = 2.0  # s: countdown when a pause ends
     GOAL_CELEBRATION = 2.3  # s: goal celebration (the ball stays in the net)
+    # s: frozen replay of the goal (the interface shows it on top)
+    GOAL_REPLAY = 3.0
+    # s: whole frozen goal: the party, the replay and a small margin. The
+    # match does not move at all until it ends (or the replay is skipped).
+    GOAL_HOLD = GOAL_CELEBRATION + GOAL_REPLAY
     GOLDEN_GOAL_COUNTDOWN = 3.0  # s: kickoff of the golden goal
     # s: without controls from the interface for this long -> pause
     INPUT_WATCHDOG = 0.6
@@ -177,9 +183,15 @@ class MatchRules:
 # ---------------------------------------------------------------------------
 class PowerRules:
     """When and where the powers appear, and how strong they are."""
-    SPAWN_MIN = 7.0         # s of effective play, at least, between pickups
-    SPAWN_MAX = 10.0        # s at most between two pickups
-    PICKUP_TTL = 6.0        # s a pickup lasts if the ball does not touch it
+    # Powers appear more often than in v1 (they were barely seen in a match):
+    # the two times below are divided by SPAWN_RATE, so 3.5 s - 5 s in v2.
+    SPAWN_BASE = (7.0, 10.0)   # s between pickups at SPAWN_RATE = 1
+    SPAWN_RATE = 2.0           # how many times more often than the base
+    SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
+    SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
+    # s: a pickup lasts if the ball does not touch it (2 s more than before:
+    # they disappeared before anyone could reach them)
+    PICKUP_TTL = 8.0
     PICKUP_RADIUS = 26      # px: pickup radius (touched with the ball)
     # px: horizontal band where pickups appear (away from the goals)
     SPAWN_X = (Arena.GOAL_DEPTH + 110, Arena.WIDTH - Arena.GOAL_DEPTH - 110)
@@ -377,13 +389,16 @@ class Gpu:
     ENABLED = os.environ.get("FDC_GPU", "1") != "0"   # FDC_GPU=0 turns it off
     QUALITY = os.environ.get("FDC_GPU_QUALITY", "media")   # baja|media|alta
     QUALITIES = ("baja", "media", "alta")   # from the cheapest to the richest
-    GLOW_THRESHOLD = 0.62   # from this luma (0-1) a pixel glows
-    GLOW_RADIUS = 3         # px of the halo blur
+    GLOW_THRESHOLD = 0.85   # from this luma (0-1) a pixel glows
+    GLOW_RADIUS = 2         # px of the halo blur
     GLOW_PASSES = 2         # box blurs of the halo
-    EXPOSURE = 1.08         # brightness before the gamma
+    EXPOSURE = 1.0          # brightness before the gamma
     GAMMA = 1.0             # gamma curve of the composite
-    VIGNETTE = 0.35         # darkening of the corners
-    GLOW_STRENGTH = 0.65    # weight of the halo in the composite
+    VIGNETTE = 0.25         # darkening of the corners
+    GLOW_STRENGTH = 0.25    # weight of the halo in a normal frame
+    GLOW_STRENGTH_FX = 0.6  # weight of the halo with a goal or a power
+    GLOW_MIN_STRENGTH = 0.3   # below this the halo pass is skipped
+    GLOW_SAT_GAIN = 1.5     # saturated colours glow more (white: no halo)
     PARTICLE_GAIN = 1.0     # weight of the sparks
     LIGHT_GAIN = 0.9        # weight of the spotlights
     PARTICLES = 1200        # particles alive at most
@@ -392,14 +407,14 @@ class Gpu:
     PARTICLE_LIFE = (0.18, 0.55)     # s: life of a spark
     PARTICLE_GRAVITY = 420.0         # px/s^2 (y grows downwards)
     PARTICLE_PER_TOUCH = 10          # sparks of a kick or a bounce
-    HEAT_AMP = 2.5          # px: depth of the heat waves
+    HEAT_AMP = 1.0          # px: depth of the heat waves (only with Fuego)
     HEAT_PERIOD = 26.0      # px: wavelength of the heat waves
     HEAT_SPEED = 2.4        # rad/s: how fast the waves move
     RIPPLE_AMP = 5.0        # px: depth of the replay ripple
     RIPPLE_PERIOD = 46.0    # px: wavelength of the replay ripple
     TRAIL_ALPHA = 0.35      # s: how much of the previous frame stays
-    FREEZE_LIGHT = (0.45, 0.75, 1.0)   # rgb of the ice spotlight
-    FREEZE_RADIUS = 260.0   # px: radius of the ice spotlight
+    FREEZE_RADIUS = 110.0   # px: radius of the ice spotlight
+    FREEZE_GAIN = 0.22      # 0-1: the ice light multiplies (never adds white)
     BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
     # 80 x 45 cells of 16 px: the grid of the spec (one cell per 16 px).
     HEATMAP_COLS = 80       # cells of the heat map, across
@@ -412,8 +427,8 @@ class Gpu:
     FADE_OUT = 0.3          # s of the smooth exit at the end of a power
     HEAD_ABOVE = 65.0       # px above the feet: centre of the head
     ICE_TINT = (0.55, 0.85, 1.0)   # rgb of the ice tint
-    ICE_STRENGTH = 0.55     # weight of the tint on the image (0-1)
-    ICE_EDGES = 0.9         # weight of the bright edges (0-1)
+    ICE_STRENGTH = 0.30     # weight of the tint on the image (0-1)
+    ICE_EDGES = 0.5         # weight of the bright edges (0-1)
     BLACKOUT_AMBIENT = 0.06   # light left far from the heads (0-1)
     BLACKOUT_RADIUS = 150.0   # px: radius of the blackout light
     BLACKOUT_TINT = (1.0, 1.0, 1.0)   # rgb multiplier of the blackout
@@ -428,21 +443,25 @@ class Gpu:
     NIGHT_Y = 20.0            # px: height of the spotlights
     NIGHT_RADIUS = 420.0      # px: radius of each spotlight
     NIGHT_POWER = 0.9         # intensity of each spotlight (0-1)
-    NIGHT_AMBIENT = 0.15      # light between the spotlights (0-1)
-    NIGHT_TINT = (1.0, 0.86, 0.66)   # warm rgb of the night lights
+    NIGHT_AMBIENT = 0.25      # light between the spotlights (0-1)
+    NIGHT_TINT = (1.0, 0.92, 0.80)   # warm rgb of the night lights
     AUTOEXPOSURE_TARGET = 110.0   # mean luma the night tries to reach
     AUTOEXPOSURE_MIN = 0.6        # lowest gain
     AUTOEXPOSURE_MAX = 2.5        # highest gain
     AUTOEXPOSURE_RATE = 0.1       # EMA weight of each frame (0-1)
     SHOCK_DURATION = 1.2      # s of the goal shock wave
     SHOCK_RADIUS = 900.0      # px/s: the ring grows this fast
-    SHOCK_WIDTH = 90.0        # px: thickness of the ring
-    SHOCK_AMP = 14.0          # px: displacement when it starts
+    SHOCK_WIDTH = 50.0        # px: thickness of the ring
+    SHOCK_AMP = 4.5           # px: displacement when it starts (subtle)
     TRAIL_MIN_SPEED = 800.0   # px/s: from here the ball leaves a trail
     TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
     TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
     # --- F5: replay and VAR (the review of a close goal) ---------------------
-    REPLAY_DURATION = 3.0     # s of the match shown again after a goal
+    REPLAY_CLIP = 3.0         # s the whole clip of a goal lasts (F10)
+    # s of the net the clip shows after the goal (F10)
+    REPLAY_AFTER_GOAL = 0.5
+    # s before the goal the clip shows: only the last seconds of the play
+    REPLAY_DURATION = REPLAY_CLIP - REPLAY_AFTER_GOAL
     VAR_DURATION = 2.0        # s of the referee review
     VAR_CONFIRM = 0.8         # s the "goal stands" sign stays after that
     VAR_FRAMES = 6            # saved states the review looks back
@@ -479,6 +498,88 @@ class Gpu:
     OVERLAY_FONT = 22         # px: minimum size of the overlay text
     OVERLAY_REFRESH = 0.25    # s between overlay text rebuilds (4 Hz)
     MEASURE_FPS = 1000.0      # milliseconds in a second (capacity of a frame)
+    # --- F10: goal celebration (confetti before the replay) ------------------
+    GOAL_CELEBRATION = 2.0    # s of party before the replay starts
+    CONFETTI = 820            # paper bits alive at most
+    CONFETTI_PER_BURST = 120  # paper bits thrown by each burst
+    CONFETTI_SIZE = (2.5, 5.0)   # px: half width of a paper bit
+    CONFETTI_THICK = 0.55     # share of that half width the bit is tall
+    CONFETTI_SPEED = (120.0, 520.0)   # px/s: speed a bit leaves the burst
+    CONFETTI_LIFE = (1.2, 2.4)        # s: life of a bit
+    CONFETTI_GRAVITY = 320.0  # px/s^2 (y grows downwards)
+    CONFETTI_DRAG = 0.6       # 1/s: the air slows the bits down
+    CONFETTI_SWAY = (30.0, 90.0)      # px/s: sideways speed of the flutter
+    CONFETTI_SPIN = (5.0, 12.0)       # rad/s: the bit turns and shows its edge
+    CONFETTI_GAIN = 1.0       # 0-1: opacity of the paper over the image
+    CONFETTI_FLASH = 0.30     # 0-1: white flash right after the goal
+    CONFETTI_FLASH_TIME = 0.18   # s the flash takes to fade out
+    # --- F11: quality modes of the projector demo ---------------------------
+    # full: everything at full resolution, no governor (it may stutter);
+    # optimizado: only the cheap stage, no crowd, 4x smaller image;
+    # auto: the governor of the notebook decides (the F7 behaviour).
+    QUALITY_MODE = os.environ.get("FDC_QUALITY_MODE", "full")
+    MODES = ("full", "optimizado", "auto")
+    MODE_NAMES = {"full": "FULL", "optimizado": "OPTIMIZADO", "auto": "AUTO"}
+    MODE_STAGE = {"full": "alta", "optimizado": "baja"}   # level of LEVELS
+    FULL_PUNCH = 1.6          # powers this much stronger in FULL (1.0 = as F4)
+    FULL_PARTICLES = 1.5       # sparks this much brighter in FULL
+    # Strength of the powers per mode (see `PostFx.punch`).
+    MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0}
+    # Gain of the sparks per mode (see `PostFx._sparks`).
+    MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0}
+    OPTIMIZED_LEVEL = 0       # index of QUALITY_LEVELS: full resolution; only
+    #                           the cheap stage runs, so OPT stays sharp
+    CROWD_MODE = "full"       # only here the stands are animated
+    CROWD_PUNCH = 1.6         # extra strength of the crowd on a goal
+    # --- F11: crowd of the stands (a kernel per pixel, FULL only) ----------
+    CROWD_TOP = 112           # px: top of the stands
+    CROWD_BOTTOM = 464        # px: the wall below the last stand
+    PITCH_TOP = 504           # px: first row of grass (below the boards): the
+    #                           effects never warp or light anything above it
+    CROWD_SEAT = (22, 22)     # px: one seat of the grid (width, height)
+    CROWD_BODY = (15, 11)     # px: shirt of one person (width, height)
+    CROWD_HEAD = 5.0          # px: radius of the head (above the shirt)
+    CROWD_HEAD_CUT = 0.05     # part of the head that is hair (0-1)
+    CROWD_OUTLINE = 1.2       # px of the dark rim around the head
+    CROWD_SHOULDER_EDGE = 1.0  # px of the darker line on top of the shirt
+    CROWD_SHOULDER_SHADE = 0.78   # how much that line darkens the shirt
+    CROWD_STEP = 5.0          # px: dark step at the bottom of each row
+    CROWD_FILL = 62           # % of the seats with somebody
+    CROWD_JUMP = 2.0          # px of the little jump of each person
+    CROWD_JUMP_HZ = 1.7       # jumps per second
+    CROWD_GOAL_JUMP = 5.0     # extra px of the jumping stand on a goal
+    CROWD_GOAL_HZ = 3.2       # extra jumps per second while celebrating
+    CROWD_FLAGS = 28          # one flag every N seats (few and big)
+    CROWD_FLAG = (17, 12)     # px: width and height of a flag
+    CROWD_POLE = 20.0         # px: the pole goes this far above the shoulder
+    CROWD_WAVE = 2.0          # px the flags flutter
+    CROWD_SHADE_TOP = 0.5     # darkness of the last row (up, far away)
+    CROWD_SHADE_BOTTOM = 1.0  # ... and of the first one (down, near)
+    CROWD_VAR_MIN = 0.78      # brightness of the dullest shirt
+    CROWD_VAR_RANGE = 0.20    # extra brightness the hash may add
+
+    # Shirts are duller and darker than the players' (they must not compete).
+    CROWD_SHIRTS = ((0.66, 0.41, 0.23), (0.62, 0.30, 0.44))
+    CROWD_SKINS = ((0.60, 0.44, 0.34), (0.78, 0.61, 0.47),   # skin tones
+                   (0.93, 0.77, 0.63))
+    CROWD_HAIRS = ((0.09, 0.07, 0.06), (0.27, 0.17, 0.10),   # hair tones
+                   (0.55, 0.45, 0.30))
+    CROWD_TREAD = (0.17, 0.17, 0.21)      # floor of one step
+    CROWD_RISER = (0.11, 0.11, 0.15)      # its dark front
+    CROWD_EDGE = (0.33, 0.33, 0.40)       # lit edge of the step
+    CROWD_POLE_COLOUR = (0.72, 0.72, 0.76)   # the pole of the flags
+    CROWD_OUTLINE_COLOUR = (0.07, 0.06, 0.08)     # rim of the heads
+    CROWD_FLAG_COLOURS = ((0.95, 0.55, 0.25),    # flag of each team
+                          (0.93, 0.35, 0.62))
+    CROWD_FLAG_WHITE = (0.93, 0.93, 0.90)   # the white stripe of the flags
+    CROWD_BOOST_BURST = 60    # extra paper bits of the stand on a goal
+    # --- F11: extra life of the effects in FULL ---------------------------
+    PULSE_HZ = 7.0            # rad/s of the breathing of the powers (FULL)
+    ICE_PULSE = 0.15          # how much the ice breathes (0-1)
+    BLACKOUT_PULSE = 0.45     # flicker of the blackout (0-1)
+    NIGHT_SWEEP = 40.0        # px the lamps of the night swing (FULL)
+    NIGHT_SWEEP_HZ = 0.9      # rad/s of that swing
+    NIGHT_SWEEP_GAP = 1.1     # rad of phase between two lamps
 
 
 # ---------------------------------------------------------------------------

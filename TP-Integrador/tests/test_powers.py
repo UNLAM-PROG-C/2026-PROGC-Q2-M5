@@ -186,6 +186,19 @@ class SpawnTest(unittest.TestCase):
         self.assertEqual(count(ev, protocol.EV_PICKUP_EXPIRED), 1)
         self.assertIsNone(m.powers.pickup)
 
+    def test_the_pickup_lasts_eight_seconds(self):
+        """The card asked for 2 s more: it used to last 6 s on the pitch."""
+        self.assertAlmostEqual(RULES.PICKUP_TTL, 8.0)
+
+    def test_the_pickup_is_still_there_after_the_extra_time(self):
+        m = quiet_match()
+        m.powers.pickup = powers.Pickup(5, "grow", 300, 300)
+        ev = run(m, RULES.PICKUP_TTL - 0.6)
+        self.assertEqual(count(ev, protocol.EV_PICKUP_EXPIRED), 0)
+        self.assertIsNotNone(m.powers.pickup)
+        ev = run(m, 0.8)
+        self.assertEqual(count(ev, protocol.EV_PICKUP_EXPIRED), 1)
+
 
 def positions(m, p, seconds):
     """x of player p after each step during that many seconds."""

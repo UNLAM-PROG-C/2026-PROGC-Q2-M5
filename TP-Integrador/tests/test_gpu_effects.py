@@ -29,11 +29,27 @@ SEED = 3                # fixed random surface
 NIGHT_FRAMES = 12       # frames with the night mode on
 FAST_BALL = {"x": 30.0, "y": 20.0, "vx": 900.0, "vy": 0.0}
 SLOW_BALL = {"x": 30.0, "y": 20.0, "vx": 30.0, "vy": 0.0}
+# Art rules: the effects are checked on the size of the real screen.
+PIXEL_W, PIXEL_H = 1280, 720    # px: the screen the player sees
+FLAT = 130                      # byte of the flat frame of the art tests
+FLAT_GAIN = int(FLAT * config.Gpu.FREEZE_GAIN) + 1   # most the ice may add
+ICE_STATE = {
+    "players": [{"x": 400.0, "y": 640.0}, {"x": 880.0, "y": 640.0}],
+    "ball": SLOW_BALL,
+    "effects": [{"power": "freeze_self", "prop": "frozen", "target": "p0",
+                 "left": 1.8, "dur": 2.0}],
+}
 # Frames needed to save two states (one every REPLAY_STEP s) and to end the
 # replay and the VAR (they last REPLAY_DURATION and VAR_DURATION + VAR_CONFIRM).
 SAVE_FRAMES = int(config.Gpu.REPLAY_STEP / DT) + 2
 REPLAY_FRAMES = int(config.Gpu.REPLAY_DURATION / DT) + 2
 VAR_FRAMES = int((config.Gpu.VAR_DURATION + config.Gpu.VAR_CONFIRM) / DT) + 2
+# F10: the goal celebrates first and only then the replay starts, so these
+# tests draw the celebration before looking at the replay (and the replay
+# itself lasts REPLAY_AFTER_GOAL s more).
+CELEBRATION_FRAMES = int(config.Gpu.GOAL_CELEBRATION / DT) + 2
+REPLAY_SECONDS = config.Gpu.REPLAY_DURATION + config.Gpu.REPLAY_AFTER_GOAL
+FULL_REPLAY_FRAMES = int(REPLAY_SECONDS / DT) + 4
 MOUTH = config.Arena.GOAL_DEPTH              # x of the mouth of the left goal
 BAR_Y = config.Arena.FLOOR_Y - config.Arena.GOAL_HEIGHT
 GOAL = {"type": protocol.EV_GOAL, "x": 600.0, "y": 300.0, "side": 0}
@@ -220,7 +236,7 @@ class PowerChainTest(unittest.TestCase):
         self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
         data = self.run_chain(POWER_STATE)
         self.assertGreater(data["shock"], 0.0)
-        self.assertGreater(data["ice_tint"], 0.0)
+        self.assertGreater(data["ice"], 0.0)
         self.assertGreater(data["blackout"], 0.0)
         self.assertGreater(data["confusion"], 0.0)
         self.assertGreater(data["fire"], 0.0)
@@ -296,21 +312,57 @@ class ReplayChainTest(unittest.TestCase):
     def test_goal_starts_the_replay(self):
         self.play(SAVE_FRAMES)
         self.fx.event(GOAL)
+        self.play(CELEBRATION_FRAMES)
         self.assertEqual(self.fx.replay_mode(), replay.REPLAY_KIND)
         self.assertIsNot(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+        self.assertFalse(self.fx.confetti.alive())   # the replay took over
         self.play(2)
         self.assertTrue(self.fx.metrics.stage["crt"])
+
+    def test_the_goal_celebrates_before_the_replay(self):
+        """F10: first the confetti and the sign, then the replay."""
+        self.play(SAVE_FRAMES)
+        self.fx.event(GOAL)
+        self.assertIsNone(self.fx.replay_mode())
+        self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+        self.assertIn(postfx._CELEBRATION_NAME, self.fx.active_effects())
+        self.play(4)
+        self.assertTrue(self.fx.confetti.alive())
+        self.assertTrue(self.fx.metrics.stage["confetti"])
+
+    def test_the_replay_follows_the_goal_half_a_second_later(self):
+        """F10: the replay ends REPLAY_AFTER_GOAL s after the goal."""
+        self.play(REPLAY_FRAMES)
+        goal_time = self.fx.clock
+        self.fx.event(GOAL)
+        self.play(CELEBRATION_FRAMES)
+        frames = self.fx.player.frames
+        self.assertAlmostEqual(frames[-1][0],
+                               goal_time + config.Gpu.REPLAY_AFTER_GOAL,
+                               places=6)
+        self.assertLessEqual(frames[0][0],
+                             goal_time - config.Gpu.REPLAY_DURATION
+                             + config.Gpu.REPLAY_STEP + DT)
+        self.play(FULL_REPLAY_FRAMES)
+        self.assertIsNone(self.fx.replay_mode())
+
+    def test_the_confetti_is_gone_when_the_replay_ends(self):
+        self.play(SAVE_FRAMES)
+        self.fx.event(GOAL)
+        self.play(CELEBRATION_FRAMES + FULL_REPLAY_FRAMES)
+        self.assertFalse(self.fx.confetti.alive())
 
     def test_replay_ends_and_the_live_state_comes_back(self):
         self.play(SAVE_FRAMES)
         self.fx.event(GOAL)
-        self.play(REPLAY_FRAMES)
+        self.play(CELEBRATION_FRAMES + FULL_REPLAY_FRAMES)
         self.assertIsNone(self.fx.replay_mode())
         self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
 
     def test_close_goal_goes_to_the_var(self):
         self.play(SAVE_FRAMES)
         self.fx.event(CLOSE_GOAL)
+        self.play(CELEBRATION_FRAMES)
         self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
         self.assertEqual(self.fx.replay_stage(), replay.REVIEW)
         self.assertEqual(self.fx.replay_zoom(), (600.0, 300.0))
@@ -320,6 +372,7 @@ class ReplayChainTest(unittest.TestCase):
     def test_the_var_confirms_and_ends(self):
         self.play(SAVE_FRAMES)
         self.fx.event(CLOSE_GOAL)
+        self.play(CELEBRATION_FRAMES)
         self.play(int(config.Gpu.VAR_DURATION / DT) + 2)
         self.assertEqual(self.fx.replay_stage(), replay.CONFIRMED)
         self.play(VAR_FRAMES)
@@ -329,7 +382,31 @@ class ReplayChainTest(unittest.TestCase):
         self.play(SAVE_FRAMES)
         self.fx.force_var = True
         self.fx.event(GOAL)
+        self.play(CELEBRATION_FRAMES)
         self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
+
+    def test_the_forced_wave_does_not_celebrate(self):
+        """The demo forces the shock wave: it is not a goal (F10)."""
+        self.play(SAVE_FRAMES)
+        self.fx.event({"type": protocol.EV_GOAL, "x": 600.0, "y": 300.0})
+        self.assertIsNone(self.fx.celebration)
+        self.assertFalse(self.fx.confetti.alive())
+
+    def test_the_s_key_leaves_the_party_and_then_the_replay(self):
+        """F10: one key skips the celebration and the replay."""
+        self.play(SAVE_FRAMES)
+        self.fx.event(GOAL)
+        self.play(4)
+        self.assertTrue(self.fx.skip())
+        self.assertFalse(self.fx.confetti.alive())
+        self.assertIsNone(self.fx.replay_mode())
+        self.fx.event(GOAL)
+        self.play(CELEBRATION_FRAMES)
+        self.assertEqual(self.fx.replay_mode(), replay.REPLAY_KIND)
+        self.assertTrue(self.fx.skip())
+        self.assertIsNone(self.fx.replay_mode())
+        self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+        self.assertFalse(self.fx.skip())
 
     def test_heat_map_records_the_play(self):
         self.play(config.Gpu.HEAT_FLUSH_FRAMES)
@@ -356,6 +433,38 @@ class ReplayChainTest(unittest.TestCase):
         self.assertEqual(float(self.fx.heat.grids.sum()), 0.0)
         self.assertEqual(self.fx.heat.recorded, 0)
         self.assertEqual(self.fx.history.saved, [])
+
+
+class ArtRulesTest(unittest.TestCase):
+    """Rules of `guia-visual.md`: no effect touches the stands."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+        self.fx = postfx.PostFx(options(), (PIXEL_W, PIXEL_H))
+        self.fx.ops = cpu_ref.Cpu()
+        self.fx.enabled = True
+        self.fx.state = ICE_STATE
+        self.image = np.full((PIXEL_H, PIXEL_W, 3), FLAT, np.uint8)
+
+    def test_ice_focus_keeps_the_stands(self):
+        out = self.fx._lights(self.image.copy())
+        top = config.Gpu.PITCH_TOP
+        self.assertTrue(np.array_equal(out[:top], self.image[:top]))
+        self.assertLessEqual(int(out.max()), FLAT + FLAT_GAIN)
+        self.assertGreater(int(out[600:680, 380:420].max()), FLAT)
+
+    def test_shock_leaves_the_stands_still(self):
+        self.fx.fx.shock = (640.0, 620.0, 0.05)
+        out = self.fx._shock(self.image.copy())
+        top = config.Gpu.PITCH_TOP
+        self.assertTrue(np.array_equal(out[:top], self.image[:top]))
+
+    def test_night_sky_stays_dark(self):
+        out = self.fx._night_sky(self.image.copy())
+        top = config.Gpu.CROWD_TOP
+        self.assertLess(int(out[:top].max()), FLAT)
+        self.assertTrue(np.array_equal(out[top:], self.image[top:]))
 
 
 class ScreenHelpersTest(unittest.TestCase):

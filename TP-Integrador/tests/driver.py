@@ -35,13 +35,20 @@ def profile_file(name="Prueba", player_id=None):
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def make_app(test_mode=True, seed=5, duration=None, server_url=None,
-             profile_name="Prueba", web=False):
-    """The real App with test options."""
+             profile_name="Prueba", web=False, quality_mode="optimizado"):
+    """The real App with test options.
+
+    The smoke tests play whole matches inside a time limit, so they run in
+    the light mode: FULL (the default of the game) draws three times slower
+    and the matches would not finish in time. FULL has its own tests
+    (`test_gpu_quality_modes`).
+    """
     opts = types.SimpleNamespace(
         test_mode=test_mode, seed=seed, no_audio=False, fullscreen=False,
         debug_panel=True, duration=duration,
         server_url=server_url or NO_SERVER,
-        profile_path=profile_file(profile_name), web=web)
+        profile_path=profile_file(profile_name), web=web,
+        quality_mode=quality_mode)
     return game.App(opts)
 
 

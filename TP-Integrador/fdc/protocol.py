@@ -27,11 +27,12 @@ CMD_PAUSE = "pause"
 CMD_RESUME = "resume"
 CMD_RESTART = "restart"
 CMD_END = "end_match"
+CMD_SKIP_GOAL = "skip_goal"        # the party and the replay are over
 CMD_SHUTDOWN = "shutdown"
 CMD_DEBUG_POWER = "debug_power"    # test mode only
 CMD_DEBUG_CRASH = "debug_crash"    # test mode only
 COMMANDS = (CMD_START, CMD_PAUSE, CMD_RESUME, CMD_RESTART, CMD_END,
-                        CMD_SHUTDOWN, CMD_DEBUG_POWER, CMD_DEBUG_CRASH)
+            CMD_SKIP_GOAL, CMD_SHUTDOWN, CMD_DEBUG_POWER, CMD_DEBUG_CRASH)
 
 # --- Controls UI -> SIM ------------------------------------------------------
 MSG_INPUT = "input"

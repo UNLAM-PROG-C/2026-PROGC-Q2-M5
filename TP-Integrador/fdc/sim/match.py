@@ -7,8 +7,9 @@ and runs the same in the local process and in the online room processes.
 Phases:  countdown -> playing -> goal -> countdown -> playing ... -> finished
 Pausing is a separate flag: it freezes any phase.
 The clock only runs in "playing" and when not paused.
+The goal phase is frozen: the interface shows the party and then the replay
+of the goal on a still match, and play comes back from the centre.
 """
-import math
 import random
 
 from fdc import config
@@ -24,30 +25,39 @@ TOUCH_PRIORITY = {"kick": 3, "head": 2, "body": 1}
 SOUND_COOLDOWN = 0.07
 # s without collisions between the ball and whoever just kicked it.
 KICK_BALL_IGNORE = 0.12
-NET_DAMPING = 7.0   # 1/s: braking of the net during the celebration
-# px from the goal line in which the net brakes the ball while celebrating.
-NET_ZONE = 40
 # The random seed is a 31-bit integer (fits on any platform).
 SEED_BITS = 31
+
+
+def _goal_hold(presentation):
+    """s the goal stays frozen: the party and, with a replay, the clip."""
+    if presentation:
+        return config.MatchRules.GOAL_HOLD
+    return config.MatchRules.GOAL_CELEBRATION
 
 
 class Match:
     """Players, ball, goals, powers, score, clock and phases of a match."""
 
     def __init__(self, match_id, seed=None, characters=("?", "?"),
-                 duration=None, golden_goal=False):
+                 duration=None, golden_goal=False, presentation=True):
         self.id = match_id
         # Golden goal: if time ends in a draw, the next goal wins.
         self.golden_goal, self.golden = golden_goal, False
-        self.seed = (seed if seed is not None
-                     else random.getrandbits(SEED_BITS))
-        self.rng = random.Random(self.seed)
+        self.goal_hold = _goal_hold(presentation)   # party and (maybe) clip
+        self._set_seed(seed)
         # Only kept for the log: physics uses the same base abilities.
         self.characters = tuple(characters)
         self._create_entities()
         self.clock = (float(duration) if duration
                       else config.MatchRules.DURATION)
         self._reset_flow()
+
+    def _set_seed(self, seed):
+        """Random seed of the match and its generator."""
+        self.seed = (seed if seed is not None
+                     else random.getrandbits(SEED_BITS))
+        self.rng = random.Random(self.seed)
 
     def _create_entities(self):
         self.players = [physics.Player(0), physics.Player(1)]
@@ -142,11 +152,14 @@ class Match:
             self._events.append((protocol.EV_KICKOFF, {}))
 
     def _celebration(self, dt):
+        """Frozen goal: the interface shows the party and then the replay."""
         self.phase_left -= dt
-        self._physics(dt, controls=False)
-        self._net_damping(dt)
         if self.phase_left > 0:
             return
+        self._after_goal_hold()
+
+    def _after_goal_hold(self):
+        """End of the frozen goal: play comes back from the centre."""
         if self.golden:
             self._finish()          # golden goal: ends after the celebration
             return
@@ -154,14 +167,15 @@ class Match:
         if self.pause_pending is not None:
             self._start_requested_pause()
 
-    def _net_damping(self, dt):
-        """The net absorbs the ball: it stays inside while celebrating."""
-        ball = self.ball
-        if any(g.ball_inside(ball) or abs(ball.x - g.mouth_x) < NET_ZONE
-               for g in self.goals):
-            factor = math.exp(-NET_DAMPING * dt)
-            ball.vx *= factor
-            ball.vy *= factor if ball.vy < 0 else 1.0
+    def skip_goal(self):
+        """The interface skipped the party and the replay: straight to the
+        kickoff (or to the end, on a golden goal). Returns (ok, events)."""
+        if self.phase != protocol.PHASE_GOAL:
+            return False, []
+        self._events = []
+        self.phase_left = 0.0
+        self._after_goal_hold()
+        return True, self._events
 
     def _start_requested_pause(self):
         by, self.pause_pending = self.pause_pending, None
@@ -304,7 +318,7 @@ class Match:
         self.players[scorer].celebrating = True
         own_goal = self.last_touch == goal.side
         self.phase = protocol.PHASE_GOAL
-        self.phase_left = config.MatchRules.GOAL_CELEBRATION
+        self.phase_left = self.goal_hold
         self.powers.clear()
         self.powers.apply_modifiers(self)
         self._events.append((protocol.EV_GOAL, {

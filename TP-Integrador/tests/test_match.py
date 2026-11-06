@@ -64,7 +64,7 @@ class GoalTest(unittest.TestCase):
         m.ball.x = ARENA.WIDTH - ARENA.GOAL_DEPTH - 50
         m.ball.y = ARENA.FLOOR_Y - 60
         m.ball.vx = 800
-        run(m, RULES.GOAL_CELEBRATION + 0.2)
+        run(m, RULES.GOAL_HOLD + 0.2)
         self.assertEqual(m.score, [1, 0])
         self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
         self.check_clean_kickoff(m)
@@ -355,7 +355,7 @@ class GoldenGoalTest(unittest.TestCase):
         m.ball.vx, m.ball.vy = -700, 0
         ev = run(m, 1.0)
         self.assertEqual(count(ev, protocol.EV_GOAL), 1)
-        ev = run(m, RULES.GOAL_CELEBRATION + 0.2)
+        ev = run(m, RULES.GOAL_HOLD + 0.2)
         end = [e for e in ev if e[0] == protocol.EV_MATCH_END]
         self.assertEqual(len(end), 1)
         # Goal in the goal of P1 -> P2 wins.
@@ -435,6 +435,223 @@ class RobustnessTest(unittest.TestCase):
         self.assertEqual(sum(m.score), count(events, protocol.EV_GOAL))
         self.assertEqual(count(events, protocol.EV_MATCH_END), 1)
         self.assertGreater(count(events, protocol.EV_POWER_SPAWN), 3)
+
+
+# --- F10: the ball squeezed between two players ---------------------------
+SQUEEZE_SECONDS = 2.0            # s of pressing
+MAX_SINK = 2.0                   # px the ball may be inside a player
+MAX_SHOVE = 3.0                  # px a player may move in one step
+BALL_ON_FLOOR_Y = ARENA.FLOOR_Y - BALL.RADIUS
+PRESSED_X = (599.0, 681.0)       # the two players pressed head to head
+WIDE_X = (540.0, 740.0)          # both players walking to the middle
+HEAD_BETWEEN_Y = ARENA.FLOOR_Y - PLAYER.HEAD_OFFSET_Y
+BALL_SPEEDS = (0, 300, -300, 800, -800)   # px/s of the ball at the start
+
+
+def sink(ball, player):
+    """px the ball is inside the worst circle of a player."""
+    worst = 0.0
+    for radius, (cx, cy, _) in ((PLAYER.HEAD_RADIUS, player.head()),
+                                (PLAYER.BODY_RADIUS, player.body())):
+        overlap = ball.radius + radius - math.hypot(ball.x - cx, ball.y - cy)
+        worst = max(worst, overlap)
+    return worst
+
+
+def prepared_match(ball_x, ball_y, vx=0.0, vy=0.0, players=WIDE_X):
+    """Ball and players where the squeeze test wants them."""
+    m = helpers.playing_match()
+    for p, x in zip(m.players, players):
+        p.x, p.y = x, ARENA.FLOOR_Y
+        p.vx = p.vy = 0.0
+    m.ball.x, m.ball.y = ball_x, ball_y
+    m.ball.vx, m.ball.vy = vx, vy
+    return m
+
+
+def press(m, seconds=SQUEEZE_SECONDS):
+    """Both players walk into each other; returns the worst sink seen."""
+    worst = 0.0
+    for _ in range(int(round(seconds / DT))):
+        m.set_input(0, False, True, 0, 0)
+        m.set_input(1, True, False, 0, 0)
+        m.step(DT)
+        for p in m.players:
+            worst = max(worst, sink(m.ball, p))
+    return worst
+
+
+class SqueezeTest(unittest.TestCase):
+    """The ball pressed between the players stays between them."""
+
+    def assert_between(self, m):
+        left, right = m.players
+        self.assertLess(left.x, m.ball.x)
+        self.assertGreater(right.x, m.ball.x)
+
+    def test_ball_on_the_floor_stays_between_the_two(self):
+        for vx in BALL_SPEEDS:
+            with self.subTest(vx=vx):
+                m = prepared_match(ARENA.WIDTH / 2, BALL_ON_FLOOR_Y, vx,
+                                   players=PRESSED_X)
+                worst = press(m)
+                self.assert_between(m)
+                self.assertLess(worst, MAX_SINK)
+
+    def test_ball_between_the_heads_does_not_sink_into_one(self):
+        for vy in (0, 300, -300, 700):
+            with self.subTest(vy=vy):
+                m = prepared_match(ARENA.WIDTH / 2, HEAD_BETWEEN_Y, 0, vy,
+                                   players=PRESSED_X)
+                worst = press(m)
+                self.assert_between(m)
+                self.assertLess(worst, MAX_SINK)
+
+    def test_ball_at_the_feet_does_not_shove_the_players(self):
+        m = prepared_match(PRESSED_X[0] + 3, BALL_ON_FLOOR_Y,
+                           players=PRESSED_X)
+        for _ in range(int(round(SQUEEZE_SECONDS / DT))):
+            before = [p.x for p in m.players]
+            m.step(DT)
+            for p, was in zip(m.players, before):
+                self.assertLess(abs(p.x - was), MAX_SHOVE)
+
+    def test_ball_against_the_wall_is_not_pushed_through(self):
+        m = prepared_match(0.0, BALL_ON_FLOOR_Y, 0.0, 0.0,
+                           (PLAYER.HALF_WIDTH, WIDE_X[1]))
+        m.ball.x = m.players[0].x - 20.0
+        for _ in range(int(round(SQUEEZE_SECONDS / DT))):
+            m.set_input(0, True, False, 0, 0)      # the player walks left
+            m.step(DT)
+            self.assertLess(m.ball.x, m.players[0].x)
+        self.assertLessEqual(m.ball.x - m.ball.radius, EPSILON)
+
+    def test_fast_ball_does_not_cross_the_pressed_players(self):
+        m = prepared_match(ARENA.WIDTH / 2, BALL_ON_FLOOR_Y, BALL.MAX_SPEED,
+                           players=PRESSED_X)
+        worst = press(m)
+        self.assert_between(m)
+        self.assertLess(worst, MAX_SINK)
+
+
+class ChargeTest(unittest.TestCase):
+    """A player running into the ball pushes it away, never over it."""
+
+    def test_ball_in_front_is_pushed_ahead(self):
+        m = prepared_match(0.0, BALL_ON_FLOOR_Y, 0.0, 0.0,
+                           (540.0, WIDE_X[1]))
+        m.ball.x = m.players[0].x + 20.0
+        worst = 0.0
+        for _ in range(int(round(SQUEEZE_SECONDS / DT))):
+            m.set_input(0, False, True, 0, 0)
+            m.step(DT)
+            worst = max(worst, sink(m.ball, m.players[0]))
+        self.assertGreater(m.ball.x, m.players[0].x)
+        self.assertLess(worst, MAX_SINK)
+
+    def test_player_does_not_jump_over_the_ball(self):
+        m = prepared_match(0.0, BALL_ON_FLOOR_Y, 0.0, 0.0,
+                           (540.0, WIDE_X[1]))
+        m.ball.x = m.players[0].x
+        for _ in range(int(round(SQUEEZE_SECONDS / DT))):
+            before = m.players[0].x
+            m.step(DT)
+            self.assertLess(abs(m.players[0].x - before), MAX_SHOVE)
+            self.assertLess(sink(m.ball, m.players[0]), MAX_SINK)
+        self.assertGreater(abs(m.ball.x - m.players[0].x),
+                           PLAYER.BODY_RADIUS + BALL.RADIUS)
+
+
+def score_a_goal(m, steps=90):
+    """Puts the ball into the left goal and steps until it counts."""
+    goal = m.goals[0]
+    m.ball.x, m.ball.y = goal.mouth_x + 60, ARENA.FLOOR_Y - 60
+    m.ball.vx, m.ball.vy = -700, 0
+    for _ in range(steps):
+        events = m.step(DT)
+        if count(events, protocol.EV_GOAL):
+            return
+    raise AssertionError("the ball never went in")
+
+
+def walking_right(m, i):
+    """Inputs of run(): player 1 walks right and kicks at every step."""
+    del i  # Unused.
+    m.set_input(0, False, True, 1, 1)
+
+
+def replayless_match():
+    """Playing match of an interface that shows no party nor replay."""
+    m = match.Match(1, seed=1, presentation=False)
+    m.phase = protocol.PHASE_PLAYING
+    m.phase_left = 0.0
+    m.powers.spawn_timer = helpers.NO_SPAWN
+    park_players(m)
+    return m
+
+
+class GoalHoldTest(unittest.TestCase):
+    """F10: the match is frozen while the party and the replay run."""
+
+    def test_the_match_does_not_move_during_the_replay(self):
+        m = parked_match()
+        score_a_goal(m)
+        before = m.snapshot(0)
+        spawn_timer = m.powers.spawn_timer
+        run(m, RULES.GOAL_REPLAY - 0.1, inputs=walking_right)
+        after = m.snapshot(0)
+        self.assertEqual(m.phase, protocol.PHASE_GOAL)
+        self.assertEqual(after["clock"], before["clock"])
+        self.assertEqual(after["players"], before["players"])
+        self.assertEqual(after["ball"], before["ball"])
+        self.assertEqual(after["goals"], before["goals"])
+        self.assertEqual(m.powers.spawn_timer, spawn_timer)
+        self.assertLess(after["phase_left"], before["phase_left"])
+
+    def test_the_kickoff_comes_when_the_hold_ends(self):
+        m = parked_match()
+        score_a_goal(m)
+        run(m, RULES.GOAL_HOLD - 0.1)
+        self.assertEqual(m.phase, protocol.PHASE_GOAL)
+        run(m, 0.2)
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+        self.assertEqual((m.ball.x, m.ball.y), tuple(map(float, BALL.SPAWN)))
+
+    def test_the_hold_is_the_party_plus_the_replay(self):
+        self.assertAlmostEqual(RULES.GOAL_HOLD,
+                               RULES.GOAL_CELEBRATION + RULES.GOAL_REPLAY)
+
+    def test_without_the_replay_only_the_party_is_held(self):
+        m = replayless_match()
+        self.assertAlmostEqual(m.goal_hold, RULES.GOAL_CELEBRATION)
+        score_a_goal(m)
+        run(m, RULES.GOAL_CELEBRATION + 0.1)
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+
+    def test_skipping_the_replay_goes_straight_to_the_kickoff(self):
+        m = parked_match()
+        score_a_goal(m)
+        run(m, 0.5)
+        ok, events = m.skip_goal()
+        self.assertTrue(ok)
+        self.assertEqual(events, [])
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+        self.assertEqual(m.phase_left, RULES.GOAL_COUNTDOWN)
+        self.assertEqual((m.ball.x, m.ball.y), tuple(map(float, BALL.SPAWN)))
+
+    def test_skipping_without_a_goal_on_screen_does_nothing(self):
+        m = helpers.playing_match()
+        self.assertEqual(m.skip_goal(), (False, []))
+        self.assertEqual(m.phase, protocol.PHASE_PLAYING)
+
+    def test_skipping_the_golden_goal_ends_the_match(self):
+        m = parked_match()
+        m.golden = True
+        score_a_goal(m)
+        ok, events = m.skip_goal()
+        self.assertTrue(ok)
+        self.assertEqual(m.phase, protocol.PHASE_FINISHED)
+        self.assertEqual(count(events, protocol.EV_MATCH_END), 1)
 
 
 if __name__ == "__main__":

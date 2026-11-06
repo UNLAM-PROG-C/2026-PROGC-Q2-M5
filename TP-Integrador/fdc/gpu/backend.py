@@ -25,6 +25,8 @@ MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
 POINT_FIELDS = 2                # x and y of one heat map point
+CROWD_CFG = 24                  # parameters of the crowd kernel
+CROWD_PAL = 48                  # colours of the crowd kernel (16 rgb triplets)
 
 
 def kernel_path():
@@ -212,21 +214,40 @@ class Gpu(primitives.Primitives):
         return self._splat(img, pos, col[:, :CHANNELS], col[:, CHANNELS], gain,
                            "particles")
 
+    def confetti(self, img, pos, col, gain):
+        """Confetti: pos (n,2), col (n,5) r,g,b, half width, half height."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        acc = self._buf("confetti_acc", shape, np.float32,
+                        np.zeros(shape, np.float32))
+        if len(pos) > 0:
+            self._confetti_points(img, pos, col, gain, acc, w, h)
+        return self._add(img, acc, 1.0)
+
+    def _confetti_points(self, img, pos, col, gain, acc, w, h):
+        """One thread per paper bit blends its rectangle over the image."""
+        table = self._buf("confetti_tab", col.shape, np.float32, col)
+        count = int(len(pos))
+        src = self._buf("confetti_src", img.shape, np.uint8, img)
+        self._fn("confetti")(
+            self._buf("confetti_pos", pos.shape, np.float32, pos), table,
+            np.int32(count), src, acc, np.int32(w), np.int32(h),
+            np.float32(gain),
+            grid=((count + BLOCK[0] - 1) // BLOCK[0], 1, 1), block=BLOCK1D)
+
     def lights(self, img, lights, gain):
         """Additive spotlights: x, y, radius, power, r, g, b."""
         h, w = img.shape[:2]
         if len(lights) == 0:
             return img.copy()
         shape = (h, w, CHANNELS)
-        acc = self._buf("light_acc", shape, np.float32,
-                        np.zeros(shape, np.float32))
+        src = self._buf("light_src", shape, np.uint8, img)
         table = self._buf("light_tab", lights.shape, np.float32, lights)
-        count = np.int32(len(lights))
-        self._fn("splat_lights")(table, count, acc, np.int32(w), np.int32(h),
-                                 np.float32(gain),
-                                 grid=((len(lights) + BLOCK[0] - 1)
-                                       // BLOCK[0], 1, 1), block=BLOCK1D)
-        return self._add(img, acc, 1.0)
+        out = self._buf("light_out", shape, np.uint8)
+        self._fn("k_light_pixels")(src, out, table, np.int32(len(lights)),
+                                   np.int32(w), np.int32(h), np.float32(gain),
+                                   grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, shape, np.uint8)
 
     def heat(self, img, phase, amp, period):
         """Heat waves: each pixel reads from a shifted place."""
@@ -272,7 +293,7 @@ class Gpu(primitives.Primitives):
                               grid=self._grid(w, h), block=BLOCK)
         return self._get(hist, (BINS,), np.int32)
 
-    def stretch(self, img, lo, hi):
+    def stretch(self, img, lo, hi, vignette=0.0):
         """Contrast stretch between two levels (from the histogram)."""
         h, w = img.shape[:2]
         shape = (h, w, CHANNELS)
@@ -280,6 +301,7 @@ class Gpu(primitives.Primitives):
         out = self._buf("str_out", shape, np.uint8)
         self._fn("stretch")(src, out, np.int32(w), np.int32(h),
                             np.float32(lo), np.float32(hi),
+                            np.float32(vignette),
                             grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
@@ -444,6 +466,33 @@ class Gpu(primitives.Primitives):
                                 block=BLOCK)
         return self._get(out, shape, np.uint8)
 
+    def ice(self, img, strength, tint, amount):
+        """Ice power: bright edges and blue tint, in two device passes.
+
+        The whole path stays on the board: the edges are normalised with the
+        maximum that `atomicMax` leaves in `ice_top`, so the image travels up
+        and down only once (before it was six round trips).
+        """
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("ice_src", shape, np.uint8, img)
+        edges = self._buf("ice_edges", (h, w), np.float32)
+        top = self._buf("ice_top", (1,), np.uint32, np.zeros(1, np.uint32))
+        out = self._buf("ice_out", shape, np.uint8)
+        self._fn("k_ice_edges")(src, edges, top, np.int32(w), np.int32(h),
+                                grid=self._grid(w, h), block=BLOCK)
+        self._ice_apply(src, edges, top, out, (w, h), strength, tint, amount)
+        return self._get(out, shape, np.uint8)
+
+    def _ice_apply(self, src, edges, top, out, size, strength, tint, amount):
+        """Second pass of the ice: the edges over the tinted image."""
+        w, h = size
+        red, green, blue = (np.float32(c) for c in tint)
+        self._fn("k_ice_apply")(src, edges, top, out, np.int32(w), np.int32(h),
+                                np.float32(strength), red, green, blue,
+                                np.float32(amount), grid=self._grid(w, h),
+                                block=BLOCK)
+
     # -------------------------------------------------- pods and night (F3/F4)
     def spotlights(self, img, lights, ambient, tint):
         """Light of every lamp (0..1) times the pixel and the warm colour."""
@@ -480,8 +529,11 @@ class Gpu(primitives.Primitives):
                                    block=BLOCK)
         return self._get(out, shape, np.uint8)
 
-    def ripple_ring(self, img, cx, cy, radius, width, amp):
-        """Expanding ring of the goal: warp plus bright edge."""
+    def ripple_ring(self, img, cx, cy, radius, width, amp, y_min=0.0):
+        """Expanding ring of the goal: warp plus bright edge.
+
+        Rows above `y_min` (the stands and the boards) come back untouched.
+        """
         h, w = img.shape[:2]
         shape = (h, w, CHANNELS)
         src = self._buf("ring_src", shape, np.uint8, img)
@@ -489,8 +541,8 @@ class Gpu(primitives.Primitives):
         self._fn("k_ripple")(src, out, np.int32(w), np.int32(h),
                              np.float32(cx), np.float32(cy),
                              np.float32(radius), np.float32(width),
-                             np.float32(amp), grid=self._grid(w, h),
-                             block=BLOCK)
+                             np.float32(amp), np.int32(int(y_min)),
+                             grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
     def trail_blend(self, cur, prev, decay):
@@ -503,6 +555,23 @@ class Gpu(primitives.Primitives):
         self._fn("k_trail_blend")(now, before, out, np.int32(w), np.int32(h),
                                   np.float32(decay), grid=self._grid(w, h),
                                   block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    # --------------------------------------- tribuna animada (F11, solo FULL)
+    def tribuna(self, img, t, side, boost, cfg, pal):
+        """Crowd of the stands: seats, people and flags (k_tribuna)."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("crowd_src", shape, np.uint8, img)
+        out = self._buf("crowd_out", shape, np.uint8)
+        table = self._buf("crowd_cfg", (CROWD_CFG,), np.float32,
+                          np.asarray(cfg, np.float32))
+        colours = self._buf("crowd_pal", (CROWD_PAL,), np.float32,
+                            np.asarray(pal, np.float32))
+        self._fn("k_tribuna")(src, out, np.int32(w), np.int32(h),
+                              np.float32(t), np.int32(side),
+                              np.float32(boost), table, colours,
+                              grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
     def luma_stats(self, img):

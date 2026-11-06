@@ -58,6 +58,20 @@ HEAD_LANDING_DEPTH = 1.0        # px: sinking allowed into a head
 RISING_MARGIN = 1.0             # px/s: rising faster than the one below
 # Largest side push per step when a size or goal change makes an overlap.
 MAX_PUSH_PER_STEP = 8.0
+# px: the ball must be this deep inside a player before it has no free place
+# at all (a real squeeze: then the player is the one that gives way).
+SQUEEZE_DEPTH = 0.5
+# px: the longest move accepted to take the ball out of a player. A longer one
+# means the ball is really squeezed (two players or a player and the world
+# around it): then it stays where it is and the player gives way.
+MAX_ESCAPE_MOVE = 58.0
+# px per step the player is pushed away from a squeezed ball (never faster
+# than a walk: the player does not snap over the ball).
+SQUEEZE_PUSH = 4.0
+# px: the escape positions sit this far beyond the surface (rounding margin).
+ESCAPE_MARGIN = 0.01
+# px: touching a player counts as free, so rounding does not keep the ball in.
+FIT_TOLERANCE = 0.01
 # How far from the centre of the head a player can stand on it.
 HEAD_STAND_FRACTION = 0.8
 SEPARATION_PASSES = 2           # passes to separate two players
@@ -600,9 +614,11 @@ def _reflect(ball, vn, nx, ny, e):
     ball.vy -= (1 + e) * vn * ny
 
 
-def _collide_ball_circle(ball, circle, player, e, boost):
-    """Returns None if there is no contact, or the impact speed (>= 0)."""
-    normal = _push_ball_out(ball, circle)
+def _bounce_off_circle(ball, circle, player, e, boost):
+    """Bounces the ball off a circle; returns None without contact, else the
+    impact speed (>= 0). It does not move the ball: the position is fixed
+    later, all the players at once (see `_separate_ball`)."""
+    normal = _contact_normal(ball, circle)
     if normal is None:
         return None
     nx, ny = normal
@@ -610,10 +626,121 @@ def _collide_ball_circle(ball, circle, player, e, boost):
     if vn >= 0:
         return 0.0
     _reflect(ball, vn, nx, ny, e)
+    _add_header(ball, player, (nx, ny), boost)
+    return -vn
+
+
+def _contact_normal(ball, circle):
+    """Normal of the ball against a circle, None when they do not touch."""
+    cx, cy, cr = circle
+    dx, dy = ball.x - cx, ball.y - cy
+    reach = ball.radius + cr
+    dist2 = dx * dx + dy * dy
+    if dist2 >= reach * reach:
+        return None
+    return _normal(dx, dy, math.sqrt(dist2), UP)
+
+
+def _add_header(ball, player, normal, boost):
+    """Extra speed of a header (only if the player was going into the ball)."""
+    nx, ny = normal
     if boost and (player.vx * nx + player.vy * ny) > HEADER_MIN_APPROACH:
         ball.vx += nx * boost
         ball.vy += ny * boost
-    return -vn
+
+
+def _ball_depth(ball, circle):
+    """px the ball is inside a circle (negative when they do not touch)."""
+    cx, cy, cr = circle
+    return ball.radius + cr - math.hypot(ball.x - cx, ball.y - cy)
+
+
+def _ball_fits(ball, players, x, y):
+    """True if a ball at (x, y) is inside the world and outside the players."""
+    radius = ball.radius
+    if (x - radius < 0 or x + radius > ARENA.WIDTH
+            or y - radius < ARENA.CEILING_Y
+            or y + radius > ARENA.FLOOR_Y):
+        return False
+    for p in players:
+        if p.ball_ignore > 0:
+            continue
+        for cx, cy, cr in p.circles():
+            if math.hypot(x - cx, y - cy) < radius + cr - FIT_TOLERANCE:
+                return False
+    return True
+
+
+def _escape_points(ball, circle):
+    """The axis positions that leave the ball out of that circle.
+
+    Only along the axes (a diagonal push would sink the ball into the floor
+    when it is at the feet of a player) and only on the side where the ball
+    already is: the ball is never moved through a player to the other side.
+    """
+    cx, cy, _ = circle
+    dx, dy, side_x, side_y = _reach_sides(ball, circle)
+    points = []
+    if dx >= 0:
+        points.append((cx + side_x, ball.y))
+    if dx <= 0:
+        points.append((cx - side_x, ball.y))
+    if dy >= 0:
+        points.append((ball.x, cy + side_y))
+    if dy <= 0:
+        points.append((ball.x, cy - side_y))
+    return points
+
+
+def _reach_sides(ball, circle):
+    """Offsets of the ball to the circle and how far it has to move."""
+    cx, cy, cr = circle
+    reach = ball.radius + cr + ESCAPE_MARGIN
+    dx, dy = ball.x - cx, ball.y - cy
+    return (dx, dy,
+            math.sqrt(max(0.0, reach * reach - dy * dy)),
+            math.sqrt(max(0.0, reach * reach - dx * dx)))
+
+
+def _shortest_escape(ball, players):
+    """Closest place where the ball is out of every player and of the world.
+
+    Returns (x, y, nx, ny) or None when the ball has no free place at all
+    (squeezed between a player and the world). All the players are checked,
+    so the push out of one can never leave the ball inside another one.
+    """
+    best = _closest_escape(ball, players)
+    if best is None:
+        return None
+    x, y = best
+    length = math.hypot(x - ball.x, y - ball.y)
+    nx, ny = _normal(x - ball.x, y - ball.y, length, UP)
+    return x, y, nx, ny
+
+
+def _closest_escape(ball, players):
+    """(x, y) of the shortest free escape inside MAX_ESCAPE_MOVE, or None."""
+    best = None
+    for p in players:
+        if p.ball_ignore > 0:
+            continue
+        for circle in p.circles():
+            if _ball_depth(ball, circle) <= 0.0:
+                continue
+            best = _better_escape(ball, players, circle, best)
+    return None if best is None else best[1:]
+
+
+def _better_escape(ball, players, circle, best):
+    """`best` or the shorter free escape out of that circle."""
+    for x, y in _escape_points(ball, circle):
+        move = math.hypot(x - ball.x, y - ball.y)
+        if move > MAX_ESCAPE_MOVE:
+            continue
+        if (best is None or move < best[0]) and _ball_fits(ball, players,
+                                                           x, y):
+            best = (move, x, y)
+    return best
 
 
 def _push_ball_out(ball, circle):
@@ -640,6 +767,7 @@ def step_ball(ball, players, goals, dt, contacts, touches):
     count = _substep_count(ball, dt)
     for _ in range(count):
         _ball_substep(ball, players, goals, dt / count, contacts, touches)
+    _free_the_ball(ball, players)
     if ball.on_floor:
         ball.vx *= math.exp(-BallSpec.FLOOR_FRICTION * dt)
     for goal in goals:
@@ -672,17 +800,17 @@ def _ball_substep(ball, players, goals, h, contacts, touches):
             _ball_on_player(ball, p, contacts)
     # The world has priority: the ball never stays inside a post.
     _collide_ball_world(ball, goals, touches)
-    _unsqueeze(ball, players)
+    _separate_ball(ball, players)
 
 
 def _ball_on_player(ball, p, contacts):
-    impact = _collide_ball_circle(ball, p.head(), p,
-                                  PlayerSpec.HEAD_RESTITUTION,
-                                  PlayerSpec.HEADER_BOOST)
+    impact = _bounce_off_circle(ball, p.head(), p,
+                                PlayerSpec.HEAD_RESTITUTION,
+                                PlayerSpec.HEADER_BOOST)
     if impact is not None:
         contacts.append((p.idx, "head", impact))
-    impact = _collide_ball_circle(ball, p.body(), p,
-                                  PlayerSpec.BODY_RESTITUTION, 0.0)
+    impact = _bounce_off_circle(ball, p.body(), p,
+                                PlayerSpec.BODY_RESTITUTION, 0.0)
     if impact is not None:
         contacts.append((p.idx, "body", impact))
 
@@ -697,19 +825,65 @@ def _roll_off_crossbar(ball, goal, dt):
         ball.vx += goal.toward_field * BallSpec.BAR_ROLL_ACCEL * dt
 
 
-def _unsqueeze(ball, players):
-    """If the ball got squeezed between a player and the world, the player
-    gives way."""
+def _separate_ball(ball, players):
+    """Puts the ball out of the players along the shortest free direction.
+
+    It is done once, with every player in the account, instead of pushing the
+    ball out of one and into the next one. When there is no free place at all
+    the ball stays where it is (wedged) and the speed that goes into the
+    players is absorbed: it never goes through a player nor under a pair of
+    boots, and it does not gain energy bouncing inside them.
+    """
+    escape = _shortest_escape(ball, players)
+    if escape is None:
+        _absorb_squeeze(ball, players)
+        return False
+    ball.x, ball.y, nx, ny = escape
+    vn = ball.vx * nx + ball.vy * ny
+    if vn < 0:
+        ball.vx -= vn * nx
+        ball.vy -= vn * ny
+    return True
+
+
+def _absorb_squeeze(ball, players):
+    """Takes away the speed of a wedged ball that goes into a player."""
     for p in players:
         if p.ball_ignore > 0:
             continue
-        for cx, cy, cr in p.circles():
-            dx, dy = cx - ball.x, cy - ball.y
-            reach = ball.radius + cr
-            dist2 = dx * dx + dy * dy
-            if dist2 < (reach - 0.5) ** 2:
-                push = sign(dx) or (1 if p.idx == 1 else -1)
-                p.x += push * min(reach - math.sqrt(dist2), MAX_PUSH_PER_STEP)
+        for circle in p.circles():
+            _absorb_circle(ball, p, circle)
+
+
+def _absorb_circle(ball, player, circle):
+    """Removes the speed of the ball that goes into that circle."""
+    cx, cy, cr = circle
+    dx, dy = ball.x - cx, ball.y - cy
+    reach = ball.radius + cr
+    dist = math.hypot(dx, dy)
+    if dist >= reach:
+        return
+    nx, ny = _normal(dx, dy, dist, UP)
+    vn = (ball.vx - player.vx) * nx + (ball.vy - player.vy) * ny
+    if vn < 0:
+        ball.vx -= vn * nx
+        ball.vy -= vn * ny
+
+
+def _free_the_ball(ball, players):
+    """A player gives way if the ball is left with no free place at all.
+
+    Once per step and a few px at most: the player never walks over the ball
+    (that was the ball going under the feet of one of two pressed players).
+    """
+    for p in players:
+        if p.ball_ignore > 0:
+            continue
+        for circle in p.circles():
+            depth = _ball_depth(ball, circle)
+            if depth > SQUEEZE_DEPTH:
+                push = sign(circle[0] - ball.x) or (1 if p.idx == 1 else -1)
+                p.x += push * min(depth, SQUEEZE_PUSH)
                 clamp_player_walls(p)
 
 

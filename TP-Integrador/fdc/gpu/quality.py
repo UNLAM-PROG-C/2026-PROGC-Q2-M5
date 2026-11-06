@@ -39,6 +39,25 @@ SKIPPED = {
     2: (HISTOGRAM, HEAT, TRAIL),
     3: (GLOW, HISTOGRAM, HEAT, TRAIL),
 }
+# --- F11: quality modes of the projector demo ------------------------------
+# Three explicit modes, chosen in the menu, with a key and with --calidad:
+#   full        everything at full resolution and no governor (it may
+#               stutter: that is the point on a notebook without NVIDIA);
+#   optimizado  only the cheap stage and no crowd, at full resolution (sharp);
+#   auto        the adaptive governor of F7 (the notebook case), not the
+#               default.
+FULL = "full"
+OPTIMIZED = "optimizado"
+MODES = (FULL, OPTIMIZED, AUTO)
+DEFAULT_MODE = FULL
+# Stages that the optimized mode never runs: the heavy post-processing.
+OPTIMIZED_SKIPS = (GLOW, LIGHTS, HEAT, TRAIL, HISTOGRAM, "crt", "var",
+                   "confetti")
+# What a mode draws. `stage` is the level name of LEVELS (None for auto:
+# the governor's level decides) and `scale` the index of QUALITY_SCALES.
+Mode = collections.namedtuple(
+    "Mode", "name stage scale governor crowd punch particles skips")
+
 
 
 def stages(level=None):
@@ -82,6 +101,44 @@ def scale(index):
 def skipped(index):
     """Stages this level leaves out."""
     return SKIPPED.get(index, ())
+
+
+# --- F11: quality modes ------------------------------------------------
+def mode_of(value):
+    """Quality mode of a value; 'full' if it is missing or unknown."""
+    return value if value in MODES else DEFAULT_MODE
+
+
+def name_of(mode):
+    """Readable name of a mode (the overlay and the menu): FULL, ..."""
+    return config.Gpu.MODE_NAMES[mode_of(mode)]
+
+
+def next_mode(mode):
+    """The mode that follows in the cycle: full -> optimizado -> auto."""
+    mode = mode_of(mode)
+    return MODES[(MODES.index(mode) + 1) % len(MODES)]
+
+
+def policy(mode=None, level=MIN_LEVEL):
+    """What the mode draws; `level` is the governor level (auto only)."""
+    mode = mode_of(mode)
+    gpu = config.Gpu
+    if mode == OPTIMIZED:
+        return _optimized(mode)
+    if mode == FULL:
+        return Mode(mode, gpu.MODE_STAGE[FULL], MIN_LEVEL, False, True,
+                    gpu.MODE_PUNCH[FULL], gpu.MODE_PARTICLES[FULL], ())
+    return Mode(mode, None, level, True, False, gpu.MODE_PUNCH[AUTO],
+                gpu.MODE_PARTICLES[AUTO], skipped(level))
+
+
+def _optimized(mode):
+    """The cheap mode: one stage, full resolution, no crowd, no governor."""
+    gpu = config.Gpu
+    return Mode(mode, gpu.MODE_STAGE[OPTIMIZED], gpu.OPTIMIZED_LEVEL,
+                False, False, gpu.MODE_PUNCH[OPTIMIZED],
+                gpu.MODE_PARTICLES[OPTIMIZED], OPTIMIZED_SKIPS)
 
 
 class QualityGovernor:

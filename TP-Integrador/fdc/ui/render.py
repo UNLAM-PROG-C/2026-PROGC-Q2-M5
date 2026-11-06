@@ -96,7 +96,7 @@ LAST_TOUCH_BALL_R = 10             # px: radius of the "last touch" ball
 LAST_TOUCH_BALL_AT = (16, -8)      # where that ball goes from the arrow (px)
 MINI_EFFECT_STEP = 30              # px between effect icons over the head
 MINI_EFFECT_RAISE = 40             # px above the arrow
-MINI_ICON = 28                     # px: icon of an active effect
+MINI_ICON = 32                     # px: icon of an active effect
 MINI_TIMER_GAP = 2                 # px between the icon and its timer
 MIN_DURATION = 0.001               # s: avoids dividing by zero in timers
 # Ice block of a frozen player.
@@ -125,6 +125,10 @@ PICKUP_BOB_HZ = 3.2                # rhythm of its floating (rad/s)
 PICKUP_BLINK_TIME = 1.5            # s: in its last seconds it blinks...
 PICKUP_BLINK_HZ = 8                # ...with this rhythm
 PICKUP_RING_GAP = 6                # px between the icon and its ring
+PICKUP_ICON_SCALE = 2.3            # px of icon per px of pickup radius
+PICKUP_PULSE_TIME = 0.8            # s of the bright pulse when it appears
+PICKUP_PULSE_FLOOR = 0.3           # soft breathing after that (0-1)
+PICKUP_PULSE_HZ = 4.0              # rad/s of that breathing
 PICKUP_LABEL_GAP = 14              # px between the object and its name
 LABEL_SCALE = 2                    # pixel font scale of the pitch labels
 # Bomb.
@@ -163,9 +167,9 @@ NAME_PAD = (14, 10)                # px each name sign grows (width, height)
 HUD_EFFECT = (210, 40)             # box of an active effect (w, h) in px
 HUD_EFFECTS_TOP = 46               # first effect of a player, from board top
 HUD_EFFECT_STEP = 46               # px between effects
-HUD_ICON = 28                      # px: icon of the effect
-HUD_ICON_INSET = 2                 # px from the box corner
-HUD_TEXT_X = 36                    # who it affects, from the left edge (px)
+HUD_ICON = 32                      # px: icon of the effect
+HUD_ICON_INSET = 4                 # px from the box corner
+HUD_TEXT_X = 40                    # who it affects, from the left edge (px)
 HUD_TEXT_Y = 4                     # texts, from the top of the box (px)
 HUD_TIME_MARGIN = 4                # seconds left, from the right edge (px)
 HUD_TIMER_BOTTOM = 10              # timer, from the bottom of the box (px)
@@ -358,12 +362,20 @@ def _draw_bomb_body(surf, x, y, on):
               _around(x, y, BOMB_SPARK))
 
 
-def _draw_pickup_icon(surf, power_id, x, y, col):
+def _draw_pickup_icon(surf, power_id, x, y, col, pulse=0.0):
     r = config.PowerRules.PICKUP_RADIUS
     pygame.draw.circle(surf, col, (x, y), r + PICKUP_RING_GAP,
                        EFFECT_RING_LINE)
-    icon = icons.power_icon(power_id, r * 2)
+    icon = icons.power_icon(power_id, int(r * PICKUP_ICON_SCALE), pulse)
     surf.blit(icon, icon.get_rect(center=(x, y)))
+
+
+def _pickup_pulse(pk, t):
+    """Brightness of the pickup icon: a pulse at birth, then a soft breath."""
+    age = pk["ttl_max"] - pk["ttl"]
+    born = max(0.0, 1.0 - age / PICKUP_PULSE_TIME)
+    soft = PICKUP_PULSE_FLOOR * (0.5 + 0.5 * math.sin(t * PICKUP_PULSE_HZ))
+    return max(born, soft)
 
 
 def _draw_score(surf, led_area, i, score):
@@ -456,6 +468,7 @@ class MatchRenderer:
     # ------------------------------------------------------------ world
     def draw_world(self, surf, st, offset=(0, 0)):
         surf.blit(self.background, offset)
+        self.app.postfx.draw_crowd(surf)
         goals = st["goals"]
         for side in (0, 1):
             stadium.draw_goal_back(surf, side, goals[side])
@@ -584,14 +597,18 @@ class MatchRenderer:
         bob = PX * round(math.sin(self.t * PICKUP_BOB_HZ))
         x, y = int(pk["x"]), int(pk["y"] + bob)
         r = config.PowerRules.PICKUP_RADIUS
-        blink = (pk["ttl"] < PICKUP_BLINK_TIME
-                 and int(self.t * PICKUP_BLINK_HZ) % 2 == 0)
-        if not blink:
-            _draw_pickup_icon(surf, pk["power"], x, y, col)
+        if not self._pickup_blinks(pk):
+            _draw_pickup_icon(surf, pk["power"], x, y, col,
+                              _pickup_pulse(pk, self.t))
         timer_bar(surf, x - r, y + r + PICKUP_RING_GAP, 2 * r,
                   pk["ttl"] / pk["ttl_max"], col)
         lab = _label(pdef.label)
         surf.blit(lab, lab.get_rect(midtop=(x, y + r + PICKUP_LABEL_GAP)))
+
+    def _pickup_blinks(self, pk):
+        """True on the frames the pickup hides (it is about to expire)."""
+        return (pk["ttl"] < PICKUP_BLINK_TIME
+                and int(self.t * PICKUP_BLINK_HZ) % 2 == 0)
 
     def _bomb(self, surf, b):
         x, y = int(b["x"]), int(b["y"])

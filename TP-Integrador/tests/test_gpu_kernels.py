@@ -24,6 +24,7 @@ WARP_MEAN = 8.0         # mean difference of a warp (it moves pixels)
 RING_MEAN = 15.0        # the shock ring also adds brightness
 SOFT = 4                # px: the warps are tested on a soft image
 GAIN = 1.0              # light weight
+STAND_ROW = 20          # y of the test frame where the stands end
 
 HAVE_GPU = env.setup() and backend.available()
 REASON = "no CUDA or no toolchain here (see INSTALACION.md)"
@@ -93,11 +94,31 @@ class KernelTest(unittest.TestCase):
         self.assertClose(self.gpu.particles(self.img, pos, col, GAIN),
                          self.cpu.particles(self.img, pos, col, GAIN))
 
+    def test_confetti(self):
+        """F10: each thread paints the rectangle of one paper bit."""
+        pos = np.array([[10.0, 12.0], [60.0, 40.0], [59.0, 41.0]], np.float32)
+        col = np.array([[1.0, 1.0, 1.0, 2.0, 2.0],
+                        [0.2, 0.9, 0.4, 3.0, 1.0],
+                        [1.0, 0.3, 0.2, 3.0, 1.0]], np.float32)
+        self.assertClose(self.gpu.confetti(self.img, pos, col, GAIN),
+                         self.cpu.confetti(self.img, pos, col, GAIN))
+        empty = np.zeros((0, 2), np.float32)
+        self.assertClose(self.gpu.confetti(self.img, empty, col[:0], GAIN),
+                         self.cpu.confetti(self.img, empty, col[:0], GAIN))
+
     def test_lights(self):
         lights = np.array([[20.0, 20.0, 30.0, 0.8, 1.0, 0.9, 0.5]],
                           np.float32)
         self.assertClose(self.gpu.lights(self.img, lights, GAIN),
                          self.cpu.lights(self.img, lights, GAIN))
+
+    def test_ice(self):
+        """F11: the fused ice pass looks like the chain of the numpy one."""
+        args = (0.8, (0.55, 0.85, 1.0), 0.45)
+        self.assertClose(self.gpu.ice(self.soft, *args),
+                         self.cpu.ice(self.soft, *args))
+        self.assertClose(self.gpu.ice(self.img, *args),
+                         self.cpu.ice(self.img, *args))
 
     def test_warps(self):
         self.assertMean(self.gpu.heat(self.soft, 1.0, 3.0, 20.0),
@@ -228,6 +249,14 @@ class PowerAndNightTest(unittest.TestCase):
         args = (40.0, 30.0, 12.0, 8.0, 5.0)
         self.assertMean(self.gpu.ripple_ring(self.soft, *args),
                         self.cpu.ripple_ring(self.soft, *args), RING_MEAN)
+
+    def test_shock_ring_keeps_the_stands(self):
+        """Above y_min (the stands and the boards) the pixel is copied."""
+        args = (40.0, 30.0, 12.0, 8.0, 5.0, STAND_ROW)
+        for out in (self.gpu.ripple_ring(self.soft, *args),
+                    self.cpu.ripple_ring(self.soft, *args)):
+            self.assertTrue(np.array_equal(out[:STAND_ROW],
+                                           self.soft[:STAND_ROW]))
 
     def test_trail_blend(self):
         prev = self.img[::-1].copy()

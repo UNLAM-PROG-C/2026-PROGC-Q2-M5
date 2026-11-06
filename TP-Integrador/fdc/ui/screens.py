@@ -399,6 +399,7 @@ class MenuScreen(Screen):
             ("Jugar", lambda: app.switch(PlayMenuScreen(app))),
             ("Controles", lambda: app.switch(ControlsScreen(app))),
             ("Poderes", lambda: app.switch(LegendScreen(app))),
+            ("Opciones", lambda: app.switch(OptionsScreen(app))),
         ]
         if not app.web:            # a web page does not close itself
             items.append(("Salir", app.quit))
@@ -567,6 +568,40 @@ class MultiplayerMenuScreen(SubMenuScreen):
         self.app.switch(online_screens.OnlineHomeScreen(self.app))
 
 
+class OptionsScreen(SubMenuScreen):
+    """Video options: the quality mode of the effects (F11).
+
+    FULL draws everything (the crowd, the strong powers) and may stutter on
+    a notebook without NVIDIA; OPTIMIZADO is the smooth version; AUTO leaves
+    the resolution to the governor. The first button cycles the mode and its
+    label shows the one in use, so the state is always on screen.
+    """
+    TITLE = "OPCIONES"
+    SUBTITLE = ("FULL: todos los efectos (pesado).  OPTIMIZADO: liviano.  "
+                "AUTO: baja la calidad sola en CPU.")
+
+    def __init__(self, app):
+        super().__init__(app, [("", self.cycle), ("Volver", self.back)])
+        self.refresh()
+
+    def refresh(self):
+        """The first button always names the mode in use."""
+        self.menu.items[0] = (f"CALIDAD: {self.mode_name()}", self.cycle)
+
+    def mode_name(self):
+        """The name of the mode in use (FULL, OPTIMIZADO, AUTO)."""
+        return self.app.postfx.quality_mode_name()
+
+    def cycle(self):
+        """Next mode of the chain (F10 does the same inside a match)."""
+        self.app.postfx.cycle_quality_mode()
+        self.refresh()
+
+    def update(self, dt):
+        super().update(dt)
+        self.refresh()
+
+
 class InfoScreen(Screen):
     """Screen that only shows information: Esc, Enter or the back button
     return to the home screen."""
@@ -691,10 +726,10 @@ class LegendScreen(InfoScreen):
     CARD_Y0 = 134                      # y of the first card (px)
     CARD_ROW_STEP = 60                 # px between cards
     CATEGORY_BAR_W = 6                 # band with the category colour (px)
-    ICON_SIZE = 40                     # px: icon of the power
+    ICON_SIZE = 48                     # px: icon of the power
     ICON_X = 12                        # icon, from the left edge of the card
     ICON_Y = 3                         # icon, from the top edge
-    TEXT_X = 62                        # name and description, from the left
+    TEXT_X = 66                        # name and description, from the left
     NAME_Y = 6                         # name, from the top edge
     DESCRIPTION_Y = 26                 # description, from the top edge
     DURATION_MARGIN = 10               # duration, from the right edge

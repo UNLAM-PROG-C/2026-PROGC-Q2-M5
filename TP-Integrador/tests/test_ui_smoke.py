@@ -23,7 +23,11 @@ BOOT_WAIT = 20          # s until the menu
 PLAY_WAIT = 8           # s until the match is in play
 STEP_WAIT = 5           # s for the other conditions
 PAUSE_WAIT = 3          # s for a pause to be confirmed
-RESULT_WAIT = 25        # s until the end of a short match
+SHORT_MATCH = 8         # s of the short match of the full flow
+MAX_GOALS = 4           # goals that can fit in a match that short
+# s until the result: the play, the last kickoff and the goals, each with the
+# frozen goal (the party and the replay).
+RESULT_WAIT = SHORT_MATCH + 10 + MAX_GOALS * config.MatchRules.GOAL_HOLD
 TOURNAMENT_END = 60     # s until the end of a golden goal match
 MIN_MOVE = 40           # px a held key must move a player
 TWO_KEYS_MOVE = 60      # px after holding both key sets
@@ -64,7 +68,7 @@ class UISmokeTest(unittest.TestCase):
         self.d.until(lambda: ms.pause_state == "paused", PAUSE_WAIT, what)
 
     def test_full_flow(self):
-        self.start(test_mode=True, seed=5, duration=8)
+        self.start(test_mode=True, seed=5, duration=SHORT_MATCH)
         self.check_menus()
         ms = self.check_same_characters()
         self.check_walk_and_jump(ms)

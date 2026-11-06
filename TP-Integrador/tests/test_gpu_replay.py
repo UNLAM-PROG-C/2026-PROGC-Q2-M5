@@ -180,5 +180,37 @@ class VarPlayerTest(unittest.TestCase):
         self.assertEqual(self.player.kind, replay.VAR_KIND)
 
 
+class GoalClipTest(unittest.TestCase):
+    """F10: the clip is short, it ends at the goal and the match waits."""
+
+    SAVED = 200              # states fed to the history
+    GOAL_BEFORE_END = 1.5    # s between the goal and the newest state
+
+    def test_the_clip_lasts_three_seconds(self):
+        self.assertAlmostEqual(G.REPLAY_CLIP, 3.0)
+        self.assertAlmostEqual(G.REPLAY_CLIP,
+                               G.REPLAY_DURATION + G.REPLAY_AFTER_GOAL)
+
+    def test_the_clip_is_the_last_seconds_before_the_goal(self):
+        history = replay.StateHistory(seconds=G.REPLAY_SECONDS,
+                                      step=G.REPLAY_STEP)
+        for index in range(self.SAVED):
+            history.feed(state(), START + index * G.REPLAY_STEP)
+        goal = START + (self.SAVED - 1) * G.REPLAY_STEP - self.GOAL_BEFORE_END
+        frames = history.window(goal)
+        span = frames[-1][0] - frames[0][0]
+        self.assertAlmostEqual(span, G.REPLAY_CLIP, delta=G.REPLAY_STEP)
+        self.assertAlmostEqual(frames[-1][0], goal + G.REPLAY_AFTER_GOAL)
+        self.assertGreaterEqual(frames[0][0],
+                                goal - G.REPLAY_DURATION - G.REPLAY_STEP)
+
+    def test_the_frozen_goal_covers_the_party_and_the_clip(self):
+        rules = config.MatchRules
+        self.assertGreaterEqual(rules.GOAL_HOLD,
+                                G.GOAL_CELEBRATION + G.REPLAY_CLIP)
+        self.assertGreaterEqual(rules.GOAL_REPLAY,
+                                G.VAR_DURATION + G.VAR_CONFIRM)
+
+
 if __name__ == "__main__":
     unittest.main()
