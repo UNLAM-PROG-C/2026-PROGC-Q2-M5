@@ -33,6 +33,7 @@ COMMAND_NAMES = {
     protocol.CMD_START: "iniciar", protocol.CMD_PAUSE: "pausar",
     protocol.CMD_RESUME: "continuar", protocol.CMD_RESTART: "reiniciar",
     protocol.CMD_END: "terminar", protocol.CMD_SHUTDOWN: "cerrar",
+    protocol.CMD_SKIP_GOAL: "saltear el gol",
     protocol.CMD_DEBUG_POWER: "poder de prueba",
     protocol.CMD_DEBUG_CRASH: "fallo de prueba",
 }

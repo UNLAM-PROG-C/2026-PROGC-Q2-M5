@@ -28,6 +28,8 @@ PLAY_WAIT = 8               # s until the match is in play
 STEP_WAIT = 5               # s for the other conditions
 MIN_MOVE = 40               # px a held key must move a player in 0.5 s
 HOLD = 0.5                  # s a key is held
+GOAL_TRIES = 40             # polls until the goal of the test counts
+GOAL_STEP = 0.05            # s of each of those polls
 
 
 class FakeClock:
@@ -127,6 +129,53 @@ class InlineLinkTest(unittest.TestCase):
                     "players", "ball", "goals", "effects", "dropped_states"):
             self.assertIn(key, st)
         self.assertEqual(config.PHYSICS_DT, 1 / 120)
+
+    # ------------------------------------------------- frozen goal (F10)
+    def score_goal(self):
+        """Puts the ball into the left goal and polls until it counts."""
+        m = self.link.core.match       # pylint: disable=protected-access
+        goal = m.goals[0]
+        m.ball.x, m.ball.y = goal.mouth_x + 60, config.Arena.FLOOR_Y - 60
+        m.ball.vx, m.ball.vy = -700, 0
+        for _ in range(GOAL_TRIES):
+            msgs, state = self.poll(GOAL_STEP)
+            if state and state["phase"] == protocol.PHASE_GOAL:
+                return msgs, state
+        raise AssertionError("the ball never went in")
+
+    def test_the_goal_is_frozen_for_the_party_and_the_replay(self):
+        self.start_match()
+        self.assertAlmostEqual(self.link.core.match.goal_hold,
+                               config.MatchRules.GOAL_HOLD)
+        _, st = self.score_goal()
+        frozen = (st["players"], st["ball"], st["clock"], st["score"])
+        _, later = self.poll(config.MatchRules.GOAL_REPLAY - 0.2)
+        self.assertEqual(later["phase"], protocol.PHASE_GOAL)
+        self.assertEqual((later["players"], later["ball"], later["clock"],
+                          later["score"]), frozen)
+        _, kickoff = self.poll(config.MatchRules.GOAL_REPLAY + 0.3)
+        self.assertEqual(kickoff["phase"], protocol.PHASE_COUNTDOWN)
+
+    def test_skipping_the_replay_comes_back_from_the_centre(self):
+        self.start_match()
+        self.score_goal()
+        cid = self.link.send_command(protocol.CMD_SKIP_GOAL)
+        msgs, st = self.poll()
+        ack = [m for m in msgs if m["type"] == protocol.EV_ACK
+               and m.get("cid") == cid]
+        self.assertTrue(ack and ack[0]["ok"])
+        self.assertEqual(st["phase"], protocol.PHASE_COUNTDOWN)
+        self.assertEqual((st["ball"]["x"], st["ball"]["y"]),
+                         tuple(map(float, config.BallSpec.SPAWN)))
+
+    def test_without_the_effects_the_goal_is_held_only_for_the_party(self):
+        self.link.poll()
+        self.link.send_command(protocol.CMD_START, match=9,
+                               characters=["messi", "pele"],
+                               presentation=False)
+        self.poll()
+        self.assertAlmostEqual(self.link.core.match.goal_hold,
+                               config.MatchRules.GOAL_CELEBRATION)
 
 
 class WebAppTest(unittest.TestCase):

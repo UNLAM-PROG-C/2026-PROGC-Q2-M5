@@ -18,6 +18,7 @@ except ImportError:  # the local game does not need it: skipped without it
 
 import helpers
 import online_helpers
+from fdc import config
 from fdc import protocol
 from fdc.online import interp
 from fdc.online import lobby
@@ -28,6 +29,7 @@ from fdc.sim import match
 
 Client = online_helpers.Client
 ServerThread = online_helpers.ServerThread
+rules = config.MatchRules
 start_match = online_helpers.start_match
 PAUSE_MAX = 30.0        # s of a requested pause in these tests
 GRACE = 30              # s to come back after a disconnection
@@ -214,7 +216,7 @@ class PauseAfterGoalTest(unittest.TestCase):
         events = helpers.run(m, 0.2)
         self.assertEqual(helpers.count(events, protocol.EV_GOAL), 1)
         self.assertFalse(m.paused)                   # goal celebration
-        events = helpers.run(m, 3.0)
+        events = helpers.run(m, rules.GOAL_HOLD + 0.1)
         self.check_paused_at_kickoff(m, events)
 
     def check_paused_at_kickoff(self, m, events):

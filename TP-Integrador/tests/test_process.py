@@ -114,6 +114,14 @@ class ProcessTest(unittest.TestCase):
         self.assertEqual(accepted[0]["effects"], [])
         self.assertEqual(self.link.pending, {})
 
+    def test_skip_goal_without_a_goal_is_refused(self):
+        """The interface may say the replay is over with no goal on screen:
+        the simulation refuses and the match stays in play."""
+        self.start_match(1)
+        msgs = self.command(protocol.CMD_SKIP_GOAL)
+        ack = acks(msgs, protocol.CMD_SKIP_GOAL)[0]
+        self.assertFalse(ack["ok"])
+
     def test_old_match_events_are_filtered(self):
         self.start_match(1)
         pump(self.link, 3.3)

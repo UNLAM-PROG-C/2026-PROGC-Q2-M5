@@ -64,7 +64,7 @@ class GoalTest(unittest.TestCase):
         m.ball.x = ARENA.WIDTH - ARENA.GOAL_DEPTH - 50
         m.ball.y = ARENA.FLOOR_Y - 60
         m.ball.vx = 800
-        run(m, RULES.GOAL_CELEBRATION + 0.2)
+        run(m, RULES.GOAL_HOLD + 0.2)
         self.assertEqual(m.score, [1, 0])
         self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
         self.check_clean_kickoff(m)
@@ -355,7 +355,7 @@ class GoldenGoalTest(unittest.TestCase):
         m.ball.vx, m.ball.vy = -700, 0
         ev = run(m, 1.0)
         self.assertEqual(count(ev, protocol.EV_GOAL), 1)
-        ev = run(m, RULES.GOAL_CELEBRATION + 0.2)
+        ev = run(m, RULES.GOAL_HOLD + 0.2)
         end = [e for e in ev if e[0] == protocol.EV_MATCH_END]
         self.assertEqual(len(end), 1)
         # Goal in the goal of P1 -> P2 wins.
@@ -560,6 +560,98 @@ class ChargeTest(unittest.TestCase):
             self.assertLess(sink(m.ball, m.players[0]), MAX_SINK)
         self.assertGreater(abs(m.ball.x - m.players[0].x),
                            PLAYER.BODY_RADIUS + BALL.RADIUS)
+
+
+def score_a_goal(m, steps=90):
+    """Puts the ball into the left goal and steps until it counts."""
+    goal = m.goals[0]
+    m.ball.x, m.ball.y = goal.mouth_x + 60, ARENA.FLOOR_Y - 60
+    m.ball.vx, m.ball.vy = -700, 0
+    for _ in range(steps):
+        events = m.step(DT)
+        if count(events, protocol.EV_GOAL):
+            return
+    raise AssertionError("the ball never went in")
+
+
+def walking_right(m, i):
+    """Inputs of run(): player 1 walks right and kicks at every step."""
+    del i  # Unused.
+    m.set_input(0, False, True, 1, 1)
+
+
+def replayless_match():
+    """Playing match of an interface that shows no party nor replay."""
+    m = match.Match(1, seed=1, presentation=False)
+    m.phase = protocol.PHASE_PLAYING
+    m.phase_left = 0.0
+    m.powers.spawn_timer = helpers.NO_SPAWN
+    park_players(m)
+    return m
+
+
+class GoalHoldTest(unittest.TestCase):
+    """F10: the match is frozen while the party and the replay run."""
+
+    def test_the_match_does_not_move_during_the_replay(self):
+        m = parked_match()
+        score_a_goal(m)
+        before = m.snapshot(0)
+        spawn_timer = m.powers.spawn_timer
+        run(m, RULES.GOAL_REPLAY - 0.1, inputs=walking_right)
+        after = m.snapshot(0)
+        self.assertEqual(m.phase, protocol.PHASE_GOAL)
+        self.assertEqual(after["clock"], before["clock"])
+        self.assertEqual(after["players"], before["players"])
+        self.assertEqual(after["ball"], before["ball"])
+        self.assertEqual(after["goals"], before["goals"])
+        self.assertEqual(m.powers.spawn_timer, spawn_timer)
+        self.assertLess(after["phase_left"], before["phase_left"])
+
+    def test_the_kickoff_comes_when_the_hold_ends(self):
+        m = parked_match()
+        score_a_goal(m)
+        run(m, RULES.GOAL_HOLD - 0.1)
+        self.assertEqual(m.phase, protocol.PHASE_GOAL)
+        run(m, 0.2)
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+        self.assertEqual((m.ball.x, m.ball.y), tuple(map(float, BALL.SPAWN)))
+
+    def test_the_hold_is_the_party_plus_the_replay(self):
+        self.assertAlmostEqual(RULES.GOAL_HOLD,
+                               RULES.GOAL_CELEBRATION + RULES.GOAL_REPLAY)
+
+    def test_without_the_replay_only_the_party_is_held(self):
+        m = replayless_match()
+        self.assertAlmostEqual(m.goal_hold, RULES.GOAL_CELEBRATION)
+        score_a_goal(m)
+        run(m, RULES.GOAL_CELEBRATION + 0.1)
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+
+    def test_skipping_the_replay_goes_straight_to_the_kickoff(self):
+        m = parked_match()
+        score_a_goal(m)
+        run(m, 0.5)
+        ok, events = m.skip_goal()
+        self.assertTrue(ok)
+        self.assertEqual(events, [])
+        self.assertEqual(m.phase, protocol.PHASE_COUNTDOWN)
+        self.assertEqual(m.phase_left, RULES.GOAL_COUNTDOWN)
+        self.assertEqual((m.ball.x, m.ball.y), tuple(map(float, BALL.SPAWN)))
+
+    def test_skipping_without_a_goal_on_screen_does_nothing(self):
+        m = helpers.playing_match()
+        self.assertEqual(m.skip_goal(), (False, []))
+        self.assertEqual(m.phase, protocol.PHASE_PLAYING)
+
+    def test_skipping_the_golden_goal_ends_the_match(self):
+        m = parked_match()
+        m.golden = True
+        score_a_goal(m)
+        ok, events = m.skip_goal()
+        self.assertTrue(ok)
+        self.assertEqual(m.phase, protocol.PHASE_FINISHED)
+        self.assertEqual(count(events, protocol.EV_MATCH_END), 1)
 
 
 if __name__ == "__main__":

@@ -544,11 +544,17 @@ class MatchScreen(screens.Screen):
         self.waiting = "start" if cmd == protocol.CMD_START else "restart"
 
     def _start_payload(self):
-        payload = {"match": self.match_id, "characters": self.chars}
+        payload = {"match": self.match_id, "characters": self.chars,
+                   "presentation": self.presentation()}
         payload.update(self.extra_payload())
         if self.app.options.seed is not None:
             payload["seed"] = self.app.options.seed
         return payload
+
+    def presentation(self):
+        """Does this screen show the party and the replay of a goal? The
+        simulation keeps the goal frozen for them."""
+        return bool(self.app.postfx is not None and self.app.postfx.enabled)
 
     def _send(self, cmd, **payload):
         cid = self.app.link.send_command(cmd, **payload)
@@ -637,8 +643,14 @@ class MatchScreen(screens.Screen):
         """S: jumps the party of the goal and its replay (True if it did)."""
         if self.app.postfx is None or not self.app.postfx.skip():
             return False
+        self.skip_goal()
         self.app.audio.play("confirm")
         return True
+
+    def skip_goal(self):
+        """The replay is over here too: the match comes back from the
+        centre (the simulation keeps the goal frozen until it knows)."""
+        self._send(protocol.CMD_SKIP_GOAL)
 
     def _test_key(self, key):
         """Test mode: F5/F6 choose a power; F7-F9 give it; F12 fails."""

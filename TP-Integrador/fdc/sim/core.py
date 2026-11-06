@@ -46,6 +46,7 @@ class SimulationCore:
             protocol.CMD_START: self._start, protocol.CMD_RESTART: self._start,
             protocol.CMD_PAUSE: self._pause, protocol.CMD_RESUME: self._resume,
             protocol.CMD_END: self._end,
+            protocol.CMD_SKIP_GOAL: self._skip_goal,
             protocol.CMD_DEBUG_POWER: self._debug_power,
             protocol.CMD_DEBUG_CRASH: self._debug_crash,
             protocol.CMD_SHUTDOWN: self._shutdown,
@@ -117,7 +118,8 @@ class SimulationCore:
         self.match = match.Match(
             cmd["match"], seed=cmd.get("seed", self.seed), characters=chars,
             duration=self.duration,
-            golden_goal=bool(cmd.get("golden_goal", False)))
+            golden_goal=bool(cmd.get("golden_goal", False)),
+            presentation=bool(cmd.get("presentation", True)))
         self.last_input_time = time.monotonic()
         log.info("%s match #%s (%s vs %s, seed %s)", cmd.get("type"),
                  self.match.id, chars[0], chars[1], self.match.seed)
@@ -147,6 +149,16 @@ class SimulationCore:
     def _end(self, cmd):
         self.match = None
         self._ack(cmd, True)
+
+    def _skip_goal(self, cmd):
+        """The interface is done with the party and the replay of the goal:
+        the match comes back from the centre right away."""
+        ok, events = (self.match.skip_goal() if self.match is not None
+                      else (False, []))
+        self._ack(cmd, ok, "" if ok else "no hay gol en pantalla")
+        if ok:
+            self.flush_match_events(events)
+            self.publish_state()
 
     def _debug_power(self, cmd):
         if not self.test_mode or self.match is None:
