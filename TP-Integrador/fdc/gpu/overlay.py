@@ -66,6 +66,17 @@ def _mode_name(info):
     return "SIN EFECTOS"
 
 
+def _numpy_version(info):
+    """The numpy version: from the info, or from the installed module."""
+    if info.get("numpy"):
+        return info["numpy"]
+    try:
+        import numpy  # pylint: disable=import-outside-toplevel
+        return numpy.__version__
+    except ImportError:
+        return "no instalado"
+
+
 def _device_line(info):
     """Line 2: the device, its launch geometry and the CPU quality."""
     if info.get("mode") == "gpu":
@@ -76,7 +87,7 @@ def _device_line(info):
     if info.get("reason"):
         return f"GPU no disponible: {info['reason']}"
     quality = info.get("quality_level") or info.get("quality", "Q0")
-    return (f"CPU: {info.get('device', 'cpu')} · numpy {info.get('numpy', '?')}"
+    return (f"CPU: {info.get('device', 'cpu')} · numpy {_numpy_version(info)}"
             f" · calidad {quality}")
 
 

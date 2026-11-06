@@ -109,7 +109,10 @@ def main(argv=None):
 
 def _apply_gpu_options(options):
     """--backend, --block and --render: before the effects start."""
-    from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
+    # pylint: disable-next=import-outside-toplevel
+    from fdc.gpu import backend, env
+    if not (options.backend == "cpu" or options.no_gpu):
+        env.setup()        # nvcc and cl.exe in the PATH (jugar.bat has no activator)
     if options.backend == "cpu":
         options.force_cpu = True
     if options.block:
