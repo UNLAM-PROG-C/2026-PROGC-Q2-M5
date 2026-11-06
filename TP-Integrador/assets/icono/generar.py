@@ -58,7 +58,7 @@ ICONSET = (("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
            ("icon_128x128.png", 128), ("icon_128x128@2x.png", 256),
            ("icon_256x256.png", 256), ("icon_256x256@2x.png", 512),
            ("icon_512x512.png", 512), ("icon_512x512@2x.png", 1024))
-WINDOW_ICON = 256           # assets/icono/logo.png, used by pygame
+WINDOW_ICON = 32            # assets/icono/logo.png, used by pygame
 LANDING_ICON = 128          # landing/logo.png, shown at 30 CSS px
 CHOSEN = "a"                # the proposal that ships (see the sheet)
 

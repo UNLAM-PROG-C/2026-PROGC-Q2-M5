@@ -79,7 +79,7 @@ class PngTest(unittest.TestCase):
         self.assertEqual(png_size_of(os.path.join(ICONO, "logo-1024.png")),
                          (1024, 1024))
         self.assertEqual(png_size_of(os.path.join(ICONO, "logo.png")),
-                         (256, 256))
+                         (32, 32))
 
     def test_iconset_has_the_ten_files_of_macos(self):
         for name, size in ICONSET_FILES.items():
