@@ -20,6 +20,7 @@ from fdc.gpu import particles
 from fdc.gpu import postfx
 from fdc.gpu import quality
 from fdc.gpu import replay
+from fdc.ui import match_screens
 
 W, H = 64, 48           # size of the test surface
 FRAMES = 3              # frames of the chain in each test
@@ -355,6 +356,39 @@ class ReplayChainTest(unittest.TestCase):
         self.assertEqual(float(self.fx.heat.grids.sum()), 0.0)
         self.assertEqual(self.fx.heat.recorded, 0)
         self.assertEqual(self.fx.history.saved, [])
+
+
+class ScreenHelpersTest(unittest.TestCase):
+    """Keys, zoom and hint of the screens (F5 and F6), without the app."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+
+    def test_heat_keys(self):
+        right = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT)
+        left = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT)
+        up = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_UP)
+        self.assertEqual(match_screens.heat_step(right), 1)
+        self.assertEqual(match_screens.heat_step(left), -1)
+        self.assertEqual(match_screens.heat_step(up), 0)
+
+    def test_heat_cycle_goes_round(self):
+        self.assertEqual(match_screens.heat_cycle(None, 1), 0)
+        self.assertEqual(match_screens.heat_cycle(2, 1), None)
+        self.assertEqual(match_screens.heat_cycle(None, -1), 2)
+
+    def test_heat_hint_needs_no_heat(self):
+        surf = pygame.Surface((W, H))
+        match_screens.heat_hint(surf, 0)
+        match_screens.heat_hint(surf, None)
+        self.assertEqual(surf.get_size(), (W, H))
+
+    def test_zoom_keeps_the_size(self):
+        surf = pygame.Surface((W, H))
+        surf.fill((10, 20, 30))
+        match_screens.zoom_around(surf, (0.0, 0.0))
+        self.assertEqual(surf.get_size(), (W, H))
 
 
 if __name__ == "__main__":
