@@ -75,6 +75,9 @@ CROWD_FLAG_WHITE_ROW = 12    # white stripe
 CROWD_FLAG_A_ROW = 13   # flag of the left team
 CROWD_FLAG_B_ROW = 14   # flag of the right team
 CROWD_OUTLINE_ROW = 15  # dark rim of the heads
+CACHE_SIZES = 4         # sizes of the band whose steps are kept
+_STEP_CACHE = {}        # (h, w) -> (colours (h, 1, 3), shade (h, 1, 1))
+_VIGNETTE_CACHE = {}    # (h, w, amount) -> factor of every pixel
 
 
 def _rgb(img):
@@ -235,10 +238,14 @@ class Cpu(primitives.Primitives):
     def stretch(self, img, lo, hi, vignette=0.0):
         """Contrast stretch between two levels (the vignette comes last)."""
         span = max(hi - lo, 1.0)
-        out = np.clip((img.astype(np.float32) - lo) / span, 0.0, 1.0)
         h, w = img.shape[:2]
-        return _clamp(np.minimum(out * _vignette(h, w, vignette)[..., None],
-                                 1.0))
+        out = img.astype(np.float32)
+        out -= lo
+        out /= span
+        np.clip(out, 0.0, 1.0, out=out)
+        out *= _vignette(h, w, vignette)[..., None]
+        np.minimum(out, 1.0, out=out)
+        return _clamp(out)
 
     def minimap(self, img, cols, rows):
         """Average of each block, as a float grid (rows, cols, 3)."""
@@ -360,6 +367,17 @@ def _heat_ramp(v):
 
 
 def _vignette(h, w, amount):
+    """Darkening of the corners, built once per size and amount."""
+    key = (h, w, amount)
+    if key not in _VIGNETTE_CACHE:
+        if len(_VIGNETTE_CACHE) >= CACHE_SIZES:
+            _VIGNETTE_CACHE.pop(next(iter(_VIGNETTE_CACHE)))
+        _VIGNETTE_CACHE[key] = _vignette_of(h, w, amount)
+    return _VIGNETTE_CACHE[key]
+
+
+def _vignette_of(h, w, amount):
+    """The factor itself: one per pixel, from the centre to the corner."""
     ys = (np.arange(h, dtype=np.float32) / h) - HALF
     xs = (np.arange(w, dtype=np.float32) / w) - HALF
     d = np.sqrt(ys[:, None] ** 2 + xs[None, :] ** 2) * SQRT2
@@ -367,11 +385,13 @@ def _vignette(h, w, amount):
 
 
 class _Crowd:
-    """numpy version of k_tribuna: the stands, pixel by pixel.
+    """numpy version of k_tribuna: the stands, painted in place.
 
-    It is the slow path on purpose: in FULL mode on a CPU every pixel of the
-    band pays its sines and hashes, which is exactly what the projector demo
-    wants to show before switching to the optimized mode.
+    The band is a grid of seats of `CROWD_SEAT` px. The steps are the same
+    in every frame (they are cached) and every person is written only over
+    the pixels it covers, so the cost follows the occupied seats and not
+    the whole band. The colours are the ones of the kernel: the same
+    comparisons, the same order and the same float32 arithmetic.
     """
 
     def __init__(self, cfg, pal, t, side, boost):
@@ -388,17 +408,35 @@ class _Crowd:
 
     def paint(self, img):
         """The whole band: the steps, then the people of the two rows."""
-        h, w = img.shape[:2]
-        self.w, self.h = w, h
-        self.rows = max(1, int(h / self.cfg[CROWD_H]))
-        self.xs = np.arange(w, dtype=np.float32)[None, :]
-        self.ys = np.arange(h, dtype=np.float32)[:, None]
+        self._setup(img)
+        colours, shade = self._steps()
         row = (self.ys / self.cfg[CROWD_H]).astype(np.int32)
-        colours = self._step(row)
         for k in range(CROWD_ROWS):
-            colours = self._row(row + k, colours)
-        lit = colours * self._shade(row)[..., None]
-        return primitives._to_byte(np.clip(lit, 0.0, 1.0))
+            self._row(row + k, colours)
+        lit = np.multiply(colours, shade, out=colours)
+        return primitives._to_byte(np.clip(lit, 0.0, 1.0, out=lit))
+
+    def _setup(self, img):
+        """Sizes and the x of every column (once per frame)."""
+        self.h, self.w = img.shape[:2]
+        self.rows = max(1, int(self.h / self.cfg[CROWD_H]))
+        self.xs = np.arange(self.w, dtype=np.float32)[None, :]
+        self.ys = np.arange(self.h, dtype=np.float32)[:, None]
+
+    def _steps(self):
+        """Steps and shading of the band (they never change: cached)."""
+        key = (self.h, self.w)
+        if key not in _STEP_CACHE:
+            _remember(key, self._step_colours())
+        colours, shade = _STEP_CACHE[key]
+        band = np.empty((self.h, self.w, CHANNELS), np.float32)
+        band[:] = colours               # (h, 1, 3) -> the whole band
+        return band, shade
+
+    def _step_colours(self):
+        """Colours and shading of the steps: (h, 1, 3) and (h, 1, 1)."""
+        row = (self.ys / self.cfg[CROWD_H]).astype(np.int32)
+        return self.pal[self._step(row)], self._shade(row)[..., None]
 
     def _centre(self):
         """x of the middle of the seat."""
@@ -408,20 +446,14 @@ class _Crowd:
         """Distance of the pixel to the middle of its seat."""
         return lx - self._centre()
 
-    def _flat(self, tone):
-        """Colour of a (h, 1) table index, repeated across the whole row."""
-        shape = (self.h, self.w, CHANNELS)
-        return np.array(np.broadcast_to(self.pal[tone], shape), np.float32)
-
     def _step(self, row):
-        """The dark step of the row: its floor and its lit edge."""
+        """Tone of the dark step of the row: its floor and its lit edge."""
         cfg = self.cfg
         edge = (row + CROWD_ONE).astype(np.float32) * cfg[CROWD_H] \
             - cfg[CROWD_STEP]
         tone = np.where(self.ys >= edge, CROWD_RISER_ROW, CROWD_TREAD_ROW)
         lit = (self.ys >= edge) & (self.ys < edge + CROWD_RISER)
-        tone = np.where(lit, CROWD_EDGE_ROW, tone)
-        return self._flat(tone)
+        return np.where(lit, CROWD_EDGE_ROW, tone)
 
     def _shade(self, row):
         """The rows above stay farther: they are painted darker."""
@@ -463,6 +495,20 @@ class _Crowd:
                                       cfg[CROWD_GOAL_HZ] * self.boost, 0.0)
         return amp * (0.5 + 0.5 * np.sin(self.t * hz + phase))
 
+    def _jumps(self, hsh, team):
+        """Jump of every pixel: it is the same in a whole seat row."""
+        rows = self._seat_rows()
+        if rows is None:
+            return self._jump(hsh, team)
+        height = hsh.shape[0] // rows
+        small = hsh.reshape(rows, height, self.w)[:, 0, :]
+        return np.repeat(self._jump(small, team), height, axis=0)
+
+    def _seat_rows(self):
+        """Number of seat rows of the band, or None if it does not fit."""
+        height = int(self.cfg[CROWD_H])
+        return None if self.h % height else self.h // height
+
     def _row(self, r, colours):
         """People (and flags) of one row of seats over the current image."""
         cfg = self.cfg
@@ -473,48 +519,57 @@ class _Crowd:
         free = (hsh % np.uint32(CROWD_FULL)) < cfg[CROWD_FILL]
         team = self._team()
         up = ((r + CROWD_ONE).astype(np.float32) * cfg[CROWD_H]
-              - cfg[CROWD_STEP] - self.ys - self._jump(hsh, team))
-        return self._people(lx, up, team, free, hsh, colours)
+              - cfg[CROWD_STEP] - self.ys - self._jumps(hsh, team))
+        self._people(lx, up, team, free, hsh, colours)
 
     def _people(self, lx, up, team, free, hsh, colours):
         """Bodies and flags over the seats that are already painted."""
-        person, covered = self._body(lx, up, team, free, hsh)
-        colours = np.where(covered[..., None], person, colours)
-        flag, cloth = self._flag(hsh, lx, up, free & ~covered, team)
-        return np.where(cloth[..., None], flag, colours)
+        covered = self._body(lx, up, team, free, hsh, colours)
+        self._flag(hsh, lx, up, free & ~covered, team, colours)
 
-    def _torso(self, lx, up):
+    def _body(self, lx, up, team, free, hsh, colours):
+        """Torso, head, skin, hair and rim of every person (in place)."""
+        dx, dy = self._dx(lx), self._dy(up)
+        d2 = dx * dx + dy * dy
+        torso = free & self._torso(dx, up)
+        head = free & (d2 <= self.cfg[CROWD_HEAD_R] ** 2) & ~torso
+        skin, hair, rim = self._head_parts(d2, dy)
+        self._shirts(colours, torso, team, hsh, up)
+        self._heads(colours, head, skin, hair, rim, hsh)
+        return torso | head
+
+    def _torso(self, dx, up):
         """Mask of the shirt: a rectangle with the shoulders rounded."""
         cfg = self.cfg
         return ((up >= 0.0) & (up <= cfg[CROWD_BODY_H])
-                & (np.abs(self._dx(lx)) <= self._half(up)))
+                & (np.abs(dx) <= self._half(up)))
 
     def _dy(self, up):
         """Height measured from the centre of the head."""
         cfg = self.cfg
         return up - (cfg[CROWD_BODY_H] + cfg[CROWD_HEAD_R] * CROWD_HEAD_OFFSET)
 
-    def _head(self, lx, up):
-        """Mask of the round head above the shirt."""
-        dx, dy = self._dx(lx), self._dy(up)
-        return dx * dx + dy * dy <= self.cfg[CROWD_HEAD_R] ** 2
+    def _put(self, colours, index, values):
+        """Writes `values` at the flat `index` of the band (in place)."""
+        if index.size:
+            colours.reshape(-1, CHANNELS)[index] = values
 
-    def _skin(self, hsh):
-        """Skin of that seat (one of the tones of the table)."""
-        tone = CROWD_SKIN_ROW + (hsh >> CROWD_SHIFT_SKIN) % np.uint32(
-            CROWD_SKINS)
+    def _skin(self, hsh, index):
+        """Skin of those seats (one of the tones of the table)."""
+        tone = CROWD_SKIN_ROW + ((hsh[index] >> np.uint32(CROWD_SHIFT_SKIN))
+                                 % np.uint32(CROWD_SKINS))
         return self.pal[tone]
 
-    def _hair(self, hsh):
-        """Hair of that seat (a little darker or lighter by hash)."""
-        tone = CROWD_HAIR_ROW + (hsh >> CROWD_SHIFT_HAIR) % np.uint32(
-            CROWD_HAIRS)
-        return self.pal[tone] * self._var(hsh)[..., None]
+    def _hair(self, hsh, index):
+        """Hair of those seats (a little darker or lighter by hash)."""
+        tone = CROWD_HAIR_ROW + ((hsh[index] >> np.uint32(CROWD_SHIFT_HAIR))
+                                 % np.uint32(CROWD_HAIRS))
+        return self.pal[tone] * self._var(hsh[index])[:, None]
 
-    def _shirt(self, team, hsh, up):
-        """Shirt of that seat: team colour, hash brightness and shoulders."""
-        lit = self._var(hsh) * self._shoulder(up)
-        return self.pal[CROWD_SHIRT_A + team] * lit[..., None]
+    def _shirt(self, team, hsh, up, index):
+        """Shirts: team colour, hash brightness and shoulders."""
+        lit = self._var(hsh[index]) * self._shoulder(up[index])
+        return self.pal[CROWD_SHIRT_A + team[index % self.w]] * lit[:, None]
 
     def _shoulder(self, up):
         """A darker line at the top of the shirt (it marks the shoulders)."""
@@ -522,28 +577,41 @@ class _Crowd:
         return np.where(up > cfg[CROWD_BODY_H] - cfg[CROWD_SHOULDER_EDGE],
                         cfg[CROWD_SHOULDER_SHADE], 1.0)
 
-    def _head_parts(self, lx, up):
+    def _head_parts(self, d2, dy):
         """(skin, hair, rim) masks of the head."""
         r = self.cfg[CROWD_HEAD_R]
-        dx, dy = self._dx(lx), self._dy(up)
-        d2 = dx * dx + dy * dy
         head = d2 <= r * r
         hair = head & (dy < -self.cfg[CROWD_HEAD_CUT] * r)
         rim = head & ~hair & (d2 > (r - self.cfg[CROWD_OUTLINE]) ** 2)
         return head & ~hair & ~rim, hair, rim
 
-    def _body(self, lx, up, team, free, hsh):
-        """Body and head of the person of that seat: (colour, mask)."""
-        torso = free & self._torso(lx, up)
-        head = free & self._head(lx, up) & ~torso
-        colour = np.where(torso[..., None], self._shirt(team, hsh, up),
-                          self.pal[CROWD_SKIN_ROW])
-        skin, hair, rim = self._head_parts(lx, up)
-        colour = np.where((head & skin)[..., None], self._skin(hsh), colour)
-        colour = np.where((head & hair)[..., None], self._hair(hsh), colour)
-        colour = np.where((head & rim)[..., None],
-                          self.pal[CROWD_OUTLINE_ROW], colour)
-        return colour, torso | head
+    def _shirts(self, colours, mask, team, hsh, up):
+        """Paints the shirts of the mask over the seats (in place)."""
+        index = np.flatnonzero(mask)
+        if index.size:
+            self._put(colours, index,
+                      self._shirt(team.ravel(), hsh.ravel(), up.ravel(),
+                                  index))
+
+    def _heads(self, colours, head, skin, hair, rim, hsh):
+        """Skin, hair and rim of the heads of the mask (in place)."""
+        self._skin_heads(colours, head & skin, hsh.ravel())
+        self._hair_heads(colours, head & hair, hsh.ravel())
+        self._tone_heads(colours, head & rim, CROWD_OUTLINE_ROW)
+
+    def _skin_heads(self, colours, mask, hsh):
+        """Skin of those seats: one of the tones of the table."""
+        index = np.flatnonzero(mask)
+        self._put(colours, index, self._skin(hsh, index))
+
+    def _hair_heads(self, colours, mask, hsh):
+        """Hair of those seats: a tone of the table, darker or lighter."""
+        index = np.flatnonzero(mask)
+        self._put(colours, index, self._hair(hsh, index))
+
+    def _tone_heads(self, colours, mask, tone):
+        """One colour for the whole mask (the dark rim of the head)."""
+        self._put(colours, np.flatnonzero(mask), self.pal[tone])
 
     def _flag_base(self):
         """Height of the shoulder: where the pole starts."""
@@ -570,32 +638,44 @@ class _Crowd:
         return (lx - self._centre() + self.cfg[CROWD_FLAG_W] * 0.5
                 - self._wave(hsh, up))
 
-    def _pole(self, hsh, lx, up, free):
-        """Mask of the pole of the flag."""
-        base, top = self._flag_base(), self._flag_top()
-        return (self._own(hsh, free) & (up >= base) & (up <= top)
+    def _pole(self, colours, lx, up, own):
+        """Pole of the flag: one column, over the cloth when they cross."""
+        mask = (own & (up >= self._flag_base()) & (up <= self._flag_top())
                 & (np.abs(self._dx(lx)) <= CROWD_POLE_W))
+        self._put(colours, np.flatnonzero(mask), self.pal[CROWD_POLE_ROW])
 
-    def _cloth(self, hsh, lx, up, free):
-        """Mask of the cloth of the flag (it hangs from the top of the pole)."""
-        cfg = self.cfg
-        fx = self._fx(hsh, lx, up)
-        low = self._flag_top() - cfg[CROWD_FLAG_H]
-        return (self._own(hsh, free) & (up >= low)
-                & (up <= self._flag_top()) & (fx >= 0.0)
-                & (fx < cfg[CROWD_FLAG_W]))
-
-    def _flag(self, hsh, lx, up, free, team):
-        """Flag of that seat (if it has one): the pole and the cloth."""
-        fx = self._fx(hsh, lx, up)
-        stripe = (fx * CROWD_STRIPES / self.cfg[CROWD_FLAG_W]).astype(
-            np.int32) & 1
+    def _cloth(self, colours, index, fx, team):
+        """Cloth of the flag: the stripes and its border, in place."""
+        inside = (fx >= 0.0) & (fx < self.cfg[CROWD_FLAG_W])
+        cloth = index[inside]
+        stripe = (fx[inside] * CROWD_STRIPES
+                  / self.cfg[CROWD_FLAG_W]).astype(np.int32) & 1
         tone = np.where(stripe == 1, CROWD_FLAG_WHITE_ROW,
-                        CROWD_FLAG_A_ROW + team)
-        pole = self._pole(hsh, lx, up, free)
-        colour = np.where(pole[..., None], self.pal[CROWD_POLE_ROW],
-                          self.pal[tone])
-        return colour, pole | self._cloth(hsh, lx, up, free)
+                        CROWD_FLAG_A_ROW + team.ravel()[cloth % self.w])
+        self._put(colours, cloth, self.pal[tone])
+
+    def _flag(self, hsh, lx, up, free, team, colours):
+        """Flag of that seat (if it has one): the pole and the cloth."""
+        own = self._own(hsh, free)
+        top = self._flag_top()
+        index = np.flatnonzero(own & (up >= top - self.cfg[CROWD_FLAG_H])
+                               & (up <= top))
+        if index.size:
+            self._cloth(colours, index, self._fx_at(hsh, lx, up, index), team)
+        self._pole(colours, lx, up, own)
+
+    def _fx_at(self, hsh, lx, up, index):
+        """Distance to the left edge of the cloth, only at `index`."""
+        return (lx.ravel()[index] - self._centre()
+                + self.cfg[CROWD_FLAG_W] * 0.5
+                - self._wave(hsh.ravel()[index], up.ravel()[index]))
+
+
+def _remember(key, pair):
+    """Keeps the steps of one size, forgetting the oldest ones."""
+    _STEP_CACHE[key] = pair
+    while len(_STEP_CACHE) > CACHE_SIZES:
+        _STEP_CACHE.pop(next(iter(_STEP_CACHE)))
 
 
 
