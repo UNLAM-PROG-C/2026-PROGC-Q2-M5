@@ -30,11 +30,12 @@ from fdc.ui import match_screens                  # noqa: E402
 FOLDER = os.path.join(ROOT, "capturas", "mejoras")   # where the PNGs go
 PREFIX = "celebracion"   # name of the shots of the party
 BEFORE = "antes"         # name of the shot before the goal
-AND = "y"                # joins the two names of a shot
-# Frames (at 60 fps) after the goal in which a shot is taken: the burst, the
-# paper in the air, the end of the party and the start of the replay.
-SHOTS = (0, 6, 18, 36, 60, 96, 140, 200)
+# Seconds after the goal in which a shot is taken: the burst, the paper in
+# the air, the end of the party and the start of the replay (the chain has
+# its own clock, so a slow machine gives the same pictures).
+SHOTS = (0.0, 0.1, 0.3, 0.6, 1.0, 1.5, 2.3, 3.2)
 SKIP_FRAMES = 90         # frames of play before the goal (the ball moves)
+LIMIT = 900              # frames drawn at most for one shot (safety net)
 PLAY_TIMEOUT = 60.0      # s waiting for the kick off (the countdown first)
 WAIT_SECONDS = 20.0      # s until the simulation sends its first state
 WAIT_STEP = 0.01         # s between frames while waiting
@@ -88,7 +89,13 @@ def _open_match(game):
     screen = match_screens.MatchScreen(game, config.CHARACTER_IDS[:2])
     game.switch(screen)
     game.clock.sleep = False        # the capture is not a measurement
+    screen.on_focus_lost = _ignore  # the dummy window loses focus: no pause
     return screen
+
+
+def _ignore():
+    """Nothing on focus loss: the capture needs the match playing."""
+    return None
 
 
 def _wait_state(game, screen):
@@ -123,6 +130,7 @@ def _play(game, frames):
 def _goal(game, screen):
     """Forces a real goal: with a side, the party and the replay start."""
     ball = (screen.state or {}).get("ball") or {}
+    game.postfx.skip()          # an earlier goal of the match would cut ours
     game.postfx.force_var = False
     game.postfx.event({"type": protocol.EV_GOAL,
                        "x": ball.get("x") or config.Arena.WIDTH / 2.0,
@@ -134,20 +142,20 @@ def _shoot(game, screen, folder):
     """One frame per moment of the party; returns the written paths."""
     saved = [_save(game, folder, BEFORE)]
     _goal(game, screen)
-    frame = 0
+    start = game.postfx.clock
     for shot, target in enumerate(SHOTS):
-        frame = _advance(game, frame, target)
+        _advance(game, start, target)
         print(f"  shot {shot}: {len(game.postfx.confetti.live()[0])} bits")
         saved.append(_save(game, folder, f"{PREFIX}-{shot:02d}"))
     return saved
 
 
-def _advance(game, frame, target):
-    """Draws frames until the counter reaches `target`."""
-    while frame < target:
+def _advance(game, start, target):
+    """Draws frames until the chain clock is `target` s past `start`."""
+    frames = 0
+    while game.postfx.clock - start < target and frames < LIMIT:
         game.frame()
-        frame += 1
-    return frame
+        frames += 1
 
 
 def _save(game, folder, name):

@@ -268,9 +268,12 @@ class PostFx:
         """Replay of a goal, or the VAR when it went in by very little.
 
         It starts after the celebration and shows the goal plus
-        `config.Gpu.REPLAY_AFTER_GOAL` seconds of the net.
+        `config.Gpu.REPLAY_AFTER_GOAL` seconds of the net. The party is over
+        here: the paper is cleared because the replay takes the screen.
         """
         pending, self.pending = self.pending, None
+        self.celebration = None
+        self.confetti.clear()
         if pending is None:
             return
         frames = self.history.window(pending["time"])

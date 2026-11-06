@@ -305,6 +305,7 @@ class ReplayChainTest(unittest.TestCase):
         self.play(CELEBRATION_FRAMES)
         self.assertEqual(self.fx.replay_mode(), replay.REPLAY_KIND)
         self.assertIsNot(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+        self.assertFalse(self.fx.confetti.alive())   # the replay took over
         self.play(2)
         self.assertTrue(self.fx.metrics.stage["crt"])
 
