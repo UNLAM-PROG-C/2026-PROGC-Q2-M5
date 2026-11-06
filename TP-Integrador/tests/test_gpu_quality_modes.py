@@ -1,9 +1,10 @@
-"""The quality modes of F11: FULL, OPTIMIZADO and AUTO.
+"""The quality modes of F11: FULL, OPTIMIZADO, "SIN EFECTOS" and AUTO.
 
-The demo of the defence needs three explicit modes: FULL draws everything at
+The demo of the defence needs explicit modes: FULL draws everything at
 full resolution and never lowers the quality by itself (it may stutter on a
 notebook without NVIDIA), OPTIMIZADO leaves only the cheap stage and runs
-smooth on the CPU, and AUTO is the adaptive governor of F7.
+smooth on the CPU, "SIN EFECTOS" draws the plain pygame render (the CPU/Mac
+case) and AUTO is the adaptive governor of F7.
 """
 import types
 import unittest
@@ -27,6 +28,7 @@ HEAVY = (quality.GLOW, quality.LIGHTS, quality.HEAT, quality.TRAIL,
 OPTIMIZED_ONLY = (quality.PARTICLES,)   # the only stage of OPTIMIZADO
 FULL = quality.FULL
 OPTIMIZED = quality.OPTIMIZED
+OFF = quality.OFF
 AUTO = quality.AUTO
 
 
@@ -39,27 +41,69 @@ def options(**extra):
 
 
 class ModesTest(unittest.TestCase):
-    """The modes are the three of the card and the default is FULL."""
+    """The four modes of the card and FULL as the default."""
 
-    def test_three_modes(self):
-        self.assertEqual(config.Gpu.MODES, (FULL, OPTIMIZED, AUTO))
+    def test_four_modes(self):
+        self.assertEqual(config.Gpu.MODES, (FULL, OPTIMIZED, OFF, AUTO))
         self.assertEqual(quality.DEFAULT_MODE, FULL)
         self.assertEqual(config.Gpu.QUALITY_MODE, FULL)
 
     def test_cycle_order(self):
         self.assertEqual(quality.next_mode(FULL), OPTIMIZED)
-        self.assertEqual(quality.next_mode(OPTIMIZED), AUTO)
+        self.assertEqual(quality.next_mode(OPTIMIZED), OFF)
+        self.assertEqual(quality.next_mode(OFF), AUTO)
         self.assertEqual(quality.next_mode(AUTO), FULL)
 
     def test_names_of_the_overlay(self):
         self.assertEqual(quality.name_of(FULL), "FULL")
         self.assertEqual(quality.name_of(OPTIMIZED), "OPTIMIZADO")
+        self.assertEqual(quality.name_of(OFF), "SIN EFECTOS")
         self.assertEqual(quality.name_of(AUTO), "AUTO")
         self.assertEqual(config.Gpu.MODE_NAMES[OPTIMIZED], "OPTIMIZADO")
+
+    def test_off_aliases(self):
+        self.assertEqual(quality.mode_of("off"), OFF)
+        self.assertEqual(quality.mode_of("sin efectos"), OFF)
+        self.assertEqual(quality.mode_of("sin-efectos"), OFF)
 
     def test_unknown_mode_falls_back_to_full(self):
         self.assertEqual(quality.mode_of("otro"), FULL)
         self.assertEqual(quality.mode_of(None), FULL)
+
+
+class OffTest(unittest.TestCase):
+    """The "SIN EFECTOS" mode: no chain at all, the plain pygame render."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+        self.fx = postfx.PostFx(options(quality_mode=OFF), (W, H))
+
+    def test_chain_is_off_from_the_start(self):
+        self.assertFalse(self.fx.enabled)
+        self.assertIsNone(self.fx.ops)
+        self.assertEqual(self.fx.summary()["mode"], "off")
+        self.assertEqual(self.fx.summary()["quality_name"], "SIN EFECTOS")
+
+    def test_begin_hands_the_plain_screen(self):
+        screen = pygame.Surface((W, H))
+        self.assertIs(self.fx.begin(screen, {}), screen)
+        self.fx.finish(screen, DT)          # must not touch anything
+
+    def test_off_has_no_crowd_and_no_punch(self):
+        self.assertFalse(self.fx.standing_crowd())
+        self.assertEqual(self.fx.punch(), 0.0)
+
+    def test_switching_back_turns_the_chain_on(self):
+        self.fx.set_quality_mode(FULL)
+        self.assertTrue(self.fx.enabled)
+        self.fx.set_quality_mode(OFF)
+        self.assertFalse(self.fx.enabled)
+
+    def test_no_gpu_stays_off_even_in_full(self):
+        fx = postfx.PostFx(options(no_gpu=True, quality_mode=FULL), (W, H))
+        fx.set_quality_mode(FULL)
+        self.assertFalse(fx.enabled)
 
 
 class FullTest(unittest.TestCase):
@@ -177,7 +221,7 @@ class AutoTest(unittest.TestCase):
 
 
 class SwitchTest(unittest.TestCase):
-    """The F10 key and the options menu move between the three modes."""
+    """The F10 key and the options menu move between the four modes."""
 
     def setUp(self):
         pygame.init()
@@ -191,6 +235,8 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(self.fx.quality_mode_name(), "FULL")
         self.fx.cycle_quality_mode()
         self.assertEqual(self.fx.quality_mode, OPTIMIZED)
+        self.fx.cycle_quality_mode()
+        self.assertEqual(self.fx.quality_mode, OFF)
         self.fx.cycle_quality_mode()
         self.assertEqual(self.fx.quality_mode, AUTO)
         self.fx.cycle_quality_mode()
@@ -213,6 +259,12 @@ class CliTest(unittest.TestCase):
         options = main_module.parse_args(["--no-audio", "--calidad",
                                           "optimizado"])
         self.assertEqual(options.quality_mode, "optimizado")
+
+    def test_no_effects_flag(self):
+        for value in ("sin-efectos", "off"):
+            options = main_module.parse_args(["--no-audio", "--calidad",
+                                              value])
+            self.assertEqual(quality.mode_of(options.quality_mode), OFF)
 
     def test_default_mode_is_full(self):
         options = main_module.parse_args(["--no-audio"])

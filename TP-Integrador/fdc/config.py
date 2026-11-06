@@ -8,6 +8,7 @@ Units: pixels of the logical resolution (1280 x 720) and seconds.
 """
 import collections
 import os
+import sys
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -532,15 +533,18 @@ class Gpu:
     # optimizado: only the cheap stage, no crowd, 4x smaller image;
     # auto: the governor of the notebook decides (the F7 behaviour).
     QUALITY_MODE = os.environ.get("FDC_QUALITY_MODE", "full")
-    MODES = ("full", "optimizado", "auto")
-    MODE_NAMES = {"full": "FULL", "optimizado": "OPTIMIZADO", "auto": "AUTO"}
+    MODES = ("full", "optimizado", "sin-efectos", "auto")
+    MODE_NAMES = {"full": "FULL", "optimizado": "OPTIMIZADO",
+                  "sin-efectos": "SIN EFECTOS", "auto": "AUTO"}
     MODE_STAGE = {"full": "alta", "optimizado": "baja"}   # level of LEVELS
     FULL_PUNCH = 1.6          # powers this much stronger in FULL (1.0 = as F4)
     FULL_PARTICLES = 1.5       # sparks this much brighter in FULL
     # Strength of the powers per mode (see `PostFx.punch`).
-    MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0}
+    MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0,
+                  "sin-efectos": 0.0}
     # Gain of the sparks per mode (see `PostFx._sparks`).
-    MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0}
+    MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0,
+                      "sin-efectos": 0.0}
     OPTIMIZED_LEVEL = 0       # index of QUALITY_LEVELS: full resolution; only
     #                           the cheap stage runs, so OPT stays sharp
     CROWD_MODE = "full"       # only here the stands are animated
@@ -601,4 +605,82 @@ class Gpu:
 # ---------------------------------------------------------------------------
 # assets/sprites/<character>/head.png, assets/sounds/<name>.wav, ...
 ASSET_OVERRIDE_DIR = "assets"
-LOG_DIR = os.path.join(ROOT_DIR, "logs")
+# ---------------------------------------------------------------------------
+# Folders the game WRITES (logs, measurement CSV)
+# ---------------------------------------------------------------------------
+# Running from the sources everything stays in the repository. Packaged, the
+# bundle may live in a read-only place (a .app inside /Applications), so the
+# files go to the user folder of each system:
+#   macOS    ~/Library/Logs/FutbolDeCabeza  and  ~/Library/Application Support
+#   Windows  %LOCALAPPDATA%\FutbolDeCabeza\logs  and  ...\FutbolDeCabeza
+#   Linux    $XDG_STATE_HOME or ~/.local/state
+APP_FOLDER = "FutbolDeCabeza"
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def _is_frozen(frozen=None):
+    """True if the game runs from the packaged executable."""
+    return FROZEN if frozen is None else frozen
+
+
+def _home(home=None):
+    """Home folder of the user (injectable for the tests)."""
+    return home or os.path.expanduser("~")
+
+
+def _xdg(environ, name, default):
+    """$NAME of the environment, or `default` inside the home folder."""
+    return environ.get(name) or default
+
+
+def _system(platform=None, environ=None, home=None):
+    """Platform, environment and home folder with the defaults filled in."""
+    return (platform or sys.platform,
+            os.environ if environ is None else environ, _home(home))
+
+
+def _user_base(platform, environ, home):
+    """Folder of the user data of each system (logs are a sibling on macOS)."""
+    if platform == "darwin":
+        return os.path.join(home, "Library", "Application Support", APP_FOLDER)
+    if platform.startswith("win"):
+        base = _xdg(environ, "LOCALAPPDATA",
+                    os.path.join(home, "AppData", "Local"))
+        return os.path.join(base, APP_FOLDER)
+    base = _xdg(environ, "XDG_DATA_HOME",
+                os.path.join(home, ".local", "share"))
+    return os.path.join(base, APP_FOLDER)
+
+
+def log_dir(platform=None, environ=None, home=None, frozen=None):
+    """Folder of the logs: the repository, or the user folder if packaged."""
+    if not _is_frozen(frozen):
+        return os.path.join(ROOT_DIR, "logs")
+    plat, env, home = _system(platform, environ, home)
+    if plat == "darwin":
+        return os.path.join(home, "Library", "Logs", APP_FOLDER)
+    if plat.startswith("win"):
+        return os.path.join(_user_base(plat, env, home), "logs")
+    base = _xdg(env, "XDG_STATE_HOME", os.path.join(home, ".local", "state"))
+    return os.path.join(base, APP_FOLDER, "logs")
+
+
+def data_dir(platform=None, environ=None, home=None, frozen=None):
+    """Folder of the files the game writes beyond the logs (demo CSV)."""
+    if not _is_frozen(frozen):
+        return ROOT_DIR
+    plat, env, home = _system(platform, environ, home)
+    return _user_base(plat, env, home)
+
+
+def _ensure(path, fallback):
+    """Creates `path`; if it cannot, returns `fallback` (silent)."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError:
+        return fallback
+
+
+LOG_DIR = _ensure(log_dir(), os.path.join(ROOT_DIR, "logs"))
+MEDICIONES_DIR = _ensure(data_dir(), ROOT_DIR)

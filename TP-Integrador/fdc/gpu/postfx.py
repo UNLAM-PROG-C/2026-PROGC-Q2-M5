@@ -66,7 +66,8 @@ class PostFx:
 
     def __init__(self, options, size):
         self.mode = "cpu"
-        self.enabled = _wanted(options)
+        self.allowed = _wanted(options)
+        self.enabled = self.allowed
         self.level, self.force_cpu = _choices(options)
         self.ops, self.error = None, None
         self.device = "CPU"          # set again when the backend starts
@@ -90,6 +91,8 @@ class PostFx:
         self.quality_option = getattr(options, "quality", None)
         self.quality_mode = quality.mode_of(
             getattr(options, "quality_mode", None) or config.Gpu.QUALITY_MODE)
+        # "sin-efectos": the chain stays off (plain pygame render).
+        self.enabled = self.allowed and self.quality_mode != quality.OFF
         self.governor = quality.QualityGovernor(self.quality_option, "cpu")
         if self.quality_mode != quality.AUTO:
             self.governor.enabled = False    # FULL and OPTIMIZADO never adapt
@@ -179,18 +182,21 @@ class PostFx:
         return quality.policy(self.quality_mode, self.governor.level)
 
     def quality_mode_name(self):
-        """FULL / OPTIMIZADO / AUTO, for the overlay and the menu."""
+        """FULL / OPTIMIZADO / "SIN EFECTOS" / AUTO, for the overlay."""
         return quality.name_of(self.quality_mode)
 
     def set_quality_mode(self, mode):
         """Changes the mode (key F10, options menu): returns the new one."""
         self.quality_mode = quality.mode_of(mode)
+        # "sin-efectos" turns the chain off; the other modes turn it back on
+        # (unless the effects are off for the whole game).
+        self.enabled = self.allowed and self.quality_mode != quality.OFF
         self.metrics.clear()
         self._reset_backend()       # a fresh governor for the new mode
         return self.quality_mode
 
     def cycle_quality_mode(self):
-        """Next quality mode: full -> optimizado -> auto -> full."""
+        """Next quality mode: full -> optimizado -> "sin-efectos" -> auto."""
         return self.set_quality_mode(quality.next_mode(self.quality_mode))
 
     def punch(self):

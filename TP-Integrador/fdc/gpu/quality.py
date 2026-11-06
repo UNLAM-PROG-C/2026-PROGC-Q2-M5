@@ -40,16 +40,21 @@ SKIPPED = {
     3: (GLOW, HISTOGRAM, HEAT, TRAIL),
 }
 # --- F11: quality modes of the projector demo ------------------------------
-# Three explicit modes, chosen in the menu, with a key and with --calidad:
+# Four explicit modes, chosen in the menu, with a key and with --calidad:
 #   full        everything at full resolution and no governor (it may
 #               stutter: that is the point on a notebook without NVIDIA);
 #   optimizado  only the cheap stage and no crowd, at full resolution (sharp);
+#   "sin-efectos" (or "off"): nothing at all, the plain pygame render: the
+#               case of the CPU and Mac builds;
 #   auto        the adaptive governor of F7 (the notebook case), not the
 #               default.
 FULL = "full"
 OPTIMIZED = "optimizado"
-MODES = (FULL, OPTIMIZED, AUTO)
+OFF = "sin-efectos"
+MODES = (FULL, OPTIMIZED, OFF, AUTO)
 DEFAULT_MODE = FULL
+# Other ways of asking for the mode without the effects.
+OFF_ALIASES = ("off", "sin efectos", "sin_efectos", "ninguno", "none")
 # Stages that the optimized mode never runs: the heavy post-processing.
 OPTIMIZED_SKIPS = (GLOW, LIGHTS, HEAT, TRAIL, HISTOGRAM, "crt", "var",
                    "confetti")
@@ -106,6 +111,8 @@ def skipped(index):
 # --- F11: quality modes ------------------------------------------------
 def mode_of(value):
     """Quality mode of a value; 'full' if it is missing or unknown."""
+    if isinstance(value, str) and value.strip().lower() in OFF_ALIASES:
+        return OFF
     return value if value in MODES else DEFAULT_MODE
 
 
@@ -115,7 +122,8 @@ def name_of(mode):
 
 
 def next_mode(mode):
-    """The mode that follows in the cycle: full -> optimizado -> auto."""
+    """The mode that follows in the cycle: full -> optimizado ->
+    "sin-efectos" -> auto (F10)."""
     mode = mode_of(mode)
     return MODES[(MODES.index(mode) + 1) % len(MODES)]
 
@@ -124,6 +132,9 @@ def policy(mode=None, level=MIN_LEVEL):
     """What the mode draws; `level` is the governor level (auto only)."""
     mode = mode_of(mode)
     gpu = config.Gpu
+    if mode == OFF:
+        return Mode(mode, None, MIN_LEVEL, False, False, gpu.MODE_PUNCH[OFF],
+                    gpu.MODE_PARTICLES[OFF], tuple(SKIPPED[max(SKIPPED)]))
     if mode == OPTIMIZED:
         return _optimized(mode)
     if mode == FULL:

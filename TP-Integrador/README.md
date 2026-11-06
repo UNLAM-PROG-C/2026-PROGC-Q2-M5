@@ -75,10 +75,12 @@ falla: avisa la razón y sigue en CPU.
 | `py tools\run_demo.py` | La misma demo sin ventana: tabla + CSV y termina sola |
 | `py -m unittest discover -s tests` | Suite completa (tests de kernels se saltean sin CUDA) |
 
-**FULL u OPTIMIZADO.** El modo se elige con `--calidad full|optimizado|auto`
-(en el juego, **F10** recorre FULL → OPTIMIZADO → AUTO y F2 dice si va por GPU
-o CPU): FULL muestra todos los efectos (también sin CUDA, con numpy, más
-lento) y OPTIMIZADO es la versión liviana.
+**FULL, OPTIMIZADO o SIN EFECTOS.** El modo se elige con `--calidad
+full|optimizado|sin-efectos|auto` (también vale `off`; en el juego, **F10**
+recorre FULL → OPTIMIZADO → SIN EFECTOS → AUTO y F2 dice si va por GPU o
+CPU). FULL muestra todos los efectos (también sin CUDA, con numpy, más
+lento), OPTIMIZADO es la versión liviana y **SIN EFECTOS** juega el render de
+pygame pelado, sin postproceso (lo más liviano en CPU y en la Mac).
 
 Opciones útiles:
 
