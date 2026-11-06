@@ -641,3 +641,124 @@ __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
     atomicAdd(&hist[bin], 1u);
     atomicMax(luma_max, bin);
 }
+
+// ===========================================================================
+// F5: repetición y VAR
+// ===========================================================================
+
+// Televisión vieja de la repetición: gris con tinte, líneas de barrido,
+// viñeta y grano. Un hilo por píxel y sólo memoria global.
+// El ruido sale de (x, y, frame) con una cuenta entera: el mismo frame da
+// siempre el mismo grano, así que numpy lo puede reproducir exacto.
+#define CRT_NOISE_MUL 2654435761u   // multiplicador de la cuenta de ruido
+#define CRT_NOISE_SHIFT 24          // bits altos que se usan del ruido
+#define CRT_DIAGONAL 0.70710678f    // 1/sqrt(2): lleva la viñeta a 0..1
+
+__global__ void k_crt(const unsigned char *src, unsigned char *dst,
+                      int w, int h, int frame, float amount, float scan,
+                      float vignette, float noise, int rows,
+                      float tr, float tg, float tb)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;              // chequeo de bordes
+    int i = (y * w + x) * CH;
+    float l = (0.299f * src[i] + 0.587f * src[i + 1]
+               + 0.114f * src[i + 2]) / 255.0f;
+    // Una línea oscura cada `rows` filas: el barrido del tubo.
+    float band = (rows > 0 && y % rows == rows - 1) ? (1.0f - scan) : 1.0f;
+    // Viñeta radial: 0 en el centro y 1 en las esquinas.
+    float nx = 2.0f * x / (float)(w > 1 ? w - 1 : 1) - 1.0f;
+    float ny = 2.0f * y / (float)(h > 1 ? h - 1 : 1) - 1.0f;
+    float d = sqrtf(nx * nx + ny * ny) * CRT_DIAGONAL;
+    float vig = 1.0f - vignette * d * d;
+    // Grano pseudoaleatorio, entero sin signo: desborda a propósito.
+    unsigned int seed = (unsigned int)(x * 1973 + y * 9277 + frame * 26699)
+                        * CRT_NOISE_MUL;
+    float grain = (float)((seed >> CRT_NOISE_SHIFT) & 255u) / 255.0f - 0.5f;
+    float crt = l * band * vig + grain * noise;
+    float v = l + (crt - l) * amount;           // 0: imagen original
+    float out[CH];
+    out[0] = v * tr; out[1] = v * tg; out[2] = v * tb;
+    for (int c = 0; c < CH; ++c) {
+        float b = out[c] * 255.0f;
+        b = b < 0.0f ? 0.0f : (b > 255.0f ? 255.0f : b);
+        dst[i + c] = (unsigned char)(b + 0.5f);
+    }
+}
+
+// ===========================================================================
+// F6: mapa de calor
+// ===========================================================================
+
+// px: la celda nunca mide menos que esto (division por cero en el host)
+#define HEAT_MIN_CELL 1.0f
+// Acumula los puntos (x, y) de un canal en la grilla de celdas. Un hilo por
+// punto y atomicAdd: muchos puntos pueden caer en la misma celda. Ademas
+// guarda en `maxes` la celda mas caliente del canal con atomicAdd + atomicMax
+// (la escritura es la del atomicAdd: el valor viejo + 1). Los puntos que caen
+// fuera de la cancha se descartan (chequeo de bordes).
+__global__ void k_heat_accumulate(const float *pts, int n, int channel,
+                                  int cols, int rows, float cw, float ch,
+                                  unsigned int *grids, unsigned int *maxes)
+{
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k >= n) return;
+    float cell_w = cw > 0.0f ? cw : HEAT_MIN_CELL;
+    float cell_h = ch > 0.0f ? ch : HEAT_MIN_CELL;
+    int cx = (int)(pts[k * 2] / cell_w);
+    int cy = (int)(pts[k * 2 + 1] / cell_h);
+    if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
+    unsigned int old = atomicAdd(&grids[channel * cols * rows + cy * cols + cx], 1u);
+    atomicMax(&maxes[channel], old + 1u);
+}
+
+// Dibuja la grilla de un canal sobre la imagen: lectura bilineal de las
+// celdas, rampa azul -> cian -> amarillo -> rojo y mezcla con
+// alpha * min(1, v * gain). El maximo del canal se lee de `maxes` (no viaja
+// al host) y normaliza la rampa.
+__global__ void k_heat_render(const unsigned char *src, const unsigned int *grids,
+                              const unsigned int *maxes, unsigned char *dst,
+                              int w, int h, int cols, int rows, int channel,
+                              float alpha, float gain)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;              // chequeo de bordes
+    // Tamanio de celda en px y centro del pixel llevado a celdas.
+    float cw = (float)w / (float)cols;
+    float ch = (float)h / (float)rows;
+    float fx = ((float)x + 0.5f) / cw - 0.5f;
+    float fy = ((float)y + 0.5f) / ch - 0.5f;
+    fx = fx < 0.0f ? 0.0f : (fx > cols - 1 ? (float)(cols - 1) : fx);
+    fy = fy < 0.0f ? 0.0f : (fy > rows - 1 ? (float)(rows - 1) : fy);
+    int x0 = (int)fx, y0 = (int)fy;
+    int x1 = x0 + 1 < cols ? x0 + 1 : cols - 1;
+    int y1 = y0 + 1 < rows ? y0 + 1 : rows - 1;
+    float tx = fx - x0, ty = fy - y0;
+    const unsigned int *cells = grids + channel * cols * rows;
+    float v00 = (float)cells[y0 * cols + x0], v10 = (float)cells[y0 * cols + x1];
+    float v01 = (float)cells[y1 * cols + x0], v11 = (float)cells[y1 * cols + x1];
+    float v = (1.0f - tx) * (1.0f - ty) * v00 + tx * (1.0f - ty) * v10
+              + (1.0f - tx) * ty * v01 + tx * ty * v11;
+    float top = (float)maxes[channel];
+    v = top > 0.0f ? v / top : 0.0f;
+    v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+    float a = alpha * fminf(1.0f, v * gain);
+    // Rampa de la spec: azul, cian, amarillo, rojo.
+    float r = (v - 0.5f) * 2.0f;
+    r = r < 0.0f ? 0.0f : (r > 1.0f ? 1.0f : r);
+    float g = v < 0.25f ? v * 4.0f : (v < 0.75f ? 1.0f : (1.0f - v) * 4.0f);
+    float b = (0.5f - v) * 2.0f;
+    b = b < 0.0f ? 0.0f : (b > 1.0f ? 1.0f : b);
+    float ramp[CH];
+    ramp[0] = r; ramp[1] = g; ramp[2] = b;
+    int i = (y * w + x) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float px = (float)src[i + c] / 255.0f;
+        float out = px * (1.0f - a) + ramp[c] * a;
+        out = out * 255.0f;
+        out = out < 0.0f ? 0.0f : (out > 255.0f ? 255.0f : out);
+        dst[i + c] = (unsigned char)(out + 0.5f);
+    }
+}

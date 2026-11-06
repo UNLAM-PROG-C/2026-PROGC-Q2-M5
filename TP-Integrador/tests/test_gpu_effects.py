@@ -19,6 +19,7 @@ from fdc.gpu import metrics
 from fdc.gpu import particles
 from fdc.gpu import postfx
 from fdc.gpu import quality
+from fdc.gpu import replay
 
 W, H = 64, 48           # size of the test surface
 FRAMES = 3              # frames of the chain in each test
@@ -27,6 +28,23 @@ SEED = 3                # fixed random surface
 NIGHT_FRAMES = 12       # frames with the night mode on
 FAST_BALL = {"x": 30.0, "y": 20.0, "vx": 900.0, "vy": 0.0}
 SLOW_BALL = {"x": 30.0, "y": 20.0, "vx": 30.0, "vy": 0.0}
+# Frames needed to save two states (one every REPLAY_STEP s) and to end the
+# replay and the VAR (they last REPLAY_DURATION and VAR_DURATION + VAR_CONFIRM).
+SAVE_FRAMES = int(config.Gpu.REPLAY_STEP / DT) + 2
+REPLAY_FRAMES = int(config.Gpu.REPLAY_DURATION / DT) + 2
+VAR_FRAMES = int((config.Gpu.VAR_DURATION + config.Gpu.VAR_CONFIRM) / DT) + 2
+MOUTH = config.Arena.GOAL_DEPTH              # x of the mouth of the left goal
+BAR_Y = config.Arena.FLOOR_Y - config.Arena.GOAL_HEIGHT
+GOAL = {"type": protocol.EV_GOAL, "x": 600.0, "y": 300.0, "side": 0}
+CLOSE_GOAL = {"type": protocol.EV_GOAL, "x": MOUTH - 2.0, "y": BAR_Y + 18.0,
+              "side": 0}
+# A match being played: the chain records the heat map and the replay.
+PLAY_STATE = {
+    "phase": protocol.PHASE_PLAYING, "paused": False, "score": [0, 0],
+    "goals": [config.Arena.GOAL_HEIGHT] * 2, "effects": [],
+    "ball": {"x": 600.0, "y": 300.0, "r": 18.0, "vx": 0.0, "vy": 0.0},
+    "players": [{"x": 10.0, "y": 40.0}, {"x": 50.0, "y": 40.0}],
+}
 # The four F3 powers at once, at full strength, on a shared screen.
 POWER_STATE = {
     "players": [{"x": 10.0, "y": 40.0}, {"x": 50.0, "y": 40.0}],
@@ -253,6 +271,90 @@ class PowerChainTest(unittest.TestCase):
         self.assertEqual(self.fx._derive().ice, 1.0)
         self.fx.viewer = None
         self.assertEqual(self.fx._derive().ice, 1.0)
+
+
+class ReplayChainTest(unittest.TestCase):
+    """Replay, VAR and heat map inside the chain (F5 and F6)."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+        self.fx = postfx.PostFx(options(), (W, H))
+        self.fx.ops = cpu_ref.Cpu()
+        self.fx.enabled = True
+        self.fx.mode = "cpu"
+        self.screen = pygame.Surface((W, H))
+
+    def play(self, frames, state=PLAY_STATE):
+        """Draws `frames` frames of the chain with that state."""
+        for _ in range(frames):
+            target = self.fx.begin(self.screen, state)
+            target.fill((20, 30, 40))
+            self.fx.finish(self.screen, DT)
+
+    def test_goal_starts_the_replay(self):
+        self.play(SAVE_FRAMES)
+        self.fx.event(GOAL)
+        self.assertEqual(self.fx.replay_mode(), replay.REPLAY_KIND)
+        self.assertIsNot(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+        self.play(2)
+        self.assertTrue(self.fx.metrics.stage["crt"])
+
+    def test_replay_ends_and_the_live_state_comes_back(self):
+        self.play(SAVE_FRAMES)
+        self.fx.event(GOAL)
+        self.play(REPLAY_FRAMES)
+        self.assertIsNone(self.fx.replay_mode())
+        self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
+
+    def test_close_goal_goes_to_the_var(self):
+        self.play(SAVE_FRAMES)
+        self.fx.event(CLOSE_GOAL)
+        self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
+        self.assertEqual(self.fx.replay_stage(), replay.REVIEW)
+        self.assertEqual(self.fx.replay_zoom(), (600.0, 300.0))
+        self.play(2)
+        self.assertTrue(self.fx.metrics.stage["var"])
+
+    def test_the_var_confirms_and_ends(self):
+        self.play(SAVE_FRAMES)
+        self.fx.event(CLOSE_GOAL)
+        self.play(int(config.Gpu.VAR_DURATION / DT) + 2)
+        self.assertEqual(self.fx.replay_stage(), replay.CONFIRMED)
+        self.play(VAR_FRAMES)
+        self.assertIsNone(self.fx.replay_mode())
+
+    def test_force_var_reviews_every_goal(self):
+        self.play(SAVE_FRAMES)
+        self.fx.force_var = True
+        self.fx.event(GOAL)
+        self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
+
+    def test_heat_map_records_the_play(self):
+        self.play(config.Gpu.HEAT_FLUSH_FRAMES)
+        self.assertGreater(self.fx.heat.recorded, 0)
+        self.assertGreater(int(self.fx.heat.snapshot(self.fx.ops).sum()), 0)
+
+    def test_heat_overlay_paints_the_result(self):
+        self.play(config.Gpu.HEAT_FLUSH_FRAMES)
+        surf = surface()
+        before = np.array(pygame.surfarray.array3d(surf))
+        self.assertTrue(self.fx.heat_overlay(surf, 0))
+        after = np.array(pygame.surfarray.array3d(surf))
+        self.assertFalse(np.array_equal(before, after))
+
+    def test_heat_overlay_off_channel_does_nothing(self):
+        self.play(config.Gpu.HEAT_FLUSH_FRAMES)
+        self.assertFalse(self.fx.heat_overlay(surface(), None))
+
+    def test_clear_forgets_the_replay_and_the_heat(self):
+        self.play(config.Gpu.HEAT_FLUSH_FRAMES)
+        self.fx.event(GOAL)
+        self.fx.clear()
+        self.assertIsNone(self.fx.replay_mode())
+        self.assertEqual(float(self.fx.heat.grids.sum()), 0.0)
+        self.assertEqual(self.fx.heat.recorded, 0)
+        self.assertEqual(self.fx.history.saved, [])
 
 
 if __name__ == "__main__":

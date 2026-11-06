@@ -126,6 +126,27 @@ class _NoFx:
     def begin(self, screen, state):
         return screen
 
+    def view_state(self, state):
+        """The live state: there is no replay without the effects."""
+        return state
+
+    def replay_mode(self):
+        """No replay without the effects."""
+        return None
+
+    def replay_stage(self):
+        """No VAR without the effects."""
+        return None
+
+    def replay_zoom(self):
+        """No zoom without the effects."""
+        return None
+
+    def heat_overlay(self, surface, channel):
+        """No heat map without the effects."""
+        del surface, channel
+        return False
+
     def finish(self, screen, dt):
         """Nothing to do."""
 

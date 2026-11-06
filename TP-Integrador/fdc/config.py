@@ -400,10 +400,9 @@ class Gpu:
     FREEZE_LIGHT = (0.45, 0.75, 1.0)   # rgb of the ice spotlight
     FREEZE_RADIUS = 260.0   # px: radius of the ice spotlight
     BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
-    HEATMAP_COLS = 64       # cells of the heat map
-    HEATMAP_ROWS = 36       # cells of the heat map
-    HEATMAP_DECAY = 0.994   # per frame: the heat fades out
-    HEATMAP_AMOUNT = 0.35   # heat added by a player each frame
+    # 80 x 45 cells of 16 px: the grid of the spec (one cell per 16 px).
+    HEATMAP_COLS = 80       # cells of the heat map, across
+    HEATMAP_ROWS = 45       # cells of the heat map, down
     REPLAY_SECONDS = 20.0   # s of states kept for the replay
     REPLAY_STEP = 0.25      # s between saved states
     METRICS_FRAMES = 120    # frames averaged by the overlay
@@ -441,6 +440,25 @@ class Gpu:
     TRAIL_MIN_SPEED = 800.0   # px/s: from here the ball leaves a trail
     TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
     TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
+    # --- F5: replay and VAR (the review of a close goal) ---------------------
+    REPLAY_DURATION = 3.0     # s of the match shown again after a goal
+    VAR_DURATION = 2.0        # s of the referee review
+    VAR_CONFIRM = 0.8         # s the "goal stands" sign stays after that
+    VAR_FRAMES = 6            # saved states the review looks back
+    CRT_TINT = (0.80, 1.0, 0.85)   # rgb of the old television
+    CRT_SCAN = 0.35           # darkening of the scan lines (0-1)
+    CRT_VIGNETTE = 0.45       # darkening of the corners (0-1)
+    CRT_NOISE = 0.10          # strength of the grain (0-1)
+    CRT_AMOUNT = 0.9          # weight of the whole CRT look (0-1)
+    CRT_ROWS = 3              # px between two scan lines
+    VAR_TINT = (0.55, 1.0, 0.65)   # green of the review edges
+    VAR_EDGES = 0.9           # weight of those edges over the gray (0-1)
+    VAR_ZOOM = 2.2            # px factor of the zoom of the review
+    # --- F6: heat map (cells of 16 px on the 1280 x 720 pitch) --------------
+    HEAT_FLUSH_FRAMES = 15    # frames between two flushes to the GPU
+    HEAT_FLUSH_POINTS = 256   # points kept in the host buffer at most
+    HEATMAP_ALPHA = 0.55      # weight of the map over the image (0-1)
+    HEATMAP_GAIN = 4.0        # cells over the maximum that saturate the map
 
 
 # ---------------------------------------------------------------------------

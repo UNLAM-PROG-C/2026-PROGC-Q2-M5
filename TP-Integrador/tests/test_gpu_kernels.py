@@ -27,6 +27,13 @@ GAIN = 1.0              # light weight
 
 HAVE_GPU = env.setup() and backend.available()
 REASON = "no CUDA or no toolchain here (see INSTALACION.md)"
+# --- F5: old television of the replay (k_crt)
+CRT_ARGS = (5, 0.9, 0.35, 0.45, 0.10, 3, (0.80, 1.0, 0.85))   # frame, ...
+# --- F6: heat map (k_heat_accumulate and k_heat_render)
+HEAT_COLS, HEAT_ROWS = 5, 4
+HEAT_ALPHA = 0.55          # weight of the map over the image
+HEAT_GAIN = 4.0            # cells over the top that saturate
+INSIDE_POINTS = 4          # points of the test that fall in the pitch
 
 
 def frame():
@@ -233,6 +240,90 @@ class PowerAndNightTest(unittest.TestCase):
         self.assertAlmostEqual(ours[0], ref[0], delta=0.5)
         self.assertLessEqual(abs(ours[1] - ref[1]), 2)
         self.assertEqual(ours[2], ref[2])
+
+
+@unittest.skipUnless(HAVE_GPU, REASON)
+class ReplayKernelTest(unittest.TestCase):
+    """k_crt (the old television of the replay) against numpy."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.gpu = backend.Gpu()
+        cls.cpu = cpu_ref.Cpu()
+        cls.img = frame()
+
+    def test_crt_matches_the_reference(self):
+        out = self.gpu.crt(self.img, *CRT_ARGS)
+        self.assertEqual(out.shape, self.img.shape)
+        self.assertLessEqual(biggest(out, self.cpu.crt(self.img, *CRT_ARGS)),
+                             LEVELS)
+
+    def test_crt_without_amount_is_the_gray_image(self):
+        args = (0, 0.0, 0.35, 0.45, 0.10, 3, (1.0, 1.0, 1.0))
+        self.assertLessEqual(biggest(self.gpu.crt(self.img, *args),
+                                     self.cpu.gray(self.img)), LEVELS)
+
+    def test_crt_grain_changes_with_the_frame(self):
+        first = self.gpu.crt(self.img, *CRT_ARGS)
+        other = self.gpu.crt(self.img, CRT_ARGS[0] + 1, *CRT_ARGS[1:])
+        self.assertGreater(biggest(first, other), LEVELS)
+
+
+@unittest.skipUnless(HAVE_GPU, REASON)
+class HeatmapKernelTest(unittest.TestCase):
+    """k_heat_accumulate and k_heat_render against numpy (exact counts)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.gpu = backend.Gpu()
+        cls.cpu = cpu_ref.Cpu()
+        cls.img = frame()
+        cls.cell_w = W / HEAT_COLS      # px of one cell, across
+        cls.cell_h = H / HEAT_ROWS      # px of one cell, down
+        cls.points = np.array([[8.0, 8.0], [72.0, 55.0], [40.0, 30.0],
+                               [8.0, 8.0], [300.0, 20.0]], np.float32)
+
+    def accumulate(self, ops, channel=1, points=None):
+        """Grids and maximums after one flush of the test points."""
+        ops.heat_reset(HEAT_COLS, HEAT_ROWS)
+        pts = self.points if points is None else points
+        ops.heat_accumulate(channel, pts, HEAT_COLS, HEAT_ROWS, self.cell_w,
+                            self.cell_h)
+        return ops.heat_download(HEAT_COLS, HEAT_ROWS)
+
+    def test_accumulate_is_exact(self):
+        ours = self.accumulate(self.gpu)
+        ref = self.accumulate(self.cpu)
+        self.assertTrue(np.array_equal(ours[0], ref[0]))
+        self.assertTrue(np.array_equal(ours[1], ref[1]))
+
+    def test_points_outside_the_pitch_are_dropped(self):
+        grids, maxes = self.accumulate(self.gpu)
+        self.assertEqual(int(grids[1].sum()), INSIDE_POINTS)
+        self.assertEqual(int(maxes[1]), 2)      # (8, 8) counts twice
+
+    def test_every_point_goes_to_its_channel(self):
+        for channel in range(3):
+            grids, maxes = self.accumulate(self.gpu, channel)
+            self.assertEqual(int(grids[channel].sum()), INSIDE_POINTS)
+            self.assertEqual(int(grids.sum()), INSIDE_POINTS)
+            self.assertEqual(int(maxes[channel]), 2)
+
+    def test_render_without_heat_keeps_the_image(self):
+        grids = np.zeros((3, HEAT_ROWS, HEAT_COLS), np.uint32)
+        maxes = np.zeros(3, np.uint32)
+        args = (HEAT_COLS, HEAT_ROWS, 0)
+        ours = self.gpu.heat_render(self.img, grids, maxes, *args,
+                                    HEAT_ALPHA, HEAT_GAIN)
+        self.assertLessEqual(biggest(ours, self.img), LEVELS)
+
+    def test_render_matches_the_reference(self):
+        grids, maxes = self.accumulate(self.cpu)
+        args = (HEAT_COLS, HEAT_ROWS, 1, HEAT_ALPHA, HEAT_GAIN)
+        ours = self.gpu.heat_render(self.img, grids, maxes, *args)
+        ref = self.cpu.heat_render(self.img, grids, maxes, *args)
+        self.assertLessEqual(biggest(ours, ref), LEVELS)
+        self.assertGreater(biggest(ours, self.img), LEVELS)
 
 
 if __name__ == "__main__":

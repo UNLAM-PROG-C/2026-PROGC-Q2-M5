@@ -1474,6 +1474,7 @@ class OnlineResultScreen(OnlineScreen):
         self.menu = None
         self.menu_key = None
         self.confetti_t = 0.0
+        self.heat = None           # channel of the heat map (F6), None: off
 
     def enter(self):
         self.app.audio.crowd(False)
@@ -1525,6 +1526,9 @@ class OnlineResultScreen(OnlineScreen):
     def handle_event(self, ev):
         if self.handle_back(ev):
             return
+        step = match_screens.heat_step(ev)
+        if step:
+            self.heat = match_screens.heat_cycle(self.heat, step)
         if self.menu:
             self.menu.handle_event(ev, self.app.audio)
 
@@ -1544,16 +1548,22 @@ class OnlineResultScreen(OnlineScreen):
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
         screens.dim(surf, layout.VEIL_RESULT)
+        self.app.postfx.heat_overlay(surf, self.heat)
         for i in (0, 1):
             self._player(surf, i)
         self.app.fx.draw(surf)
         self._headline(surf)
+        self._board(surf)
+        match_screens.heat_hint(surf, self.heat)
+        self.draw_common(surf)
+
+    def _board(self, surf):
+        """Scoreboard, note and buttons of the result."""
         screens.scoreboard(surf, self.SCORE_CENTER, self.SCORE_W,
                            f"{self.score[0]}-{self.score[1]}")
         self._note(surf)
         if self.menu:
             self.menu.draw(surf)
-        self.draw_common(surf)
 
     def _player(self, surf, i):
         x = self.PLAYER_X[i]

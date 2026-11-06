@@ -7,13 +7,14 @@ is skipped when there is no CUDA; the "off" run always happens.
 import unittest
 
 import helpers  # pylint: disable=unused-import
+from fdc import config
 from fdc.gpu import backend
 from fdc.gpu import demo
 from fdc.gpu import env
 
 FRAMES = 40             # frames of each run (short: it is a test)
 STAGES = ("glow", "particles", "frame", "fps")
-HAVE_GPU = env.setup() and backend.available()
+HAVE_GPU = config.Gpu.ENABLED and env.setup() and backend.available()
 
 
 class DemoOffTest(unittest.TestCase):

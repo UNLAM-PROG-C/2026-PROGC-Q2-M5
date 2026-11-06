@@ -19,9 +19,11 @@ from fdc.gpu import backend
 from fdc.gpu import cpu_ref
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
+from fdc.gpu import heatmap
 from fdc.gpu import metrics as gpu_metrics
 from fdc.gpu import particles
 from fdc.gpu import quality
+from fdc.gpu import replay
 
 MS_PER_S = 1000.0       # seconds to milliseconds
 LIGHT_FIELDS = 7        # x, y, radius, power, r, g, b
@@ -55,7 +57,7 @@ class PostFx:
         self._init_effects()
 
     def _init_effects(self):
-        """State of the F3/F4 effects (viewer, night, clock, trail...)."""
+        """State of the effects (viewer, night, clock, trail, replay, heat)."""
         self.viewer = None          # 0, 1 or None on a shared screen
         self.night = False          # local option (key N)
         self.clock = 0.0            # s of the chain (ages of the effects)
@@ -63,6 +65,11 @@ class PostFx:
         self.fx = effects_state.FxParams()
         self.exposure = exposure.AutoExposure()
         self.trail_gate = effects_state.TrailGate()
+        self.history = replay.StateHistory()   # saved states (F5)
+        self.player = None          # replay or VAR being drawn (F5)
+        self.frame_no = 0           # frames drawn (grain of the CRT)
+        self.force_var = False      # tests/demo: review every goal
+        self.heat = heatmap.HeatmapRecorder()  # heat map of the match (F6)
 
     # ------------------------------------------------------------- lifecycle
     def start(self):
@@ -85,7 +92,38 @@ class PostFx:
             self.start()
             if not self.enabled:
                 return screen
+        self.history.feed(state, self.clock)
         return self.target
+
+    def view_state(self, state):
+        """State the world is drawn with: the replay one while it runs."""
+        if self.player is None:
+            return state
+        return self.player.state_at(self.clock)
+
+    def replay_mode(self):
+        """None, replay.REPLAY_KIND or replay.VAR_KIND (what is on screen)."""
+        return None if self.player is None else self.player.kind
+
+    def replay_stage(self):
+        """Stage of the VAR (replay.REVIEW / CONFIRMED), or None."""
+        if self.player is None or self.player.kind != replay.VAR_KIND:
+            return None
+        return self.player.stage(self.clock)
+
+    def replay_zoom(self):
+        """(x, y) the VAR zoom is centred on, or None."""
+        if self.player is None or self.player.kind != replay.VAR_KIND:
+            return None
+        return replay.ball_xy(self.player.state_at(self.clock))
+
+    def heat_overlay(self, surface, channel):
+        """Draws the heat map of a channel over the surface (F6)."""
+        if channel is None or self.ops is None:
+            return False
+        image = to_array(surface)
+        to_screen(self.heat.render(self.ops, image, channel), surface)
+        return True
 
     def finish(self, screen, dt):
         """Runs the chain and leaves the result on `screen`."""
@@ -109,7 +147,7 @@ class PostFx:
         return self.mode
 
     def clear(self):
-        """New match: no sparks, no trail, no lights, no event effects."""
+        """New match: nothing left (sparks, trail, replay, heat map)."""
         self.particles.clear()
         self.trail = None
         self.lights = _no_lights()
@@ -117,6 +155,9 @@ class PostFx:
         self.fx = effects_state.FxParams()
         self.exposure.reset()
         self.trail_gate.reset()
+        self.history.clear()
+        self.player = None
+        self.heat.clear()
 
     # ---------------------------------------------------------------- events
     def event(self, msg):
@@ -124,16 +165,34 @@ class PostFx:
         kind = msg.get("type")
         x, y = msg.get("x"), msg.get("y")
         if kind == protocol.EV_GOAL:
-            self.particles.spawn(x or 0.0, y or 0.0, SPARK_COLOUR,
-                                 GOAL_SPARKS)
-            self.events.append(effects_state.EventFx(
-                effects_state.SHOCK_KIND, x or 0.0, y or 0.0, self.clock,
-                config.Gpu.SHOCK_DURATION))
+            self._goal_event(msg)
         elif kind == protocol.EV_BOMB_EXPLODE:
             self.particles.spawn(x or 0.0, y or 0.0, FIRE_COLOUR,
                                  BOMB_SPARKS)
         elif kind == protocol.EV_TOUCH:
             self._touch(x, y, msg.get("speed") or 0.0)
+
+    def _goal_event(self, msg):
+        """Sparks, shock wave and replay of a goal."""
+        x, y = msg.get("x") or 0.0, msg.get("y") or 0.0
+        self.particles.spawn(x, y, SPARK_COLOUR, GOAL_SPARKS)
+        self.events.append(effects_state.EventFx(
+            effects_state.SHOCK_KIND, x, y, self.clock,
+            config.Gpu.SHOCK_DURATION))
+        self._start_replay(msg)
+
+    def _start_replay(self, msg):
+        """Replay of a goal, or the VAR when it went in by very little."""
+        frames = self.history.frames(config.Gpu.REPLAY_DURATION)
+        if not frames:
+            return
+        ball = (msg.get("x"), msg.get("y"))
+        close = self.history.is_close(msg.get("side"), ball)
+        if close or self.force_var:
+            self.player = replay.VarPlayer(frames[-1][1], self.clock)
+        else:
+            self.player = replay.ReplayPlayer(frames, self.clock,
+                                              config.Gpu.REPLAY_DURATION)
 
     def _touch(self, x, y, speed):
         """Sparks of a kick or a bounce (only if it was strong)."""
@@ -143,9 +202,17 @@ class PostFx:
     # ----------------------------------------------------------------- chain
     def _chain(self, image, dt):
         self.clock += dt
-        self.fx = self._derive()
+        self.frame_no += 1
         self.particles.update(dt)
+        self._record_heat()
+        if self._advance_player():
+            return self._screened(image)      # replay or VAR: only its look
+        self.fx = self._derive()
         self.phase += config.Gpu.HEAT_SPEED * dt
+        return self._night(self._stages(image, dt))
+
+    def _stages(self, image, dt):
+        """The stages of the fixed order (spec 5.3) plus the extras."""
         stages = quality.stages(self.level)
         out = image
         if quality.GLOW in stages:
@@ -153,8 +220,40 @@ class PostFx:
         out = self._timed("particles", self._sparks, out)
         out = self._timed("lights", self._lights, out)
         out = self._powers(out, dt)
-        out = self._extras(out, dt, stages)
-        return self._night(out)
+        return self._extras(out, dt, stages)
+
+    def _advance_player(self):
+        """Drops the replay when it is over; True while one is drawn."""
+        if self.player is not None and self.player.finished(self.clock):
+            self.player = None
+        return self.player is not None
+
+    def _record_heat(self):
+        """Feeds the heat map of the match (F6)."""
+        self.heat.feed(self.state)
+        if self.ops is not None and self.heat.due():
+            self.heat.flush(self.ops)
+
+    def _screened(self, image):
+        """Replay or VAR: the chain ends with the look of the screen."""
+        if self.player.kind == replay.VAR_KIND:
+            return self._timed("var", self._var_look, image)
+        return self._timed("crt", self._crt, image)
+
+    def _crt(self, image):
+        """Old television of the replay (k_crt)."""
+        gpu = config.Gpu
+        return self.ops.crt(image, self.frame_no, gpu.CRT_AMOUNT,
+                            gpu.CRT_SCAN, gpu.CRT_VIGNETTE, gpu.CRT_NOISE,
+                            gpu.CRT_ROWS, gpu.CRT_TINT)
+
+    def _var_look(self, image):
+        """VAR: gray image with the bright edges in green (spec 5.4)."""
+        gpu = config.Gpu
+        edges = self.ops.sobel(self.ops.to_gray(image))
+        norm = self.ops.sobel_normalize(edges, float(edges.max() or 1.0))
+        tinted = self.ops.tint(norm, gpu.VAR_TINT)
+        return self.ops.edge_glow(self.ops.gray(image), tinted, gpu.VAR_EDGES)
 
     def _derive(self):
         """FxParams of this frame (pure rules, see effects_state)."""

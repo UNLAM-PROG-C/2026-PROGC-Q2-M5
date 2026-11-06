@@ -11,6 +11,7 @@ import pygame
 
 from fdc import config
 from fdc import protocol
+from fdc.gpu import replay
 from fdc.ui import assets
 from fdc.ui import characters
 from fdc.ui import icons
@@ -63,6 +64,19 @@ TEST_COMMANDS = {"f7": (protocol.CMD_DEBUG_POWER, "spawn"),
                  "f9": (protocol.CMD_DEBUG_POWER, "p1"),
                  "f12": (protocol.CMD_DEBUG_CRASH, None)}
 TEST_STEPS = {"f5": -1, "f6": 1}   # test mode keys that change the power
+# --- replay and VAR (F5)
+REPLAY_SIGN_Y = 56                 # px: height of the sign on screen
+REPLAY_BLINK_HZ = 3                # blinks per second of that sign
+REPLAY_SIGNS = {replay.REPLAY_KIND: "REPETICIÓN",
+                replay.REVIEW: "VAR: REVISANDO...",
+                replay.CONFIRMED: "GOL CONFIRMADO"}
+# --- heat map of the result (F6): off, ball, first player, second player.
+HEAT_CHANNELS = (None, 0, 1, 2)    # channels cycled with the arrows
+HEAT_LABELS = {None: "apagado", 0: "pelota", 1: "jugador 1",
+               2: "jugador 2"}     # name of each channel on the hint line
+HEAT_STEPS = {pygame.K_LEFT: -1, pygame.K_RIGHT: 1}   # keys of the channel
+HEAT_HINT_LEFT = 24                # px: left edge of the hint line
+HEAT_HINT_Y = 76                   # px: below the back button of online
 # Method of MatchScreen that handles each simulation event.
 EVENT_HANDLERS = {
     protocol.EV_GOLDEN_GOAL: "_golden_goal",
@@ -130,6 +144,45 @@ def selection_frames(surf, rr, chosen_by):
         fr = rr.inflate(grow, grow)
         pygame.draw.rect(surf, config.PLAYER_COLORS[i], fr, SELECTION_LINE)
         yield i, fr
+
+
+# ---------------------------------------------------------------------------
+# Replay, VAR and heat map helpers (F5 and F6)
+# ---------------------------------------------------------------------------
+def zoom_around(surface, centre, factor=config.Gpu.VAR_ZOOM):
+    """Scales a window around `centre` to the whole surface (VAR zoom)."""
+    w, h = surface.get_size()
+    cw, chh = int(w / factor), int(h / factor)
+    left = _clamp_int(centre[0] - cw / 2, 0, w - cw)
+    top = _clamp_int(centre[1] - chh / 2, 0, h - chh)
+    crop = surface.subsurface(pygame.Rect(left, top, cw, chh))
+    surface.blit(pygame.transform.scale(crop, (w, h)), (0, 0))
+
+
+def _clamp_int(value, low, high):
+    """`value` as an int between low and high."""
+    return max(low, min(high, int(value)))
+
+
+def heat_step(ev):
+    """-1 or +1 if the event changes the channel of the heat map."""
+    if ev.type != pygame.KEYDOWN:
+        return 0
+    return HEAT_STEPS.get(ev.key, 0)
+
+
+def heat_cycle(channel, step):
+    """Next channel of the heat map (None means off)."""
+    index = HEAT_CHANNELS.index(channel) if channel in HEAT_CHANNELS else 0
+    return HEAT_CHANNELS[(index + step) % len(HEAT_CHANNELS)]
+
+
+def heat_hint(surf, channel):
+    """Line with the channel of the heat map and how to change it."""
+    txt = f"Mapa de calor: {HEAT_LABELS.get(channel)}  (←/→)"
+    x = HEAT_HINT_LEFT + assets.text_width(txt, layout.FONT_SMALL) // 2
+    assets.draw_text(surf, txt, layout.FONT_SMALL, (x, HEAT_HINT_Y),
+                     palette.INK, outline=palette.WHITE)
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +841,7 @@ class MatchScreen(screens.Screen):
         if st is None:
             self._draw_waiting(surf)
             return
-        self.draw_match(surf, st, st)
+        self.draw_match(surf, self.app.postfx.view_state(st), st)
         self._draw_end_and_test(surf)
         self.pause_button.visible = (self.pause_state is None
                                      and self.end_info is None)
@@ -806,14 +859,39 @@ class MatchScreen(screens.Screen):
 
     def draw_match(self, surf, view, st):
         """World (from 'view'), effects, scoreboard, signs and notices."""
-        off = self.app.fx.shake_offset()
+        mode = self.app.postfx.replay_mode()
+        off = (0, 0) if mode else self.app.fx.shake_offset()
         world = self.app.postfx.begin(surf, st)
         self.renderer.draw_world(world, view, off)
-        self.app.fx.draw(world, off)
+        if mode:
+            self._replay_frame(world)
+        else:
+            self.app.fx.draw(world, off)
         self.app.postfx.finish(surf, self.app.last_dt)
+        self._draw_replay_sign(surf)
         self.renderer.draw_hud(surf, st)
         self.renderer.draw_center_messages(surf, st)
         self._draw_toasts(surf)
+
+    def _replay_frame(self, world):
+        """The VAR zooms on the ball before the chain draws the review."""
+        centre = self.app.postfx.replay_zoom()
+        if centre is not None:
+            zoom_around(world, centre)
+
+    def _draw_replay_sign(self, surf):
+        """Sign of the replay or of the VAR (the HUD stays in live)."""
+        mode = self.app.postfx.replay_mode()
+        if mode is None:
+            return
+        key = (mode if mode == replay.REPLAY_KIND
+               else self.app.postfx.replay_stage())
+        blink = int(self.t * REPLAY_BLINK_HZ) % 2
+        if blink and key != replay.CONFIRMED:
+            return
+        assets.draw_text(surf, REPLAY_SIGNS.get(key, ""), layout.FONT_LARGE,
+                         (layout.CENTER_X, REPLAY_SIGN_Y), palette.WHITE,
+                         outline=palette.INK)
 
     def _draw_waiting(self, surf):
         surf.blit(self.app.background, (0, 0))
@@ -955,6 +1033,7 @@ class ResultScreen(screens.Screen):
             width=self.MENU_W, height=self.MENU_BUTTON_H, gap=self.MENU_GAP,
             size=self.MENU_FONT)
         self.confetti_t = 0.0
+        self.heat = None           # channel of the heat map (F6), None: off
 
     def enter(self):
         self.app.audio.crowd(False)
@@ -977,6 +1056,9 @@ class ResultScreen(screens.Screen):
         self.app.switch(screens.MenuScreen(self.app))
 
     def handle_event(self, ev):
+        step = heat_step(ev)
+        if step:
+            self.heat = heat_cycle(self.heat, step)
         self.menu.handle_event(ev, self.app.audio)
 
     def update(self, dt):
@@ -994,6 +1076,7 @@ class ResultScreen(screens.Screen):
     def draw(self, surf):
         surf.blit(self.app.background, (0, 0))
         screens.dim(surf, layout.VEIL_RESULT)
+        self.app.postfx.heat_overlay(surf, self.heat)
         for i in (0, 1):
             self._player(surf, i)
         self.app.fx.draw(surf)
@@ -1001,6 +1084,7 @@ class ResultScreen(screens.Screen):
         screens.scoreboard(surf, self.SCORE_CENTER, self.SCORE_W,
                            f"{self.score[0]}-{self.score[1]}")
         self.menu.draw(surf)
+        heat_hint(surf, self.heat)
         screens.footer(surf, "Revancha: mismos personajes  -  Elegir "
                        "personajes: volver a la selección")
 

@@ -46,7 +46,8 @@ def _show(title, data):
     print(f"  modo {data['mode']} | calidad {data['quality']} | {data['gpu']}")
     for key in ("glow", "composite", "particles", "lights", "heat", "trail",
                 "histogram", "shock", "fire", "confusion", "confusion_rot",
-                "ice_edges", "ice_tint", "blackout", "night", "exposure"):
+                "ice_edges", "ice_tint", "blackout", "night", "exposure",
+                "crt", "var"):
         if data.get(key):
             print(f"  {key:<13} {data[key]:7.3f} ms")
     print(f"  cadena        {data.get('frame', 0):7.3f} ms   "

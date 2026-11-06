@@ -26,6 +26,17 @@ HEAT_LATERAL = 0.4      # the horizontal move is smaller
 RIPPLE_PI = math.pi     # sine of the shock ring
 RIPPLE_GLOW = 60.0      # brightest edge of the ring (0..255)
 P95 = 0.95              # percentile reported by `luma_stats`
+# F5: the old television of the replay (same numbers as k_crt).
+CRT_NOISE_MUL = 2654435761   # multiplier of the noise hash
+CRT_NOISE_SHIFT = 24         # high bits used from that hash
+CRT_NOISE_MAX = 255.0        # levels of the noise byte
+CRT_MASK = 0xFFFFFFFF        # 32 bit wrap of the unsigned hash
+CRT_DIAGONAL = 0.70710678    # 1/sqrt(2): brings the vignette to 0..1
+CRT_HALF = 0.5               # centre of the grain
+CRT_SECOND = 2.0             # the vignette and the bands use a factor 2
+CRT_X_MUL = 1973             # hash: weight of x
+CRT_Y_MUL = 9277             # hash: weight of y
+CRT_FRAME_MUL = 26699        # hash: weight of the frame number
 
 
 def _rgb(img):
@@ -202,6 +213,43 @@ class Primitives:
     def luma_stats(self, img):
         """(mean, p95, top) of the 0..255 luma histogram."""
         return _stats(*self._luma_hist(img))
+
+    # ------------------------------------------ replay: old television (F5)
+    def crt(self, img, frame, amount, scan, vignette, noise, rows, tint):
+        """Gray, bands, vignette and grain: the old TV of the replay."""
+        h, w = img.shape[:2]
+        xs, ys = _grid_xy(w, h)
+        luma = self.to_gray(img)
+        band = self._crt_bands(ys, scan, rows)
+        vig = self._crt_vignette(xs, ys, vignette)
+        grain = self._crt_grain(xs, ys, frame)
+        look = luma * band * vig + grain * noise
+        v = luma + (look - luma) * amount
+        return _to_byte(np.clip(v[..., None] * np.array(tint, np.float32),
+                                0.0, 1.0))
+
+    def _crt_bands(self, ys, scan, rows):
+        """One darker line every `rows` rows (the sweep of the tube)."""
+        if rows <= 0:
+            return np.ones(ys.shape, np.float32)
+        dark = (ys.astype(np.int32) % rows) == rows - 1
+        return np.where(dark, 1.0 - scan, 1.0).astype(np.float32)
+
+    def _crt_vignette(self, xs, ys, amount):
+        """Radial darkening: 0 in the centre and 1 in the corners."""
+        h, w = ys.shape
+        nx = CRT_SECOND * xs / float(max(w - 1, 1)) - 1.0
+        ny = CRT_SECOND * ys / float(max(h - 1, 1)) - 1.0
+        d = np.sqrt(nx * nx + ny * ny) * CRT_DIAGONAL
+        return (1.0 - amount * d * d).astype(np.float32)
+
+    def _crt_grain(self, xs, ys, frame):
+        """Grain of (x, y, frame) with the same hash as `k_crt`."""
+        base = (xs.astype(np.int64) * CRT_X_MUL
+                + ys.astype(np.int64) * CRT_Y_MUL + int(frame) * CRT_FRAME_MUL)
+        seed = (base * CRT_NOISE_MUL) & CRT_MASK
+        byte = (seed >> CRT_NOISE_SHIFT) & int(CRT_NOISE_MAX)
+        return byte.astype(np.float32) / CRT_NOISE_MAX - CRT_HALF
 
     def _luma_hist(self, img):
         """256 bins of luma and its top level (same rounding as k_gray)."""

@@ -24,6 +24,7 @@ KERNEL_FILE = "kernels.cu"      # the CUDA source, next to this module
 MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
+POINT_FIELDS = 2                # x and y of one heat map point
 
 
 def kernel_path():
@@ -496,3 +497,80 @@ class Gpu(primitives.Primitives):
                                 grid=self._grid(w, h), block=BLOCK)
         return primitives._stats(self._get(hist, (BINS,), np.uint32),
                                  int(self._get(top, (1,), np.uint32)[0]))
+
+    # ----------------------------------------------------- replay and VAR (F5)
+    def crt(self, img, frame, amount, scan, vignette, noise, rows, tint):
+        """Old television: gray, bands, vignette and grain."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("crt_src", shape, np.uint8, img)
+        out = self._buf("crt_out", shape, np.uint8)
+        red, green, blue = (np.float32(c) for c in tint)
+        self._fn("k_crt")(src, out, np.int32(w), np.int32(h),
+                          np.int32(frame), np.float32(amount),
+                          np.float32(scan), np.float32(vignette),
+                          np.float32(noise), np.int32(rows), red, green, blue,
+                          grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    # ------------------------------------------- heat map of the match (F6)
+    def heat_reset(self, cols, rows):
+        """Starts an empty heat map on the device (no trip to the host)."""
+        shape = (CHANNELS, rows, cols)
+        self._buf("heat_grids", shape, np.uint32,
+                  np.zeros(shape, np.uint32))
+        self._buf("heat_max", (CHANNELS,), np.uint32,
+                  np.zeros(CHANNELS, np.uint32))
+
+    def heat_accumulate(self, channel, points, cols, rows, cell_w, cell_h):
+        """Adds every (x, y) point of a channel to its cell (atomicAdd)."""
+        pts = np.asarray(points, np.float32).reshape(-1, POINT_FIELDS)
+        if len(pts) == 0:
+            return
+        table = self._point_buffer(pts)
+        grids = self._buf("heat_grids", (CHANNELS, rows, cols), np.uint32)
+        maxes = self._buf("heat_max", (CHANNELS,), np.uint32)
+        blocks = max(1, (len(pts) + BLOCK[0] - 1) // BLOCK[0])
+        self._fn("k_heat_accumulate")(table, np.int32(len(pts)),
+                                      np.int32(channel), np.int32(cols),
+                                      np.int32(rows), np.float32(cell_w),
+                                      np.float32(cell_h), grids, maxes,
+                                      grid=(blocks, 1, 1), block=BLOCK1D)
+
+    def heat_download(self, cols, rows):
+        """Copies the grid and the maximums back (the only DtoH of F6)."""
+        if not any(key[0] == "heat_grids" for key in self._buffers):
+            return (np.zeros((CHANNELS, rows, cols), np.uint32),
+                    np.zeros(CHANNELS, np.uint32))
+        grids = self._buf("heat_grids", (CHANNELS, rows, cols), np.uint32)
+        maxes = self._buf("heat_max", (CHANNELS,), np.uint32)
+        return (self._get(grids, (CHANNELS, rows, cols), np.uint32),
+                self._get(maxes, (CHANNELS,), np.uint32))
+
+    def heat_render(self, img, grids, maxes, cols, rows, channel, alpha, gain):
+        """Draws the grid of a channel over the image (ramp and mix)."""
+        shape = img.shape
+        src = self._buf("heat_src", shape, np.uint8, img.reshape(-1))
+        maps = self._heat_map(grids, maxes, rows, cols)
+        out = self._buf("heat_out", shape, np.uint8)
+        self._fn("k_heat_render")(src, *maps, out, np.int32(shape[1]),
+                                  np.int32(shape[0]), np.int32(cols),
+                                  np.int32(rows), np.int32(channel),
+                                  np.float32(alpha), np.float32(gain),
+                                  grid=self._grid(shape[1], shape[0]),
+                                  block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def _heat_map(self, grids, maxes, rows, cols):
+        """Device copies of the grid of the match and of its maximums."""
+        gbuf = self._buf("heat_g", (CHANNELS, rows, cols), np.uint32,
+                         np.ascontiguousarray(grids, np.uint32))
+        mbuf = self._buf("heat_m", (CHANNELS,), np.uint32,
+                         np.ascontiguousarray(maxes, np.uint32))
+        return gbuf, mbuf
+
+    def _point_buffer(self, pts):
+        """Device table of points (always at least one row)."""
+        shape = (max(len(pts), 1), POINT_FIELDS)
+        host = pts if len(pts) else np.zeros(shape, np.float32)
+        return self._buf("heat_pts", shape, np.float32, host)

@@ -18,6 +18,9 @@ RAMP_MID = 0.75         # heat ramp: where the red starts to go down
 RAMP_SLOPE = 4.0        # heat ramp: slope of the green and red
 SQRT2 = 1.41421356      # diagonal of the unit square (vignette)
 MEAN_AXES = (1, 3)      # block axes of the minimap reshape
+HEAT_FIELDS = 2         # x and y of a recorded point
+GRID_MIN = 1e-6         # smallest cell size (never divide by zero)
+ONE_COUNT = 1           # each point counts once (atomicAdd of 1 in the GPU)
 
 
 def _rgb(img):
@@ -65,6 +68,11 @@ def _accumulate(img, acc, radius, axis):
 
 class Cpu(primitives.Primitives):
     """Numpy version of the effects (same methods and shapes as Gpu)."""
+
+    def __init__(self):
+        # Heat map of the match (F6): empty until the first heat_reset.
+        self.heat_grids = np.zeros((CHANNELS, 1, 1), np.uint32)
+        self.heat_max = np.zeros(CHANNELS, np.uint32)
 
     def blur(self, img, radius):
         """Separable box blur, with the same 8 bit rounding as the kernel."""
@@ -172,6 +180,44 @@ class Cpu(primitives.Primitives):
                 heat[cy, cx] += amount
         return heat
 
+    # ------------------------------------------ heat map of the match (F6)
+    def heat_reset(self, cols, rows):
+        """Starts an empty heat map (both buffers live in this object)."""
+        self.heat_grids = np.zeros((CHANNELS, rows, cols), np.uint32)
+        self.heat_max = np.zeros(CHANNELS, np.uint32)
+
+    def heat_accumulate(self, channel, points, cols, rows, cell_w, cell_h):
+        """Adds every (x, y) point of a channel to its cell (atomicAdd)."""
+        pts = np.asarray(points, np.float32).reshape(-1, HEAT_FIELDS)
+        if len(pts) == 0:
+            return
+        cx = (pts[:, 0] / max(cell_w, GRID_MIN)).astype(np.int64)
+        cy = (pts[:, 1] / max(cell_h, GRID_MIN)).astype(np.int64)
+        inside = (cx >= 0) & (cx < cols) & (cy >= 0) & (cy < rows)
+        index = (cy * cols + cx)[inside]
+        flat = self.heat_grids.reshape(CHANNELS, -1)[channel]
+        np.add.at(flat, index, ONE_COUNT)
+        self.heat_max[channel] = flat.max()
+
+    def heat_download(self, cols, rows):
+        """Copy of the grid and of the maximums (the only DtoH in the GPU)."""
+        del cols, rows
+        return self.heat_grids.copy(), self.heat_max.copy()
+
+    def heat_render(self, img, grids, maxes, cols, rows, channel, alpha, gain):
+        """Bilinear read of the grid, ramp and mix over the image."""
+        h, w = img.shape[:2]
+        cell_w, cell_h = w / cols, h / rows
+        xs, ys = _bilinear_index(w, h, cols, rows, cell_w, cell_h)
+        v = _bilinear(_grid_array(grids[channel], rows, cols), xs, ys)
+        top = float(maxes[channel])
+        v = np.clip(v / top, 0.0, 1.0) if top > 0 else np.zeros(v.shape,
+                                                                 np.float32)
+        a = alpha * np.minimum(1.0, v * gain)
+        ramp = _heat_ramp(v)
+        out = _rgb(img) * (1.0 - a[..., None]) + ramp * a[..., None]
+        return primitives._to_byte(np.clip(out, 0.0, 1.0))
+
     def _splat(self, img, pos, col, size, gain):
         h, w = img.shape[:2]
         acc = np.zeros((h, w, CHANNELS), dtype=np.float32)
@@ -181,6 +227,45 @@ class Cpu(primitives.Primitives):
             if x1 > x0 and y1 > y0:
                 acc[y0:y1, x0:x1] += c
         return _clamp(_rgb(img) + acc)
+
+
+def _bilinear_index(w, h, cols, rows, cell_w, cell_h):
+    """(x0, x1, tx) and (y0, y1, ty) of the bilinear read of the pixels."""
+    fx = (np.arange(w, dtype=np.float32) + HALF) / max(cell_w, GRID_MIN)
+    fy = (np.arange(h, dtype=np.float32) + HALF) / max(cell_h, GRID_MIN)
+    fx = np.clip(fx - HALF, 0.0, cols - 1)
+    fy = np.clip(fy - HALF, 0.0, rows - 1)
+    return _pair(fx, cols), _pair(fy, rows)
+
+
+def _pair(pos, size):
+    """First cell, second cell and weight of the read of every index."""
+    first = pos.astype(np.int32)
+    second = np.minimum(first + 1, size - 1)
+    return first, second, pos - first
+
+
+def _bilinear(grid, xs, ys):
+    """Bilinear read of a (rows, cols) grid with those indexes."""
+    (x0, x1, tx), (y0, y1, ty) = xs, ys
+    left, right = (1.0 - tx)[None, :], tx[None, :]
+    above = left * grid[y0][:, x0] + right * grid[y0][:, x1]
+    below = left * grid[y1][:, x0] + right * grid[y1][:, x1]
+    return (1.0 - ty)[:, None] * above + ty[:, None] * below
+
+
+def _grid_array(grid, rows, cols):
+    """The grid as a (rows, cols) float32 array (flat or already 2D)."""
+    return np.asarray(grid, np.float32).reshape(rows, cols)
+
+
+def _heat_ramp(v):
+    """Blue -> cyan -> yellow -> red ramp of the heat map (three channels)."""
+    red = np.clip((v - HALF) * 2.0, 0.0, 1.0)
+    green = np.where(v < RAMP_LOW, v * RAMP_SLOPE,
+                     np.where(v < RAMP_MID, 1.0, (1.0 - v) * RAMP_SLOPE))
+    blue = np.clip((HALF - v) * 2.0, 0.0, 1.0)
+    return np.stack([red, green, blue], axis=-1).astype(np.float32)
 
 
 def _vignette(h, w, amount):
