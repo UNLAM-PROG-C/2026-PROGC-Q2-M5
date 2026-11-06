@@ -16,6 +16,7 @@ import pygame
 from fdc import config
 from fdc import protocol
 from fdc.gpu import backend
+from fdc.gpu import celebration
 from fdc.gpu import cpu_ref
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
@@ -26,6 +27,7 @@ from fdc.gpu import quality
 from fdc.gpu import replay
 
 MS_PER_S = 1000.0       # seconds to milliseconds
+WHITE = 255             # channel value of the flash
 LIGHT_FIELDS = 7        # x, y, radius, power, r, g, b
 CLIP = 0.005            # fraction of pixels left outside the contrast range
 LIGHT_POWER = 0.8       # 0-1: strength of the spotlight of a power
@@ -41,6 +43,7 @@ ICE_COLOUR = (0.55, 0.85, 1.0)       # rgb of the ice power
 _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión",
                  "fire": "fuego", "night": "noche", "shock": "onda",
                  "trail": "estela", "crt": "repetición", "var": "VAR"}
+_CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
 
 
 class PostFx:
@@ -90,6 +93,14 @@ class PostFx:
         self.frame_no = 0           # frames drawn (grain of the CRT)
         self.force_var = False      # tests/demo: review every goal
         self.heat = heatmap.HeatmapRecorder()  # heat map of the match (F6)
+        self._init_party()
+
+    def _init_party(self):
+        """F10: the celebration of a goal, its paper and the flash."""
+        self.celebration = None     # the goal being celebrated
+        self.confetti = celebration.ConfettiField()
+        self.pending = None         # goal waiting for the replay
+        self.white = None           # image of the flash (built once)
 
     # ------------------------------------------------------------- lifecycle
     def start(self):
@@ -221,6 +232,9 @@ class PostFx:
         self.history.clear()
         self.player = None
         self.heat.clear()
+        self.celebration = None
+        self.confetti.clear()
+        self.pending = None
 
     # ---------------------------------------------------------------- events
     def event(self, msg):
@@ -236,26 +250,47 @@ class PostFx:
             self._touch(x, y, msg.get("speed") or 0.0)
 
     def _goal_event(self, msg):
-        """Sparks, shock wave and replay of a goal."""
+        """Sparks, shock wave, celebration and (after it) the replay."""
         x, y = msg.get("x") or 0.0, msg.get("y") or 0.0
         self.particles.spawn(x, y, SPARK_COLOUR, GOAL_SPARKS)
         self.events.append(effects_state.EventFx(
             effects_state.SHOCK_KIND, x, y, self.clock,
             config.Gpu.SHOCK_DURATION))
-        self._start_replay(msg)
+        if msg.get("side") is None:
+            return          # the demo forces a wave: no goal, no celebration
+        self.celebration = celebration.Celebration(self.clock, msg)
+        self.pending = {"time": self.clock,
+                        "close": self.history.is_close(msg.get("side"),
+                                                       (x, y)),
+                        "state": self.history.last_state()}
 
-    def _start_replay(self, msg):
-        """Replay of a goal, or the VAR when it went in by very little."""
-        frames = self.history.frames(config.Gpu.REPLAY_DURATION)
+    def _start_replay(self):
+        """Replay of a goal, or the VAR when it went in by very little.
+
+        It starts after the celebration and shows the goal plus
+        `config.Gpu.REPLAY_AFTER_GOAL` seconds of the net.
+        """
+        pending, self.pending = self.pending, None
+        if pending is None:
+            return
+        frames = self.history.window(pending["time"])
         if not frames:
             return
-        ball = (msg.get("x"), msg.get("y"))
-        close = self.history.is_close(msg.get("side"), ball)
-        if close or self.force_var:
-            self.player = replay.VarPlayer(frames[-1][1], self.clock)
+        if pending["close"] or self.force_var:
+            self.player = replay.VarPlayer(pending["state"], self.clock)
         else:
-            self.player = replay.ReplayPlayer(frames, self.clock,
-                                              config.Gpu.REPLAY_DURATION)
+            span = frames[-1][0] - frames[0][0]
+            self.player = replay.ReplayPlayer(frames, self.clock, span)
+
+    def _celebrate(self):
+        """Throws the confetti that is due and starts the replay at the end."""
+        if self.celebration is None:
+            return
+        for index in self.celebration.due_bursts(self.clock):
+            self.confetti.burst(*self.celebration.burst_shape(index))
+        if self.celebration.finished(self.clock):
+            self.celebration = None
+            self._start_replay()
 
     def _touch(self, x, y, speed):
         """Sparks of a kick or a bounce (only if it was strong)."""
@@ -268,12 +303,24 @@ class PostFx:
         self.frame_no += 1
         self.skips = quality.skipped(self.level_index())
         self.particles.update(dt)
+        self.confetti.update(dt)
+        self._celebrate()
         self._record_heat()
         if self._advance_player():
             return self._screened(image)      # replay or VAR: only its look
         self.fx = self._derive()
         self.phase += config.Gpu.HEAT_SPEED * dt
-        return self._night(self._stages(image, dt))
+        return self._flash(self._night(self._stages(image, dt)))
+
+    def _flash(self, image):
+        """Warm white flash of the first frames of the celebration."""
+        amount = 0.0 if self.celebration is None else self.celebration.flash(
+            self.clock)
+        if amount <= 0.0:
+            return image
+        if self.white is None or self.white.shape != image.shape:
+            self.white = np.full(image.shape, WHITE, np.uint8)
+        return self.ops.mix(image, self.white, amount)
 
     def _stages(self, image, dt):
         """The stages of the fixed order (spec 5.3) plus the extras."""
@@ -282,6 +329,8 @@ class PostFx:
         if quality.GLOW in stages and quality.GLOW not in self.skips:
             out = self._timed("glow", self._glow, image)
         out = self._timed("particles", self._sparks, out)
+        if self.confetti.alive():
+            out = self._timed("confetti", self._confetti, out)
         out = self._timed("lights", self._lights, out)
         out = self._powers(out, dt)
         return self._extras(out, dt, stages)
@@ -350,15 +399,24 @@ class PostFx:
 
     def begin_replay(self, var=False):
         """Starts a replay (or the VAR) of the last seconds of real play."""
-        frames = self.history.frames(config.Gpu.REPLAY_DURATION)
+        frames = self.history.window(self.clock)
         if not frames:
             return False
         if var:
             self.player = replay.VarPlayer(frames[-1][1], self.clock)
         else:
-            self.player = replay.ReplayPlayer(frames, self.clock,
-                                              config.Gpu.REPLAY_DURATION)
+            span = frames[-1][0] - frames[0][0]
+            self.player = replay.ReplayPlayer(frames, self.clock, span)
         return True
+
+    def skip(self):
+        """Jumps the party of the goal and its replay: the match comes back."""
+        playing = (self.celebration is not None or self.player is not None)
+        self.celebration = None
+        self.pending = None
+        self.player = None
+        self.confetti.clear()
+        return playing
 
     def active_effects(self):
         """Readable list of the effects on this frame (overlay line 4)."""
@@ -368,6 +426,8 @@ class PostFx:
             value = getattr(self.fx, name, None)
             if value not in (None, (), 0, 0.0, False):
                 names.append(_EFFECT_NAMES.get(name, name))
+        if self.celebration is not None:
+            names.append(_CELEBRATION_NAME)
         return " + ".join(names) if names else "ninguno"
 
     def other_measurement(self):
@@ -502,6 +562,12 @@ class PostFx:
             return image
         return self.ops.particles(image, self._scaled_points(pos), col,
                                   config.Gpu.PARTICLE_GAIN)
+
+    def _confetti(self, image):
+        """Paper bits of the goal celebration (the `confetti` kernel)."""
+        pos, col = self.confetti.live()
+        return self.ops.confetti(image, self._scaled_points(pos), col,
+                                 config.Gpu.CONFETTI_GAIN)
 
     def _lights(self, image):
         table = self._scaled_lights(self._light_table())

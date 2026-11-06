@@ -212,6 +212,27 @@ class Gpu(primitives.Primitives):
         return self._splat(img, pos, col[:, :CHANNELS], col[:, CHANNELS], gain,
                            "particles")
 
+    def confetti(self, img, pos, col, gain):
+        """Confetti: pos (n,2), col (n,5) r,g,b, half width, half height."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        acc = self._buf("confetti_acc", shape, np.float32,
+                        np.zeros(shape, np.float32))
+        if len(pos) > 0:
+            self._confetti_points(img, pos, col, gain, acc, w, h)
+        return self._add(img, acc, 1.0)
+
+    def _confetti_points(self, img, pos, col, gain, acc, w, h):
+        """One thread per paper bit blends its rectangle over the image."""
+        table = self._buf("confetti_tab", col.shape, np.float32, col)
+        count = int(len(pos))
+        src = self._buf("confetti_src", img.shape, np.uint8, img)
+        self._fn("confetti")(
+            self._buf("confetti_pos", pos.shape, np.float32, pos), table,
+            np.int32(count), src, acc, np.int32(w), np.int32(h),
+            np.float32(gain),
+            grid=((count + BLOCK[0] - 1) // BLOCK[0], 1, 1), block=BLOCK1D)
+
     def lights(self, img, lights, gain):
         """Additive spotlights: x, y, radius, power, r, g, b."""
         h, w = img.shape[:2]

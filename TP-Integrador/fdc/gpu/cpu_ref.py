@@ -10,6 +10,8 @@ from fdc.gpu import primitives
 
 CHANNELS = 3            # interleaved RGB
 BYTE_MAX = 255.0        # top of the 8 bit range
+BIT_HALF_W = 3          # column of the half width of a paper bit
+BIT_HALF_H = 4          # column of the half height of a paper bit
 HALF = 0.5              # used to build the vignette and the heat ramp
 LUMA_R, LUMA_G, LUMA_B = 0.299, 0.587, 0.114   # luminance (Rec. 601)
 EPS = 1e-6              # smallest divisor (never divide by zero)
@@ -115,6 +117,26 @@ class Cpu(primitives.Primitives):
         """Additive glowing particles: pos (n,2), col (n,4) r,g,b,size."""
         return self._splat(img, pos, col[:, :CHANNELS] * gain, col[:, CHANNELS],
                            gain)
+
+    def confetti(self, img, pos, col, gain):
+        """Confetti: pos (n,2), col (n,5) r,g,b, half width, half height."""
+        h, w = img.shape[:2]
+        base = _rgb(img)
+        acc = np.zeros((h, w, CHANNELS), dtype=np.float32)
+        for (x, y), bit in zip(pos, col):
+            self._paper(acc, base, (x, y), bit, gain)
+        return _clamp(base + acc)
+
+    def _paper(self, acc, base, centre, bit, gain):
+        """Blends one paper bit over its rectangle of the accumulator."""
+        half_w, half_h = int(bit[BIT_HALF_W]), int(bit[BIT_HALF_H])
+        height, width = base.shape[:2]
+        x0, x1 = max(int(centre[0]) - half_w, 0), min(
+            int(centre[0]) + half_w + 1, width)
+        y0, y1 = max(int(centre[1]) - half_h, 0), min(
+            int(centre[1]) + half_h + 1, height)
+        if x1 > x0 and y1 > y0:
+            acc[y0:y1, x0:x1] += (bit[:CHANNELS] - base[y0:y1, x0:x1]) * gain
 
     def lights(self, img, lights, gain):
         """Additive spotlights: x, y, radius, power, r, g, b."""

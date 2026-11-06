@@ -146,6 +146,10 @@ class _NoFx:
         """No zoom without the effects."""
         return None
 
+    def skip(self):
+        """Nothing to skip without the effects."""
+        return False
+
     def heat_overlay(self, surface, channel):
         """No heat map without the effects."""
         del surface, channel

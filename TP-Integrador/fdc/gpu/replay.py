@@ -71,6 +71,23 @@ class StateHistory:
         picked = [item for item in self.saved if item[0] >= limit]
         return picked or self.saved[-1:]
 
+    def window(self, center, back=G.REPLAY_DURATION,
+               forward=G.REPLAY_AFTER_GOAL):
+        """States from `back` s before `center` to `forward` s after it.
+
+        It is the window of a goal: the replay has to show the goal and a
+        little of the net, so the last state is built at exactly
+        `center + forward` (the saved ones are a step apart).
+        """
+        if not self.saved:
+            return []
+        picked = _window_states(self.saved, center - back, center + forward)
+        return picked or self.frames(back)
+
+    def last_state(self):
+        """Newest saved state ({} if there is none)."""
+        return self.saved[-1][1] if self.saved else {}
+
     def is_close(self, side, ball=None, frames=G.VAR_FRAMES):
         """True if the goal was doubtful: the ball passed just under the bar.
 
@@ -188,6 +205,23 @@ class VarPlayer:
         """The frozen state (the match clock does not move)."""
         del now  # the whole idea of the VAR is that time stands still
         return self.state
+
+
+def _window_states(saved, start, end):
+    """Saved states between `start` and `end`, the last one exactly at `end`.
+
+    If no state was saved after `end` yet, the window ends at the last one
+    (the goal arrived at the very end of the ring).
+    """
+    picked = [item for item in saved if start <= item[0] <= end]
+    if not picked or picked[-1][0] >= end - STEP_TOLERANCE:
+        return picked
+    later = [item for item in saved if item[0] > end]
+    if not later:
+        return picked
+    gap = later[0][0] - picked[-1][0]
+    mix = 1.0 if gap <= STEP_TOLERANCE else (end - picked[-1][0]) / gap
+    return picked + [(end, _mix(picked[-1][1], later[0][1], min(1.0, mix)))]
 
 
 def _mix(first, second, mix):

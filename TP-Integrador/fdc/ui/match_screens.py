@@ -66,6 +66,8 @@ TEST_COMMANDS = {"f7": (protocol.CMD_DEBUG_POWER, "spawn"),
 TEST_STEPS = {"f5": -1, "f6": 1}   # test mode keys that change the power
 # --- replay and VAR (F5)
 REPLAY_SIGN_Y = 56                 # px: height of the sign on screen
+REPLAY_HINT_Y = 84                 # px: below the sign (how to go back)
+REPLAY_HINT = "S: volver al partido"   # key that skips the replay
 REPLAY_BLINK_HZ = 3                # blinks per second of that sign
 REPLAY_SIGNS = {replay.REPLAY_KIND: "REPETICIÓN",
                 replay.REVIEW: "VAR: REVISANDO...",
@@ -450,6 +452,7 @@ class MatchScreen(screens.Screen):
     GOLDEN_GOAL_BANNER = 2.5           # s the golden goal sign is shown
     KICKOFF_BANNER = 0.8               # s the go sign is shown
     GOAL_SHAKE = 0.25                  # s the camera shakes with a goal
+    SKIP_KEY = pygame.K_s              # jumps the party and the replay
     CONFETTI_INSET = 50                # px from the pitch side for confetti
     CONFETTI_HEIGHT = 120              # px above the floor for that confetti
     FINAL_WAIT = 1.8                   # s from final whistle to the result
@@ -606,8 +609,7 @@ class MatchScreen(screens.Screen):
                                      and self.state is not None)
         if self.pause_button.handle_event(ev):
             return
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            self._escape()
+        if ev.type == pygame.KEYDOWN and self._hotkey(ev.key):
             return
         if (ev.type == pygame.KEYDOWN and self.app.options.test_mode
                 and self.pause_state is None):
@@ -615,12 +617,28 @@ class MatchScreen(screens.Screen):
         if self.pause_state == "paused":
             self.pause_menu.handle_event(ev, self.app.audio)
 
+    def _hotkey(self, key):
+        """Escape pauses, S skips the party and the replay (True if used)."""
+        if key == pygame.K_ESCAPE:
+            self._escape()
+            return True
+        if key == self.SKIP_KEY and self._skip():
+            return True
+        return False
+
     def _escape(self):
         if self.pause_state is None:
             self.request_pause()
         elif self.pause_state == "paused":
             self.app.audio.play("confirm")
             self.resume()
+
+    def _skip(self):
+        """S: jumps the party of the goal and its replay (True if it did)."""
+        if self.app.postfx is None or not self.app.postfx.skip():
+            return False
+        self.app.audio.play("confirm")
+        return True
 
     def _test_key(self, key):
         """Test mode: F5/F6 choose a power; F7-F9 give it; F12 fails."""
@@ -880,7 +898,7 @@ class MatchScreen(screens.Screen):
             zoom_around(world, centre)
 
     def _draw_replay_sign(self, surf):
-        """Sign of the replay or of the VAR (the HUD stays in live)."""
+        """Sign of the replay or the VAR (the HUD stays in live)."""
         mode = self.app.postfx.replay_mode()
         if mode is None:
             return
@@ -892,6 +910,13 @@ class MatchScreen(screens.Screen):
         assets.draw_text(surf, REPLAY_SIGNS.get(key, ""), layout.FONT_LARGE,
                          (layout.CENTER_X, REPLAY_SIGN_Y), palette.WHITE,
                          outline=palette.INK)
+        self._draw_skip_hint(surf)
+
+    def _draw_skip_hint(self, surf):
+        """Small line that says how to go back to the match."""
+        assets.draw_text(surf, REPLAY_HINT, layout.FONT_SMALL,
+                         (layout.CENTER_X, REPLAY_HINT_Y), palette.INK,
+                         outline=palette.WHITE)
 
     def _draw_waiting(self, surf):
         surf.blit(self.app.background, (0, 0))

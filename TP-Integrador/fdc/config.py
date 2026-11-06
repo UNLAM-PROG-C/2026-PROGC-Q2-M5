@@ -479,6 +479,23 @@ class Gpu:
     OVERLAY_FONT = 22         # px: minimum size of the overlay text
     OVERLAY_REFRESH = 0.25    # s between overlay text rebuilds (4 Hz)
     MEASURE_FPS = 1000.0      # milliseconds in a second (capacity of a frame)
+    # --- F10: goal celebration (confetti before the replay) ------------------
+    GOAL_CELEBRATION = 2.0    # s of party before the replay starts
+    CONFETTI = 820            # paper bits alive at most
+    CONFETTI_PER_BURST = 120  # paper bits thrown by each burst
+    CONFETTI_SIZE = (2.5, 5.0)   # px: half width of a paper bit
+    CONFETTI_THICK = 0.55     # share of that half width the bit is tall
+    CONFETTI_SPEED = (120.0, 520.0)   # px/s: speed a bit leaves the burst
+    CONFETTI_LIFE = (1.2, 2.4)        # s: life of a bit
+    CONFETTI_GRAVITY = 320.0  # px/s^2 (y grows downwards)
+    CONFETTI_DRAG = 0.6       # 1/s: the air slows the bits down
+    CONFETTI_SWAY = (30.0, 90.0)      # px/s: sideways speed of the flutter
+    CONFETTI_SPIN = (5.0, 12.0)       # rad/s: the bit turns and shows its edge
+    CONFETTI_GAIN = 1.0       # 0-1: opacity of the paper over the image
+    CONFETTI_FLASH = 0.30     # 0-1: white flash right after the goal
+    CONFETTI_FLASH_TIME = 0.18   # s the flash takes to fade out
+    # --- F10: the replay ends this long after the goal (constant) -----------
+    REPLAY_AFTER_GOAL = 0.5   # s of the net the replay shows after the goal
 
 
 # ---------------------------------------------------------------------------

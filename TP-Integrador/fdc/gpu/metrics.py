@@ -16,8 +16,8 @@ import os
 
 from fdc import config
 
-STAGES = ("glow", "composite", "particles", "lights", "heat", "trail",
-          "histogram", "shock", "fire", "confusion", "confusion_rot",
+STAGES = ("glow", "composite", "particles", "confetti", "lights", "heat",
+          "trail", "histogram", "shock", "fire", "confusion", "confusion_rot",
           "ice_edges", "ice_tint", "blackout", "night", "exposure", "crt",
           "var")
 PER_SECOND = 1000.0     # milliseconds in a second

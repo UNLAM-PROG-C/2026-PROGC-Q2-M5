@@ -93,6 +93,18 @@ class KernelTest(unittest.TestCase):
         self.assertClose(self.gpu.particles(self.img, pos, col, GAIN),
                          self.cpu.particles(self.img, pos, col, GAIN))
 
+    def test_confetti(self):
+        """F10: each thread paints the rectangle of one paper bit."""
+        pos = np.array([[10.0, 12.0], [60.0, 40.0], [59.0, 41.0]], np.float32)
+        col = np.array([[1.0, 1.0, 1.0, 2.0, 2.0],
+                        [0.2, 0.9, 0.4, 3.0, 1.0],
+                        [1.0, 0.3, 0.2, 3.0, 1.0]], np.float32)
+        self.assertClose(self.gpu.confetti(self.img, pos, col, GAIN),
+                         self.cpu.confetti(self.img, pos, col, GAIN))
+        empty = np.zeros((0, 2), np.float32)
+        self.assertClose(self.gpu.confetti(self.img, empty, col[:0], GAIN),
+                         self.cpu.confetti(self.img, empty, col[:0], GAIN))
+
     def test_lights(self):
         lights = np.array([[20.0, 20.0, 30.0, 0.8, 1.0, 0.9, 0.5]],
                           np.float32)

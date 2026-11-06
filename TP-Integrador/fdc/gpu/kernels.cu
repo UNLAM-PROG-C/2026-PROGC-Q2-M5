@@ -161,6 +161,33 @@ __global__ void splat_particles(const float *pos, const float *col, int n,
     }
 }
 
+// Confeti del festejo de gol: un hilo por papelito, que pinta su rectangulo.
+// El papel se mezcla con la imagen (no se suma luz, si no el color se
+// pierde sobre el cesped): el atomico guarda la diferencia contra el fondo y
+// `add_light` la devuelve. Sin memoria compartida, como las particulas.
+__global__ void confetti(const float *pos, const float *col, int n,
+                         const unsigned char *img, float *acc, int w, int h,
+                         float gain)
+{
+    int p = blockIdx.x * blockDim.x + threadIdx.x;
+    if (p >= n) return;                        // chequeo de bordes
+    int cx = (int)pos[2 * p];
+    int cy = (int)pos[2 * p + 1];
+    int hw = (int)col[5 * p + 3];              // medio ancho del papel
+    int hh = (int)col[5 * p + 4];              // media altura (de canto, ~0)
+    float tr = col[5 * p], tg = col[5 * p + 1], tb = col[5 * p + 2];
+    for (int y = cy - hh; y <= cy + hh; ++y) {
+        if (y < 0 || y >= h) continue;
+        for (int x = cx - hw; x <= cx + hw; ++x) {
+            if (x < 0 || x >= w) continue;
+            int i = (y * w + x) * CH;
+            atomicAdd(&acc[i], (tr - img[i] / 255.0f) * gain);
+            atomicAdd(&acc[i + 1], (tg - img[i + 1] / 255.0f) * gain);
+            atomicAdd(&acc[i + 2], (tb - img[i + 2] / 255.0f) * gain);
+        }
+    }
+}
+
 // Suma la luz acumulada a la imagen (particulas y spotlights).
 __global__ void add_light(const unsigned char *base, const float *acc,
                           unsigned char *out, int w, int h, float gain)
