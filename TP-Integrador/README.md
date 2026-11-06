@@ -24,6 +24,15 @@ Los efectos GPU son opcionales: sin placa NVIDIA el juego corre igual con la
 versión numpy (`--backend auto` lo detecta solo) y el overlay de `F2` dice
 `CPU`. En la PC de Alejandro, Python se llama con `py` (no está en el PATH).
 
+**Sin CUDA los efectos siguen.** `FDC_GPU=0` (o `--backend cpu`) sólo apaga
+CUDA: la cadena se hace con numpy y **FULL se ve completo** (tribuna animada,
+luces, partículas), más lento; `OPTIMIZADO` es la versión liviana y `AUTO`
+baja el nivel sólo si no llega. Para apagar los efectos hay que pedirlo:
+`--sin-efectos` o `FDC_EFECTOS=0` (`--no-gpu` sigue valiendo como alias).
+En esta PC, con el backend numpy a 1280x720: FULL ≈ 19 fps y OPTIMIZADO
+≈ 290 fps (`py tools\bench_calidades.py`); en una Mac o una notebook sin
+NVIDIA FULL queda en el orden de 10 a 20 fps y la tribuna igual se ve.
+
 **Notebook o PC sin NVIDIA (modo CPU).** Nada de CUDA ni de Visual Studio:
 
 ```powershell
@@ -57,7 +66,11 @@ falla: avisa la razón y sigue en CPU.
 | `py main.py` | Juego normal (auto: GPU si hay, si no CPU) |
 | `py main.py --backend gpu --overlay compact` | Fuerza GPU y muestra el panel de rendimiento |
 | `py main.py --backend cpu` | Fuerza numpy (para comparar en la misma PC) |
+| `py main.py --backend cpu --calidad full` | Sin CUDA y con todos los efectos por CPU |
+| `py main.py --sin-efectos` | Sin efectos (el juego original; `--no-gpu` sigue valiendo) |
 | `py main.py --demo` | Demo automática de 10 efectos, GPU y CPU |
+| `py tools\bench_calidades.py` | fps de FULL, OPTIMIZADO y AUTO con el backend CPU |
+| `py tools\captura_cpu_full.py` | Un cuadro de FULL por CPU en `capturas\cpu-full.png` |
 | `py tools\run_demo.py` | La misma demo sin ventana: tabla + CSV y termina sola |
 | `py -m unittest discover -s tests` | Suite completa (tests de kernels se saltean sin CUDA) |
 

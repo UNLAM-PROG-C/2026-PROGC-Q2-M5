@@ -243,8 +243,7 @@ class Cpu(primitives.Primitives):
         out -= lo
         out /= span
         np.clip(out, 0.0, 1.0, out=out)
-        out *= _vignette(h, w, vignette)[..., None]
-        np.minimum(out, 1.0, out=out)
+        out *= _vignette(h, w, vignette)[..., None]   # it never goes over 1
         return _clamp(out)
 
     def minimap(self, img, cols, rows):
