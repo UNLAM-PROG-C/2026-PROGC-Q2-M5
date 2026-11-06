@@ -168,6 +168,11 @@ class MatchRules:
     GOAL_COUNTDOWN = 2.0    # s: countdown after a goal
     RESUME_COUNTDOWN = 2.0  # s: countdown when a pause ends
     GOAL_CELEBRATION = 2.3  # s: goal celebration (the ball stays in the net)
+    # s: frozen replay of the goal (the interface shows it on top)
+    GOAL_REPLAY = 3.0
+    # s: whole frozen goal: the party, the replay and a small margin. The
+    # match does not move at all until it ends (or the replay is skipped).
+    GOAL_HOLD = GOAL_CELEBRATION + GOAL_REPLAY
     GOLDEN_GOAL_COUNTDOWN = 3.0  # s: kickoff of the golden goal
     # s: without controls from the interface for this long -> pause
     INPUT_WATCHDOG = 0.6
@@ -184,7 +189,9 @@ class PowerRules:
     SPAWN_RATE = 2.0           # how many times more often than the base
     SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
     SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
-    PICKUP_TTL = 6.0        # s a pickup lasts if the ball does not touch it
+    # s: a pickup lasts if the ball does not touch it (2 s more than before:
+    # they disappeared before anyone could reach them)
+    PICKUP_TTL = 8.0
     PICKUP_RADIUS = 26      # px: pickup radius (touched with the ball)
     # px: horizontal band where pickups appear (away from the goals)
     SPAWN_X = (Arena.GOAL_DEPTH + 110, Arena.WIDTH - Arena.GOAL_DEPTH - 110)
@@ -450,7 +457,11 @@ class Gpu:
     TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
     TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
     # --- F5: replay and VAR (the review of a close goal) ---------------------
-    REPLAY_DURATION = 3.0     # s of the match shown again after a goal
+    REPLAY_CLIP = 3.0         # s the whole clip of a goal lasts (F10)
+    # s of the net the clip shows after the goal (F10)
+    REPLAY_AFTER_GOAL = 0.5
+    # s before the goal the clip shows: only the last seconds of the play
+    REPLAY_DURATION = REPLAY_CLIP - REPLAY_AFTER_GOAL
     VAR_DURATION = 2.0        # s of the referee review
     VAR_CONFIRM = 0.8         # s the "goal stands" sign stays after that
     VAR_FRAMES = 6            # saved states the review looks back
@@ -502,8 +513,6 @@ class Gpu:
     CONFETTI_GAIN = 1.0       # 0-1: opacity of the paper over the image
     CONFETTI_FLASH = 0.30     # 0-1: white flash right after the goal
     CONFETTI_FLASH_TIME = 0.18   # s the flash takes to fade out
-    # --- F10: the replay ends this long after the goal (constant) -----------
-    REPLAY_AFTER_GOAL = 0.5   # s of the net the replay shows after the goal
     # --- F11: quality modes of the projector demo ---------------------------
     # full: everything at full resolution, no governor (it may stutter);
     # optimizado: only the cheap stage, no crowd, 4x smaller image;
