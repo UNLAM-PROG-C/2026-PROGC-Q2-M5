@@ -13,7 +13,9 @@ import os
 import numpy as np
 
 CHANNELS = 3                    # interleaved RGB
+BINS = 256                      # luminance levels of the histogram
 BLOCK = (32, 8, 1)              # threads per block (2D: x wide, y tall)
+BLOCK1D = (32, 1, 1)            # for the kernels with one index (particles)
 COMPILER_OPTIONS = ["-std=c++17", "--use_fast_math"]
 DEFAULT_ARCH = "sm_120"         # RTX 50 series; it is detected at runtime
 KERNEL_FILE = "kernels.cu"      # the CUDA source, next to this module
@@ -122,19 +124,22 @@ class Gpu:
         """Bright pass at half resolution, then `passes` box blurs."""
         h, w = img.shape[:2]
         gw, gh = w // 2, h // 2
-        shape = (gh, gw, CHANNELS)
         src = self._buf("glow_src", (h, w, CHANNELS), np.uint8, img)
-        a = self._buf("glow_a", shape, np.float32)
-        b = self._buf("glow_b", shape, np.float32)
-        grid = self._grid(gw, gh)
+        a = self._buf("glow_a", (gh, gw, CHANNELS), np.float32)
+        b = self._buf("glow_b", (gh, gw, CHANNELS), np.float32)
         self._fn("bright_pass")(src, a, np.int32(gw), np.int32(gh),
                                 np.int32(w), np.float32(threshold),
-                                grid=grid, block=BLOCK)
-        size = (np.int32(gw), np.int32(gh), np.int32(radius))
+                                grid=self._grid(gw, gh), block=BLOCK)
+        self._blur_field(a, b, gw, gh, radius, passes)
+        return self._get(a, (gh, gw, CHANNELS), np.float32)
+
+    def _blur_field(self, src, tmp, w, h, radius, passes):
+        """`passes` separable box blurs of a float field, in place."""
+        size = (np.int32(w), np.int32(h), np.int32(radius))
+        grid = self._grid(w, h)
         for _ in range(passes):
-            self._fn("glow_rows")(a, b, *size, grid=grid, block=BLOCK)
-            self._fn("glow_cols")(b, a, *size, grid=grid, block=BLOCK)
-        return self._get(a, shape, np.float32)
+            self._fn("glow_rows")(src, tmp, *size, grid=grid, block=BLOCK)
+            self._fn("glow_cols")(tmp, src, *size, grid=grid, block=BLOCK)
 
     def composite(self, img, glow, exposure, gamma, vignette, strength):
         """Exposure, glow, gamma and vignette, all in one pass."""
@@ -153,7 +158,8 @@ class Gpu:
 
     def particles(self, img, pos, col, gain):
         """Additive glowing particles: pos (n,2), col (n,4) r,g,b,size."""
-        return self._splat(img, pos, col[:, :3], col[:, 3], gain, "particles")
+        return self._splat(img, pos, col[:, :CHANNELS], col[:, CHANNELS], gain,
+                           "particles")
 
     def lights(self, img, lights, gain):
         """Additive spotlights: x, y, radius, power, r, g, b."""
@@ -168,7 +174,7 @@ class Gpu:
         self._fn("splat_lights")(table, count, acc, np.int32(w), np.int32(h),
                                  np.float32(gain),
                                  grid=((len(lights) + BLOCK[0] - 1)
-                                       // BLOCK[0], 1, 1), block=BLOCK)
+                                       // BLOCK[0], 1, 1), block=BLOCK1D)
         return self._add(img, acc, 1.0)
 
     def heat(self, img, phase, amp, period):
@@ -209,11 +215,11 @@ class Gpu:
         """256 bins of luminance (int32)."""
         h, w = img.shape[:2]
         src = self._buf("hist_src", (h, w, CHANNELS), np.uint8, img)
-        hist = self._buf("hist_bins", (256,), np.int32, np.zeros(256,
+        hist = self._buf("hist_bins", (BINS,), np.int32, np.zeros(BINS,
                                                                  np.int32))
         self._fn("luma_hist")(src, hist, np.int32(w), np.int32(h),
                               grid=self._grid(w, h), block=BLOCK)
-        return self._get(hist, (256,), np.int32)
+        return self._get(hist, (BINS,), np.int32)
 
     def stretch(self, img, lo, hi):
         """Contrast stretch between two levels (from the histogram)."""
@@ -246,7 +252,7 @@ class Gpu:
         self._fn("heat_colors")(src, out, np.int32(count),
                                 np.float32(max_value),
                                 grid=((count + BLOCK[0] - 1) // BLOCK[0],
-                                      1, 1), block=BLOCK)
+                                      1, 1), block=BLOCK1D)
         return self._get(out, (rows, cols, CHANNELS), np.uint8)
 
     def heat_splat(self, pos, heat, amount):
@@ -260,7 +266,7 @@ class Gpu:
                                    np.int32(cols), np.int32(rows),
                                    np.float32(amount),
                                    grid=((count + BLOCK[0] - 1) // BLOCK[0],
-                                         1, 1), block=BLOCK)
+                                         1, 1), block=BLOCK1D)
         return self._get(grid, (rows, cols), np.float32)
 
     # -------------------------------------------------------------- helpers
@@ -282,16 +288,19 @@ class Gpu:
         acc = self._buf(f"{tag}_acc", shape, np.float32,
                         np.zeros(shape, np.float32))
         if len(pos) > 0:
-            colour = np.hstack([col, size.reshape(-1, 1)]).astype(np.float32)
-            table = self._buf(f"{tag}_tab", colour.shape, np.float32, colour)
-            count = int(len(pos))
-            self._fn("splat_particles")(
-                self._buf(f"{tag}_pos", pos.shape, np.float32, pos), table,
-                np.int32(count), acc, np.int32(w), np.int32(h),
-                np.float32(gain),
-                grid=((count + BLOCK[0] - 1) // BLOCK[0], 1, 1),
-                block=BLOCK)
+            self._splat_points(pos, col, size, gain, acc, w, h, tag)
         return self._add(img, acc, 1.0)
+
+    def _splat_points(self, pos, col, size, gain, acc, w, h, tag):
+        """One thread per particle writes its square of light."""
+        colour = np.hstack([col, size.reshape(-1, 1)]).astype(np.float32)
+        table = self._buf(f"{tag}_tab", colour.shape, np.float32, colour)
+        count = int(len(pos))
+        self._fn("splat_particles")(
+            self._buf(f"{tag}_pos", pos.shape, np.float32, pos), table,
+            np.int32(count), acc, np.int32(w), np.int32(h),
+            np.float32(gain),
+            grid=((count + BLOCK[0] - 1) // BLOCK[0], 1, 1), block=BLOCK1D)
 
     def _add(self, img, acc, gain):
         """Adds a light buffer to the image (add_light kernel)."""

@@ -9,6 +9,13 @@ import numpy as np
 CHANNELS = 3            # interleaved RGB
 BYTE_MAX = 255.0        # top of the 8 bit range
 HALF = 0.5              # used to build the vignette and the heat ramp
+LUMA_R, LUMA_G, LUMA_B = 0.299, 0.587, 0.114   # luminance (Rec. 601)
+EPS = 1e-6              # smallest divisor (never divide by zero)
+RAMP_LOW = 0.25         # heat ramp: where the green reaches the top
+RAMP_MID = 0.75         # heat ramp: where the red starts to go down
+RAMP_SLOPE = 4.0        # heat ramp: slope of the green and red
+SQRT2 = 1.41421356      # diagonal of the unit square (vignette)
+MEAN_AXES = (1, 3)      # block axes of the minimap reshape
 
 
 def _rgb(img):
@@ -20,32 +27,39 @@ def _clamp(img):
 
 
 def _box_axis(img, radius, axis):
-    """Mean over the window [i-radius, i+radius] with clamped borders."""
+    """Mean of the existing samples of [i-radius, i+radius] (clamped)."""
     if radius <= 0:
         return img.astype(np.float32)
     n = img.shape[axis]
     acc = np.zeros(img.shape, dtype=np.float32)
+    count = np.zeros(n, dtype=np.float32)
     base = np.arange(n)
+    shape = [1] * img.ndim
+    shape[axis] = n
     for k in range(-radius, radius + 1):
-        idx = np.clip(base + k, 0, n - 1)
-        acc += np.take(img, idx, axis=axis)
-    return acc / (2 * radius + 1)
+        index = base + k
+        valid = ((index >= 0) & (index < n)).astype(np.float32)
+        count += valid
+        acc += np.take(img, np.clip(index, 0, n - 1), axis=axis) \
+            * valid.reshape(shape)
+    return acc / count.reshape(shape)
 
 
 class Cpu:
     """Numpy version of the effects (same methods and shapes as Gpu)."""
 
     def blur(self, img, radius):
-        """Separable box blur of an RGB image."""
-        tmp = _box_axis(img.astype(np.float32), radius, 1)
-        return np.clip(_box_axis(tmp, radius, 0), 0, BYTE_MAX).astype(np.uint8)
+        """Separable box blur, with the same 8 bit rounding as the kernel."""
+        tmp = np.clip(_box_axis(img, radius, 1), 0, BYTE_MAX).astype(np.uint8)
+        out = np.clip(_box_axis(tmp, radius, 0), 0, BYTE_MAX)
+        return out.astype(np.uint8)
 
     def glow(self, img, threshold, radius, passes):
         """Bright pass at half resolution, then `passes` box blurs."""
         small = img[::2, ::2].astype(np.float32) / BYTE_MAX
-        luma = (0.299 * small[..., 0] + 0.587 * small[..., 1]
-                + 0.114 * small[..., 2])
-        span = max(1.0 - threshold, 1e-6)
+        luma = (LUMA_R * small[..., 0] + LUMA_G * small[..., 1]
+                + LUMA_B * small[..., 2])
+        span = max(1.0 - threshold, EPS)
         over = np.clip((luma - threshold) / span, 0.0, 1.0)
         field = small * over[..., None]
         for _ in range(passes):
@@ -68,7 +82,8 @@ class Cpu:
 
     def particles(self, img, pos, col, gain):
         """Additive glowing particles: pos (n,2), col (n,4) r,g,b,size."""
-        return self._splat(img, pos, col[:, :3] * gain, col[:, 3], gain)
+        return self._splat(img, pos, col[:, :CHANNELS] * gain, col[:, CHANNELS],
+                           gain)
 
     def lights(self, img, lights, gain):
         """Additive spotlights: x, y, radius, power, r, g, b."""
@@ -96,9 +111,10 @@ class Cpu:
         return out, out.copy()
 
     def histogram(self, img):
-        """256 bins of luminance."""
-        luma = _rgb(img) @ np.array([0.299, 0.587, 0.114], np.float32)
-        bins = np.clip(luma * BYTE_MAX, 0, BYTE_MAX).astype(np.int32)
+        """256 bins of luminance (same scale as the kernel)."""
+        weights = np.array([LUMA_R, LUMA_G, LUMA_B], np.float32)
+        luma = img.astype(np.float32) @ weights
+        bins = np.clip(luma.astype(np.int32), 0, int(BYTE_MAX))
         return np.bincount(bins.ravel(),
                            minlength=int(BYTE_MAX) + 1).astype(np.int32)
 
@@ -112,15 +128,15 @@ class Cpu:
         h, w = img.shape[:2]
         bw, bh = max(w // cols, 1), max(h // rows, 1)
         crop = img[:bh * rows, :bw * cols].astype(np.float32)
-        crop = crop.reshape(rows, bh, cols, bw, CHANNELS).mean(axis=(1, 3))
+        crop = crop.reshape(rows, bh, cols, bw, CHANNELS).mean(axis=MEAN_AXES)
         return crop / BYTE_MAX
 
     def heat_colors(self, heat, max_value):
         """Blue -> green -> yellow -> red ramp over the grid."""
-        v = np.clip(heat / max(max_value, 1e-6), 0.0, 1.0)
+        v = np.clip(heat / max(max_value, EPS), 0.0, 1.0)
         r = np.clip((v - HALF) * 2.0, 0.0, 1.0)
-        g = np.where(v < 0.25, v * 4.0, np.where(v < 0.75, 1.0,
-                                                (1.0 - v) * 4.0))
+        g = np.where(v < RAMP_LOW, v * RAMP_SLOPE,
+                     np.where(v < RAMP_MID, 1.0, (1.0 - v) * RAMP_SLOPE))
         b = np.clip((HALF - v) * 2.0, 0.0, 1.0)
         return _clamp(np.stack([r, g, b], axis=-1))
 
@@ -147,7 +163,7 @@ class Cpu:
 def _vignette(h, w, amount):
     ys = (np.arange(h, dtype=np.float32) / h) - HALF
     xs = (np.arange(w, dtype=np.float32) / w) - HALF
-    d = np.sqrt(ys[:, None] ** 2 + xs[None, :] ** 2) * 1.41421356
+    d = np.sqrt(ys[:, None] ** 2 + xs[None, :] ** 2) * SQRT2
     return 1.0 - amount * d * d
 
 
