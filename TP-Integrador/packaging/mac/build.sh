@@ -5,6 +5,11 @@ set -euo pipefail
 PY="${1:-python3}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/dist-mac"
+# .icns desde el set de PNG del logo (iconutil viene con macOS, no se instala).
+ICONSET="$ROOT/assets/icono/mac/FutbolDeCabeza.iconset"
+if [ -d "$ICONSET" ]; then
+  iconutil -c icns "$ICONSET" -o "$ROOT/packaging/mac/FutbolDeCabeza.icns"
+fi
 "$PY" -m PyInstaller --noconfirm --clean --distpath "$OUT" \
   --workpath "$ROOT/build/mac" "$ROOT/packaging/mac/FutbolDeCabeza.spec"
 # servidor.txt goes next to the executable (see fdc/online/endpoint.py).

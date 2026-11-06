@@ -25,10 +25,12 @@ WORK = os.path.join(ROOT, "build", "pyinstaller")
 ENTRY = os.path.join(ROOT, "main.py")
 RUNTIME_HOOK = os.path.join(TOOLS, "pyi_rth_stdout.py")
 SERVER_EXAMPLE = os.path.join(TOOLS, "servidor.txt.example")
+# Icon of the .exe and of the window (the same logo of the .app and the web).
+ICON = os.path.join(ROOT, "assets", "icono", "icono.ico")
 SERVER_FILE = "servidor.txt"     # next to the exe (see fdc/online/endpoint.py)
 PACKAGE = "futbol"               # dist/futbol-<mode>/futbol-<mode>.exe
 EXE_SUFFIX = ".exe"
-LAUNCHER_NAME = "jugar-cpu.bat"  # double click, next to the exe
+LAUNCHER_NAME = "jugar-cpu.bat"  # double click, next to the exe (per mode)
 MEGABYTE = 1024 * 1024           # bytes, to show the size like the Explorer
 # Files the game reads from disk at run time (PyInstaller only packs the .py).
 EXTRA_DATA = (("assets", "assets"),
@@ -41,12 +43,14 @@ MODES = {
         "data": (),
         "hidden": (),
         "exclude": ("pycuda", "OpenGL", "tkinter"),
+        "launcher": "jugar-cpu.bat",
     },
     "full": {
         "suffix": "full",
         "data": (CUDA_DATA,),
         "hidden": ("pycuda.driver", "pycuda.autoinit", "pycuda.compiler"),
         "exclude": ("tkinter",),
+        "launcher": "jugar-gpu.bat",
     },
 }
 LAUNCHER = """@echo off
@@ -83,6 +87,8 @@ def pyinstaller_args(options):
             "--name", output_name(options),
             "--distpath", options.dist, "--workpath", WORK,
             "--specpath", WORK]
+    if os.path.exists(ICON):
+        args += ["--icon", ICON]
     args += _window_args(options)
     _add_data(args, EXTRA_DATA + mode["data"])
     _add_modules(args, "--hidden-import", mode["hidden"])
@@ -121,16 +127,16 @@ def main(argv=None):
     import PyInstaller.__main__
     PyInstaller.__main__.run(args)
     folder = os.path.join(options.dist, name)
-    _extras(folder, name)
-    _report(folder, name)
+    _extras(folder, name, MODES[options.mode]["launcher"])
+    _report(folder, name, MODES[options.mode]["launcher"])
     return 0
 
 
-def _extras(folder, name):
+def _extras(folder, name, launcher):
     """Launcher and servidor.txt next to the exe."""
     if not os.path.isdir(folder):
         raise SystemExit(f"PyInstaller did not create {folder}")
-    _write_launcher(os.path.join(folder, LAUNCHER_NAME), name + EXE_SUFFIX)
+    _write_launcher(os.path.join(folder, launcher), name + EXE_SUFFIX)
     _write_server_file(folder)
 
 
@@ -156,12 +162,12 @@ def folder_size(folder):
     return total
 
 
-def _report(folder, name):
+def _report(folder, name, launcher):
     """Prints where the game is, how big it is and how to try it."""
     size = folder_size(folder) / MEGABYTE
     print(f"\nlisto: {folder}  ({size:.1f} MB)")
     print(f'probar: "{os.path.join(folder, name + EXE_SUFFIX)}" --backend cpu')
-    print(f'        "{os.path.join(folder, LAUNCHER_NAME)}"')
+    print(f'        "{os.path.join(folder, launcher)}"')
 
 
 if __name__ == "__main__":

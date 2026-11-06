@@ -63,6 +63,10 @@ MAX_FRAME_DT = 0.1
 ICON_SIZE = 64              # px: window icon (the game ball)
 ICON_BALL_RADIUS = 28       # px: radius of the ball drawn in the icon
 ICON_BALL_ANGLE = 20        # degrees: turn of the icon ball (patches show)
+# Logo of the game (assets/icono/logo.png): the same one of the .exe, the
+# .app and the web page.
+ICON_PATH = os.path.join(assets.ROOT, config.ASSET_OVERRIDE_DIR, "icono",
+                         "logo.png")
 # Debug panel (F3).
 DEBUG_TEXT_SCALE = 2        # scale of the pixel art font in the panel
 DEBUG_LINE_H = 24           # px between lines
@@ -320,6 +324,12 @@ class App:
                            duration=duration)
 
     def _set_icon(self):
+        """Window icon: the logo of the game (assets/icono/logo.png)."""
+        try:
+            pygame.display.set_icon(pygame.image.load(ICON_PATH))
+            return
+        except (pygame.error, OSError):
+            pass                    # no logo: the drawn ball stays
         icon = pygame.Surface((ICON_SIZE, ICON_SIZE), pygame.SRCALPHA)
         center = ICON_SIZE // 2
         self.ball_sprite.draw(icon, center, center, ICON_BALL_RADIUS,
