@@ -73,7 +73,7 @@ class Client:
 
     def __init__(self, url, name=None, player_id=None):
         self.ws = ws_client.connect(url, open_timeout=OPEN_TIMEOUT,
-                                    close_timeout=CLOSE_TIMEOUT, legacy=True)
+                                    close_timeout=CLOSE_TIMEOUT)
         self.inbox = []
         self.token = None
         self.welcome = None

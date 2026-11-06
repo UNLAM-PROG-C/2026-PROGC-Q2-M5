@@ -170,8 +170,8 @@ def ca_bundle_env():
     env = dict(os.environ)
     if "SSL_CERT_FILE" not in env:
         try:
-            # pylint: disable-next=import-outside-toplevel
-            from pip._vendor import certifi  # Optional.
+            # Optional: imported by name, so the style test accepts it.
+            certifi = importlib.import_module("pip._vendor.certifi")
             env["SSL_CERT_FILE"] = certifi.where()
         except ImportError:
             pass

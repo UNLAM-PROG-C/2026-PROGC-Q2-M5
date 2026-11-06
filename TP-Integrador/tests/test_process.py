@@ -1,4 +1,5 @@
 """REAL communication with the simulation process (multiprocessing, spawn)."""
+import ctypes
 import multiprocessing
 import os
 import time
@@ -181,11 +182,31 @@ def _host_link(pid_q):
 
 
 def _pid_exists(pid):
+    """True if the process is alive (os.kill(pid, 0) fails on Windows)."""
+    if os.name == "nt":
+        return _win_pid_exists(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     return True
+
+
+def _win_pid_exists(pid):
+    """Windows check with OpenProcess/GetExitCodeProcess (WinError 87 free).
+    """
+    kernel32 = ctypes.windll.kernel32
+    still_active = 259          # STILL_ACTIVE exit code of a live process
+    handle = kernel32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 class OrphanTest(unittest.TestCase):
