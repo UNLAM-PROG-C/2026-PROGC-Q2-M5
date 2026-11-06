@@ -618,21 +618,35 @@ def _bounce_off_circle(ball, circle, player, e, boost):
     """Bounces the ball off a circle; returns None without contact, else the
     impact speed (>= 0). It does not move the ball: the position is fixed
     later, all the players at once (see `_separate_ball`)."""
+    normal = _contact_normal(ball, circle)
+    if normal is None:
+        return None
+    nx, ny = normal
+    vn = (ball.vx - player.vx) * nx + (ball.vy - player.vy) * ny
+    if vn >= 0:
+        return 0.0
+    _reflect(ball, vn, nx, ny, e)
+    _add_header(ball, player, (nx, ny), boost)
+    return -vn
+
+
+def _contact_normal(ball, circle):
+    """Normal of the ball against a circle, None when they do not touch."""
     cx, cy, cr = circle
     dx, dy = ball.x - cx, ball.y - cy
     reach = ball.radius + cr
     dist2 = dx * dx + dy * dy
     if dist2 >= reach * reach:
         return None
-    nx, ny = _normal(dx, dy, math.sqrt(dist2), UP)
-    vn = (ball.vx - player.vx) * nx + (ball.vy - player.vy) * ny
-    if vn >= 0:
-        return 0.0
-    _reflect(ball, vn, nx, ny, e)
+    return _normal(dx, dy, math.sqrt(dist2), UP)
+
+
+def _add_header(ball, player, normal, boost):
+    """Extra speed of a header (only if the player was going into the ball)."""
+    nx, ny = normal
     if boost and (player.vx * nx + player.vy * ny) > HEADER_MIN_APPROACH:
         ball.vx += nx * boost
         ball.vy += ny * boost
-    return -vn
 
 
 def _ball_depth(ball, circle):
@@ -664,11 +678,8 @@ def _escape_points(ball, circle):
     when it is at the feet of a player) and only on the side where the ball
     already is: the ball is never moved through a player to the other side.
     """
-    cx, cy, cr = circle
-    reach = ball.radius + cr + ESCAPE_MARGIN
-    dx, dy = ball.x - cx, ball.y - cy
-    side_x = math.sqrt(max(0.0, reach * reach - dy * dy))
-    side_y = math.sqrt(max(0.0, reach * reach - dx * dx))
+    cx, cy, _ = circle
+    dx, dy, side_x, side_y = _reach_sides(ball, circle)
     points = []
     if dx >= 0:
         points.append((cx + side_x, ball.y))
@@ -681,6 +692,16 @@ def _escape_points(ball, circle):
     return points
 
 
+def _reach_sides(ball, circle):
+    """Offsets of the ball to the circle and how far it has to move."""
+    cx, cy, cr = circle
+    reach = ball.radius + cr + ESCAPE_MARGIN
+    dx, dy = ball.x - cx, ball.y - cy
+    return (dx, dy,
+            math.sqrt(max(0.0, reach * reach - dy * dy)),
+            math.sqrt(max(0.0, reach * reach - dx * dx)))
+
+
 def _shortest_escape(ball, players):
     """Closest place where the ball is out of every player and of the world.
 
@@ -688,6 +709,17 @@ def _shortest_escape(ball, players):
     (squeezed between a player and the world). All the players are checked,
     so the push out of one can never leave the ball inside another one.
     """
+    best = _closest_escape(ball, players)
+    if best is None:
+        return None
+    x, y = best
+    length = math.hypot(x - ball.x, y - ball.y)
+    nx, ny = _normal(x - ball.x, y - ball.y, length, UP)
+    return x, y, nx, ny
+
+
+def _closest_escape(ball, players):
+    """(x, y) of the shortest free escape inside MAX_ESCAPE_MOVE, or None."""
     best = None
     for p in players:
         if p.ball_ignore > 0:
@@ -695,19 +727,20 @@ def _shortest_escape(ball, players):
         for circle in p.circles():
             if _ball_depth(ball, circle) <= 0.0:
                 continue
-            for x, y in _escape_points(ball, circle):
-                move = math.hypot(x - ball.x, y - ball.y)
-                if move > MAX_ESCAPE_MOVE:
-                    continue
-                if (best is None or move < best[0]) \
-                        and _ball_fits(ball, players, x, y):
-                    best = (move, x, y)
-    if best is None:
-        return None
-    _, x, y = best
-    nx, ny = _normal(x - ball.x, y - ball.y,
-                     math.hypot(x - ball.x, y - ball.y), UP)
-    return x, y, nx, ny
+            best = _better_escape(ball, players, circle, best)
+    return None if best is None else best[1:]
+
+
+def _better_escape(ball, players, circle, best):
+    """`best` or the shorter free escape out of that circle."""
+    for x, y in _escape_points(ball, circle):
+        move = math.hypot(x - ball.x, y - ball.y)
+        if move > MAX_ESCAPE_MOVE:
+            continue
+        if (best is None or move < best[0]) and _ball_fits(ball, players,
+                                                           x, y):
+            best = (move, x, y)
+    return best
 
 
 def _push_ball_out(ball, circle):
@@ -818,17 +851,23 @@ def _absorb_squeeze(ball, players):
     for p in players:
         if p.ball_ignore > 0:
             continue
-        for cx, cy, cr in p.circles():
-            dx, dy = ball.x - cx, ball.y - cy
-            reach = ball.radius + cr
-            dist = math.hypot(dx, dy)
-            if dist >= reach:
-                continue
-            nx, ny = _normal(dx, dy, dist, UP)
-            vn = (ball.vx - p.vx) * nx + (ball.vy - p.vy) * ny
-            if vn < 0:
-                ball.vx -= vn * nx
-                ball.vy -= vn * ny
+        for circle in p.circles():
+            _absorb_circle(ball, p, circle)
+
+
+def _absorb_circle(ball, player, circle):
+    """Removes the speed of the ball that goes into that circle."""
+    cx, cy, cr = circle
+    dx, dy = ball.x - cx, ball.y - cy
+    reach = ball.radius + cr
+    dist = math.hypot(dx, dy)
+    if dist >= reach:
+        return
+    nx, ny = _normal(dx, dy, dist, UP)
+    vn = (ball.vx - player.vx) * nx + (ball.vy - player.vy) * ny
+    if vn < 0:
+        ball.vx -= vn * nx
+        ball.vy -= vn * ny
 
 
 def _free_the_ball(ball, players):
