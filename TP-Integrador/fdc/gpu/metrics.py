@@ -51,6 +51,12 @@ class Metrics:
         total = self.total()
         return PER_SECOND / total if total > 0 else 0.0
 
+    def clear(self):
+        """Forgets the frames measured so far."""
+        self.frames.clear()
+        for values in self.stage.values():
+            values.clear()
+
     def summary(self):
         """{stage: ms} plus 'frame', 'fps' and 'frames'."""
         data = {name: round(self.average(name), DECIMALS) for name in STAGES}

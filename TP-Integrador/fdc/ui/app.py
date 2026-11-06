@@ -71,7 +71,8 @@ DEBUG_BORDER = 2            # px: thickness of the golden frame
 LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
               "%(name)s: %(message)s")
 LOG_FILE = "fdc.log"
-GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY, config.MUTE_KEY)
+GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY,
+               config.MUTE_KEY, config.GPU_TOGGLE_KEY)
 
 
 def _yes(v):
@@ -128,6 +129,10 @@ class _NoFx:
 
     def event(self, msg):
         """Nothing to do."""
+
+    def toggle(self):
+        """Nothing to toggle: the effects are off."""
+        return "off"
 
     def clear(self):
         """Nothing to do."""
@@ -353,6 +358,8 @@ class App:
         """F3, F11 and M work on every screen. True if it was one."""
         if key == self.keys[config.DEBUG_PANEL_KEY]:
             self.show_debug = not self.show_debug
+        elif key == self.keys[config.GPU_TOGGLE_KEY]:
+            self.postfx.toggle()
         elif key == self.keys[config.FULLSCREEN_KEY]:
             if not self.web:
                 pygame.display.toggle_fullscreen()

@@ -84,6 +84,16 @@ class PostFx:
         self.metrics.frame((time.perf_counter() - start) * MS_PER_S)
         to_screen(result, screen)
 
+    def toggle(self):
+        """Switches between the GPU and the numpy version (F4 key)."""
+        if not self.enabled:
+            return self.mode
+        self.force_cpu = self.mode == "gpu"
+        self.ops = _make_ops(self.force_cpu)
+        self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
+        self.metrics.clear()
+        return self.mode
+
     def clear(self):
         """New match: no sparks, no trail, no lights."""
         self.particles.clear()

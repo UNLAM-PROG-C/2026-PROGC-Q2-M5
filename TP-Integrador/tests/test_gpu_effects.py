@@ -102,6 +102,13 @@ class ChainTest(unittest.TestCase):
         self.fx.finish(screen, DT)
         self.assertEqual(self.fx.metrics.skipped, 1)
 
+    def test_toggle_switches_backend(self):
+        first = self.fx.toggle()
+        second = self.fx.toggle()
+        self.assertIn(first, ("gpu", "cpu"))
+        self.assertIn(second, ("gpu", "cpu"))
+        self.assertEqual(self.fx.metrics.summary()["frames"], 0)
+
 
 class ParticleTest(unittest.TestCase):
     """The pool of sparks recycles rows and never grows."""

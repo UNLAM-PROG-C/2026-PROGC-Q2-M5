@@ -40,6 +40,7 @@ PAUSE_KEY = "escape"
 DEBUG_PANEL_KEY = "f3"
 FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
+GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
 TEST_NEXT_POWER_KEY = "f6"
