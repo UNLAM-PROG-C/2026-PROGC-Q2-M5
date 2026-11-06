@@ -64,6 +64,14 @@ LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
               "%(name)s: %(message)s")
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("application/octet-stream", ".apk")
+# The landing (spec-landing 2.2.4): Python does not know .webp, and a wrong
+# type makes the browser download the picture instead of painting it.
+mimetypes.add_type("image/webp", ".webp")
+# Cache of the static files: the pictures and the clip of the landing can be
+# kept for a while; the page, the style, the script and the data cannot.
+CACHE_LONG = "public, max-age=3600"
+CACHE_NONE = "no-cache"
+CACHE_PREFIXES = ("img/", "media/")     # folders with the heavy media
 # Command line options of server.py.
 COMMAND_LINE = (
     ("--host", {"default": ALL_INTERFACES[0],
@@ -191,7 +199,8 @@ class GameServer:
         if self.web_dir not in target.parents or not target.is_file():
             return connection.respond(http.HTTPStatus.NOT_FOUND, "No existe.\n")
         return _response(http.HTTPStatus.OK, target.read_bytes(),
-                         _content_type(target.name))
+                         _content_type(target.name),
+                         cache=_cache_control(path))
 
     async def _stats_loop(self):
         """Messages per second for the panel (one per PANEL_REFRESH)."""
@@ -583,10 +592,18 @@ def _content_type(name):
     return ctype
 
 
-def _response(status, body, ctype="text/plain; charset=utf-8", extra=()):
+def _cache_control(path):
+    """A while for the pictures and the clip; revalidate everything else."""
+    if path.lstrip("/").startswith(CACHE_PREFIXES):
+        return CACHE_LONG
+    return CACHE_NONE
+
+
+def _response(status, body, ctype="text/plain; charset=utf-8", extra=(),
+              cache=CACHE_NONE):
     headers = datastructures.Headers([
         ("Content-Type", ctype), ("Content-Length", str(len(body))),
-        ("Cache-Control", "no-cache"), ("Connection", "close"), *extra])
+        ("Cache-Control", cache), ("Connection", "close"), *extra])
     return http11.Response(status.value, status.phrase, headers, body)
 
 

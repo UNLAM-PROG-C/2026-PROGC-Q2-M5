@@ -102,5 +102,4 @@ Por el túnel, el juego usa `wss://futbol.timecore.com.ar/ws` (es el valor que
 viene en el `servidor.txt` que acompaña al exe). Ese hostname resuelve por
 TLS en Cloudflare y el tráfico viaja cifrado hasta el NAS.
 
-Sin el cliente web compilado (`build/web`) la página `http://.../` da 404; el
-modo online del juego de escritorio funciona igual.
+El juego de escritorio conecta a `/ws`; `/status` y `/status.json` son el panel.

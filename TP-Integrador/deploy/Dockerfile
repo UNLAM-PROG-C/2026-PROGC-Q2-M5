@@ -15,9 +15,7 @@ WORKDIR /app
 COPY deploy/requirements-server.txt ./requirements-server.txt
 RUN pip install --no-cache-dir -r requirements-server.txt
 
-# Sólo lo que el servidor importa (server.py + el paquete fdc). El cliente
-# web compilado (build/web) es opcional: sin él, la página da 404 y el modo
-# online del juego de escritorio funciona igual.
+# Server code.
 COPY server.py ./server.py
 COPY fdc ./fdc
 
