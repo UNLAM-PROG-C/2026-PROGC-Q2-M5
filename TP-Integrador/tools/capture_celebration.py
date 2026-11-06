@@ -14,6 +14,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT = os.path.dirname(ROOT)      # the worktree lives inside the project
 sys.path.insert(0, ROOT)
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -27,7 +28,7 @@ from fdc.gpu import env as gpu_env                # noqa: E402
 from fdc.ui import app as ui_app                  # noqa: E402
 from fdc.ui import match_screens                  # noqa: E402
 
-FOLDER = os.path.join(ROOT, "capturas", "mejoras")   # where the PNGs go
+FOLDER = os.path.join(PROJECT, "capturas", "mejoras")   # where the PNGs go
 PREFIX = "celebracion"   # name of the shots of the party
 BEFORE = "antes"         # name of the shot before the goal
 # Seconds after the goal in which a shot is taken: the burst, the paper in
