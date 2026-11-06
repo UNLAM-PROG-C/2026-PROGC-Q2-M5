@@ -34,9 +34,10 @@ LIGHT_FIELDS = 4        # x, y, radius, power of the ice focus
 CLIP = 0.005            # fraction of pixels left outside the contrast range
 LIGHT_AMBIENT = 1.0     # 0-1: light far from the focus (the pixel unchanged)
 LIGHT_TINT = (1.0, 1.0, 1.0)   # rgb: the focus brightens, it does not tint
-# The night sky keeps the ambient light of the lamps: with the gain of the
-# auto exposure it would burn to white above the stands.
-NIGHT_SKY = (config.Gpu.NIGHT_AMBIENT,) * CHANNELS
+NO_LIGHT_CAP = 0.0      # spotlights without a top: the classic sum
+# The night sky keeps the ambient of the lamps; this light blue multiplier
+# takes it to a night blue (a flat gray would lose the sky of the palette).
+NIGHT_SKY = (0.55, 0.62, 0.80)
 TOUCH_SPEED = 120.0     # px/s: from this impact a touch makes sparks
 GOAL_SPARKS = 40        # sparks of a goal
 BOMB_SPARKS = 26        # sparks of an explosion
@@ -614,7 +615,7 @@ class PostFx:
             config.Gpu.BLACKOUT_PULSE)
         return self._timed("blackout", self.ops.spotlights, image,
                            self._scaled_lights(lights), ambient,
-                           config.Gpu.BLACKOUT_TINT)
+                           config.Gpu.BLACKOUT_TINT, NO_LIGHT_CAP)
 
     def _night(self, image):
         """NIGHT: six spotlights and auto exposure (gain of the last frame)."""
@@ -625,7 +626,8 @@ class PostFx:
         lights = self._scaled_lights(self._sweeping(effects_state
                                                     .night_lights()))
         out = self._timed("night", self.ops.spotlights, image, lights,
-                          gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT)
+                          gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT,
+                          gpu.NIGHT_LIGHT_MAX)
         return self._night_sky(self._expose(out))
 
     def _night_sky(self, image):
@@ -635,11 +637,18 @@ class PostFx:
         return image
 
     def _expose(self, image):
-        """Auto exposure: the gain found here is used on the next frame."""
+        """Auto exposure: the gain found here is used on the next frame.
+
+        The mean is taken on the grass only (the world below `PITCH_TOP`):
+        the sky and the stands do not ask for more gain, and the meter
+        measures the same surface the players walk on.
+        """
         if self.exposure.gain != 1.0:
             image = self._timed("exposure", self.ops.gain, image,
                                 self.exposure.gain)
-        self.exposure.update(self.ops.luma_stats(image)[0])
+        top = int(config.Gpu.PITCH_TOP * self.px)
+        grass = image[top:] if 0 < top < image.shape[0] else image
+        self.exposure.update(self.ops.luma_stats(grass)[0])
         return image
 
     def _sweeping(self, lights):

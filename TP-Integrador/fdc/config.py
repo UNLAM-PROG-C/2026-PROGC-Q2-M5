@@ -446,14 +446,22 @@ class Gpu:
     NIGHT_LIGHTS = 6          # spotlights over the pitch at night
     NIGHT_FIRST_X = 160.0     # px: first one
     NIGHT_STEP_X = 192.0      # px between two spotlights
-    NIGHT_Y = 20.0            # px: height of the spotlights
+    # y of the lamps: the low edge of the stands, so the beams fall on the
+    # grass (with y = 20 they lit the stands and left the pitch flat).
+    NIGHT_Y = 470.0           # px: where the lamps hang
     NIGHT_RADIUS = 420.0      # px: radius of each spotlight
     NIGHT_POWER = 0.9         # intensity of each spotlight (0-1)
     NIGHT_AMBIENT = 0.25      # light between the spotlights (0-1)
     NIGHT_TINT = (1.0, 0.92, 0.80)   # warm rgb of the night lights
-    AUTOEXPOSURE_TARGET = 110.0   # mean luma the night tries to reach
-    AUTOEXPOSURE_MIN = 0.6        # lowest gain
-    AUTOEXPOSURE_MAX = 2.5        # highest gain
+    # Top of the light of the night: six lamps together never take a pixel
+    # above this share of its day value, so nothing blows out to white
+    # (the night has to stay darker than the day and keep every colour).
+    NIGHT_LIGHT_MAX = 0.85
+    # Mean luma the auto exposure looks for, measured on the grass only:
+    # far below the day mean (~147) so the night stays a night.
+    AUTOEXPOSURE_TARGET = 95.0
+    AUTOEXPOSURE_MIN = 0.75       # lowest gain
+    AUTOEXPOSURE_MAX = 1.15       # highest gain
     AUTOEXPOSURE_RATE = 0.1       # EMA weight of each frame (0-1)
     SHOCK_DURATION = 1.2      # s of the goal shock wave
     SHOCK_RADIUS = 900.0      # px/s: the ring grows this fast
