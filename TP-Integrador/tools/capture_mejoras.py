@@ -47,8 +47,10 @@ FULL = "full"            # the mode with everything
 OPTIMIZED = "optimizado"  # the light mode
 SKIP_FRAMES = 60         # frames of play before the first shot
 POWER_FRAMES = 8         # frames drawn with a power on (the effect settles)
-GOAL_AT = 0.35           # s after the goal for the shot of the party
+GOAL_AT = 0.55           # s after the goal for the shot of the party (no
+#                          flash, the stands already jumping, paper in the air)
 GOAL_LIMIT = 900         # frames drawn at most to reach that moment
+SETTLE_FRAMES = 90       # frames after the goal so the ring dies before OPT
 WAIT_SECONDS = 20.0      # s until the simulation sends its first state
 WAIT_STEP = 0.01         # s between frames while waiting
 PLAY_TIMEOUT = 60.0      # s waiting for the kick off
@@ -161,6 +163,7 @@ def _goal_shots(game, screen, folder):
         frames += 1
     saved = [_save(game, folder, "mejoras-full-gol")]
     game.postfx.skip()
+    _play(game, SETTLE_FRAMES)     # the ring of the goal dies before OPT
     return saved
 
 

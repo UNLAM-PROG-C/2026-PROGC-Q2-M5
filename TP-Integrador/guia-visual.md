@@ -25,8 +25,10 @@ Regla: 2 colores de equipo + neutros fríos oscuros + césped. Nada más saturad
 - El bloom es para **gol y poderes**, no para el partido normal. En juego normal: glow casi apagado.
 - Nada de glow sobre carteles de publicidad ni líneas de cancha: hoy los carteles se ven lavados/borrosos en FULL.
 - Bordes nítidos: sin blur global. Solo halo chico alrededor de fuentes de luz reales (pelota con poder, chispas).
-- Hielo: tinte parejo, pero pelota y jugador rival siempre con contraste pleno.
-- Cielo blanco quemado = prohibido (distrae y rompe el contraste del HUD).
+- **Ningún efecto toca la tribuna ni los carteles**: los focos, el anillo del gol y el calor viven abajo de `PITCH_TOP` (504 px, primera fila de césped). La tribuna se queda quieta y nítida.
+- Hielo: tinte parejo, pero el foco **multiplica** (nunca suma blanco) y la pelota y el rival siempre con contraste pleno.
+- Cielo blanco quemado = prohibido (distrae y rompe el contraste del HUD). De noche el cielo conserva el ambiente: no toma la ganancia de la autoexposición.
+- OPTIMIZADO se ve tan nítido como FULL: corre a resolución completa y sólo se saltea las etapas caras. Prohibido volver a estirar una imagen chica (bloques de 2 px).
 
 Valores objetivo de `fdc/config.py` (clase `Gpu`):
 
@@ -45,6 +47,19 @@ Valores objetivo de `fdc/config.py` (clase `Gpu`):
 | `CROWD_FILL` | 78 | 62 (más grada vacía, menos pared) |
 | `CROWD_SHIRTS` | (0.70,0.42,0.22),(0.62,0.30,0.44) | equivalentes de `#A8683A`,`#9E4D70`: (0.66,0.41,0.23),(0.62,0.30,0.44) con VAR_MIN 0.78 |
 | `CROWD_FLAGS` | 17 | 28 (menos banderas, más legibles) |
+
+Ronda 3 (valores ya aplicados):
+
+| Constante | Antes | Ahora |
+|---|---:|---:|
+| `FREEZE_RADIUS` | 200 | **110** (el foco no llega a la tribuna) |
+| `FREEZE_GAIN` (nueva) | — | **0.22** (foco multiplicativo, tope 0.25) |
+| `ICE_PULSE` | 0.35 | **0.15** |
+| `SHOCK_AMP` | 14 | **4.5** |
+| `SHOCK_WIDTH` | 90 | **50** |
+| `SHOCK_ECHO`, `SHOCK_ECHO_AMP` | 0.62 / 0.55 | **se fueron** (segundo anillo) |
+| `PITCH_TOP` (nueva) | — | **504** (primera fila de césped) |
+| `OPTIMIZED_LEVEL` | 3 (imagen 1/4) | **0** (resolución completa) |
 
 ## Qué bajar o sacar
 1. Glow en partido normal (ver tabla).
