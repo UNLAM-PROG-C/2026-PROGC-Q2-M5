@@ -25,6 +25,8 @@ MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
 POINT_FIELDS = 2                # x and y of one heat map point
+CROWD_CFG = 11                  # parameters of the crowd kernel
+CROWD_PAL = 18                  # colours of the crowd kernel (6 rgb triplets)
 
 
 def kernel_path():
@@ -524,6 +526,23 @@ class Gpu(primitives.Primitives):
         self._fn("k_trail_blend")(now, before, out, np.int32(w), np.int32(h),
                                   np.float32(decay), grid=self._grid(w, h),
                                   block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    # --------------------------------------- tribuna animada (F11, solo FULL)
+    def tribuna(self, img, t, side, boost, cfg, pal):
+        """Crowd of the stands: seats, people and flags (k_tribuna)."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("crowd_src", shape, np.uint8, img)
+        out = self._buf("crowd_out", shape, np.uint8)
+        table = self._buf("crowd_cfg", (CROWD_CFG,), np.float32,
+                          np.asarray(cfg, np.float32))
+        colours = self._buf("crowd_pal", (CROWD_PAL,), np.float32,
+                            np.asarray(pal, np.float32))
+        self._fn("k_tribuna")(src, out, np.int32(w), np.int32(h),
+                              np.float32(t), np.int32(side),
+                              np.float32(boost), table, colours,
+                              grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
     def luma_stats(self, img):

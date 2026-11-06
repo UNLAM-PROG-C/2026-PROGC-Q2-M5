@@ -789,3 +789,171 @@ __global__ void k_heat_render(const unsigned char *src, const unsigned int *grid
         dst[i + c] = (unsigned char)(out + 0.5f);
     }
 }
+
+// ------------------------------------- tribuna con gente (F11, solo FULL)
+// La franja de tribunas se pinta entera: butacas y personas. Cada hilo
+// escribe su propio píxel y todo sale de un hash de la butaca (columna,
+// fila), asi que no hace falta memoria compartida ni atomicas.
+//
+// Una butaca mide cfg[CC_W] x cfg[CC_H] px. La persona se para en el piso de
+// su butaca (el borde de abajo) y crece hacia arriba: cuerpo, cabeza y, en
+// algunas butacas, una bandera que flamea. El saltito es un seno desfasado
+// por butaca; la tribuna del equipo que metio el gol (side) salta mas alto y
+// mas rapido mientras dura el festejo (boost 0-1).
+//
+// Un pixel lo pueden cubrir dos filas: la suya y la de adelante, que al
+// saltar mete la cabeza en la butaca de arriba (por eso el lazo de
+// CROWD_ROWS, de atras hacia adelante).
+#define CROWD_HASH_C 73856093u   // primo del hash de la columna
+#define CROWD_HASH_R 19349663u   // primo del hash de la fila
+#define CROWD_HEAD 2.2f          // px: radio de la cabeza
+#define CROWD_SIDE 1.0f          // px de aire a los costados del cuerpo
+#define CROWD_ROWS 2             // filas que se prueban por pixel
+#define CROWD_FEET 1.0f          // px entre el piso de la butaca y los pies
+#define CROWD_BODY_GAP 4.0f      // px del alto de la butaca que no es torso
+#define CROWD_FLAG_HZ 4.0f       // rad/s del flameo de la bandera
+#define CROWD_FLAG_CURVE 0.35f   // rad por px de alto: la bandera se curva
+#define CROWD_PHASE 0.01f        // rad por unidad del hash (desfase)
+#define CROWD_PHASE_TOP 628u     // 628 * CROWD_PHASE = una vuelta
+#define CROWD_RAIL 0.6f          // px: linea oscura en el borde de la butaca
+#define CROWD_SHADE 0.82f        // lo que oscurece la linea de la fila
+#define CROWD_FLAG_LIGHT 0.45f   // cuanto blanco lleva la bandera (0-1)
+
+// Indices de la tabla de parametros que manda el host.
+#define CC_W 0                   // px: ancho de la butaca
+#define CC_H 1                   // px: alto
+#define CC_JUMP 2                // px del saltito
+#define CC_HZ 3                  // rad/s del saltito
+#define CC_GOAL_JUMP 4           // px extra de la tribuna que festeja
+#define CC_GOAL_HZ 5             // rad/s extra del festejo
+#define CC_WAVE 6                // px que flamea la bandera
+#define CC_FLAG_W 7              // px: ancho de la bandera
+#define CC_FLAG_H 8              // px: alto
+#define CC_FILL 9                // % de butacas ocupadas
+#define CC_EVERY 10              // una bandera cada N butacas
+
+// Hash de la butaca: barato y bien repartido (xorshift multiplicativo).
+__device__ unsigned int crowd_hash(int c, int r)
+{
+    unsigned int hsh = ((unsigned int)c * CROWD_HASH_C)
+                       ^ ((unsigned int)r * CROWD_HASH_R);
+    hsh ^= hsh >> 13;
+    hsh *= 1274126177u;
+    hsh ^= hsh >> 16;
+    return hsh;
+}
+
+// Saltito de la persona en px (0..amplitud), desfasado por butaca.
+__device__ float crowd_jump(unsigned int hsh, float t, float boost,
+                            int team, int side, const float *cfg)
+{
+    float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
+    float amp = cfg[CC_JUMP]
+                * (0.4f + 0.6f * (float)((hsh / 7u) % 100u) * 0.01f);
+    float hz = cfg[CC_HZ];
+    if (team == side) {                 // la tribuna que metio el gol
+        amp += cfg[CC_GOAL_JUMP] * boost;
+        hz += cfg[CC_GOAL_HZ] * boost;
+    }
+    return amp * (0.5f + 0.5f * sinf(t * hz + phase));
+}
+
+// Color de la persona de esa butaca en el punto (lx, up) de su celda.
+// `up` se mide desde el piso de la butaca: 0 son los pies. Devuelve 1 si el
+// pixel es de la persona (deja el color en rgb) y 0 si no la toca.
+__device__ int crowd_body(float lx, float up, const float *cfg,
+                          const float *pal, int team, float *rgb)
+{
+    float body = cfg[CC_H] - CROWD_BODY_GAP;      // alto del torso
+    float centre = cfg[CC_W] * 0.5f;
+    float head_y = body + CROWD_HEAD;
+    if (up >= CROWD_FEET && up <= body
+            && lx >= CROWD_SIDE && lx <= cfg[CC_W] - CROWD_SIDE) {
+        rgb[0] = pal[team * 3];                   // camiseta del equipo
+        rgb[1] = pal[team * 3 + 1];
+        rgb[2] = pal[team * 3 + 2];
+        return 1;
+    }
+    float dx = lx - centre, dy = up - head_y;
+    if (dx * dx + dy * dy > CROWD_HEAD * CROWD_HEAD)
+        return 0;
+    int hair = up > head_y;                       // pelo: media cabeza
+    rgb[0] = pal[hair ? 6 : 9];
+    rgb[1] = pal[hair ? 7 : 10];
+    rgb[2] = pal[hair ? 8 : 11];
+    return 1;
+}
+
+// Bandera de la butaca (si le toca): un rectangulo que se corre con un seno,
+// asi que parece que flamea. Se apoya arriba de la cabeza.
+__device__ int crowd_flag(unsigned int hsh, float lx, float up, float t,
+                          const float *cfg, const float *pal, int team,
+                          float *rgb)
+{
+    if ((int)(hsh % (unsigned int)cfg[CC_EVERY]) != 0)
+        return 0;
+    float base = cfg[CC_H] - CROWD_BODY_GAP + 2.0f * CROWD_HEAD + CROWD_FEET;
+    if (up < base || up >= base + cfg[CC_FLAG_H])
+        return 0;
+    float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
+    float wave = cfg[CC_WAVE] * sinf(t * CROWD_FLAG_HZ + phase
+                                    + up * CROWD_FLAG_CURVE);
+    if (lx < CROWD_SIDE) {                        // palo de la bandera
+        rgb[0] = pal[12]; rgb[1] = pal[13]; rgb[2] = pal[14];
+        return 1;
+    }
+    float fx = lx - wave - CROWD_SIDE;
+    if (fx < 0.0f || fx >= cfg[CC_FLAG_W])
+        return 0;
+    for (int c = 0; c < CH; ++c)          // bandera clara, del equipo
+        rgb[c] = CROWD_FLAG_LIGHT
+                 + (1.0f - CROWD_FLAG_LIGHT) * pal[team * 3 + c];
+    return 1;
+}
+
+// Pinta la franja de tribunas: un hilo por pixel, borde y memoria global.
+// Color de la tabla: 0-2 camiseta local, 3-5 visitante, 6-8 pelo,
+// 9-11 piel, 12-14 butaca de una fila, 15-17 butaca de la otra.
+__global__ void k_tribuna(const unsigned char *src, unsigned char *dst,
+                          int w, int h, float t, int side, float boost,
+                          const float *cfg, const float *pal)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;              // chequeo de bordes
+    int i = (y * w + x) * CH;
+    float seat_h = cfg[CC_H];
+    int row = (int)((float)y / seat_h);
+    int even = row & 1;                        // dos tonos de butaca
+    float rgb[3];
+    rgb[0] = pal[12 + even * 3];
+    rgb[1] = pal[13 + even * 3];
+    rgb[2] = pal[14 + even * 3];
+    int team = (x < w / 2) ? 0 : 1;            // cada mitad es un equipo
+    for (int k = 0; k < CROWD_ROWS; ++k) {
+        int r = row + k;                       // de la de atras a la de adelante
+        float stagger = (float)((r & 1) * ((int)cfg[CC_W] / 2));
+        float cx = (float)x + stagger;         // filas trabadas
+        int c = (int)(cx / cfg[CC_W]);
+        float lx = cx - (float)c * cfg[CC_W];
+        unsigned int hsh = crowd_hash(c, r);
+        if ((float)(hsh % 100u) >= cfg[CC_FILL])
+            continue;                          // butaca vacia
+        float jump = crowd_jump(hsh, t, boost, team, side, cfg);
+        float up = (float)(r + 1) * seat_h - (float)y - jump;
+        if (crowd_body(lx, up, cfg, pal, team, rgb))
+            continue;                          // la persona tapa la bandera
+        crowd_flag(hsh, lx, up, t, cfg, pal, team, rgb);
+    }
+    if ((float)y - (float)row * seat_h < CROWD_RAIL) {   // linea de la fila
+        rgb[0] *= CROWD_SHADE;
+        rgb[1] *= CROWD_SHADE;
+        rgb[2] *= CROWD_SHADE;
+    }
+    for (int c = 0; c < CH; ++c) {
+        float v = rgb[c] * 255.0f;
+        v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
+        dst[i + c] = (unsigned char)(v + 0.5f);
+    }
+}
+

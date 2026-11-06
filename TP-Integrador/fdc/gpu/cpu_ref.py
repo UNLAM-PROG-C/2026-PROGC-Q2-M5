@@ -23,6 +23,40 @@ MEAN_AXES = (1, 3)      # block axes of the minimap reshape
 HEAT_FIELDS = 2         # x and y of a recorded point
 GRID_MIN = 1e-6         # smallest cell size (never divide by zero)
 ONE_COUNT = 1           # each point counts once (atomicAdd of 1 in the GPU)
+# --- F11: the crowd of the stands (same numbers as k_tribuna) -------------
+CROWD_W, CROWD_H, CROWD_JUMP = 0, 1, 2      # seat size and jump (cfg cols)
+CROWD_HZ, CROWD_GOAL_JUMP, CROWD_GOAL_HZ = 3, 4, 5
+CROWD_WAVE, CROWD_FLAG_W, CROWD_FLAG_H = 6, 7, 8
+CROWD_FILL, CROWD_EVERY = 9, 10             # occupancy and one flag each N
+CROWD_ROWS = 2          # rows that can cover a pixel (back and front)
+CROWD_HEAD = 2.2        # px: radius of the head
+CROWD_SIDE = 1.0        # px of air at the sides of the body
+CROWD_FEET = 1.0        # px between the floor of the seat and the feet
+CROWD_BODY_GAP = 4.0    # px of the seat height that is not body
+CROWD_FLAG_HZ = 4.0     # rad/s of the fluttering flag
+CROWD_FLAG_CURVE = 0.35  # rad per pixel of height: the flag bends
+CROWD_PHASE = 0.01      # rad per hash unit (the phase of each person)
+CROWD_PHASE_TOP = 628   # 628 * CROWD_PHASE = one turn
+CROWD_RAIL = 0.6        # px: dark line at the edge of the seat
+CROWD_SHADE = 0.82      # how much that line darkens
+CROWD_FLAG_LIGHT = 0.45    # how much white the flag carries (0-1)
+CROWD_HASH_C = 73856093    # prime of the column hash
+CROWD_HASH_R = 19349663    # prime of the row hash
+CROWD_HASH_MUL = 1274126177    # multiplier of the xorshift hash
+CROWD_SHIFT_1 = 13      # shifts of that hash
+CROWD_SHIFT_2 = 16      # second shift (the low bits are the noisiest)
+CROWD_FULL = 100        # % (100 of hash space)
+CROWD_EVERY_SEAT = 7    # hash / 7 separates the amplitudes
+CROWD_JUMP_LOW = 0.4    # smallest jump of a person (share of CROWD_JUMP)
+CROWD_JUMP_SPREAD = 0.6   # how much the hash adds to that jump
+CROWD_ONE = 1            # 1 in the hash space (widening)
+# Rows of the colour table (pal, one rgb triplet per row).
+CROWD_SHIRT_A = 0       # shirt of the left team
+CROWD_SHIRT_B = 1       # shirt of the right team
+CROWD_HAIR_ROW = 2      # hair
+CROWD_SKIN_ROW = 3      # skin
+CROWD_SEAT_A = 4        # one row of seats
+CROWD_SEAT_B = 5        # the other one
 
 
 def _rgb(img):
@@ -250,6 +284,11 @@ class Cpu(primitives.Primitives):
                 acc[y0:y1, x0:x1] += c
         return _clamp(_rgb(img) + acc)
 
+    # ------------------------------------- tribuna animada (F11, solo FULL)
+    def tribuna(self, img, t, side, boost, cfg, pal):
+        """Crowd of the stands: seats, people and flags (numpy version)."""
+        return _Crowd(cfg, pal, t, side, boost).paint(img)
+
 
 def _bilinear_index(w, h, cols, rows, cell_w, cell_h):
     """(x0, x1, tx) and (y0, y1, ty) of the bilinear read of the pixels."""
@@ -295,6 +334,127 @@ def _vignette(h, w, amount):
     xs = (np.arange(w, dtype=np.float32) / w) - HALF
     d = np.sqrt(ys[:, None] ** 2 + xs[None, :] ** 2) * SQRT2
     return 1.0 - amount * d * d
+
+
+class _Crowd:
+    """numpy version of k_tribuna: the stands, pixel by pixel.
+
+    It is the slow path on purpose: in FULL mode on a CPU every pixel of the
+    band pays its sines and hashes, which is exactly what the projector demo
+    wants to show before switching to the optimized mode.
+    """
+
+    def __init__(self, cfg, pal, t, side, boost):
+        self.cfg = np.asarray(cfg, np.float32)
+        self.pal = np.asarray(pal, np.float32).reshape(-1, CHANNELS)
+        self.t = float(t)
+        self.side = int(side)
+        self.boost = float(boost)
+        self.w = 0
+        self.xs = np.zeros((1, 1), np.float32)
+        self.ys = np.zeros((1, 1), np.float32)
+
+    def paint(self, img):
+        """The whole band: seats, then the people of the two rows."""
+        h, w = img.shape[:2]
+        self.w, self.xs = w, np.arange(w, dtype=np.float32)[None, :]
+        self.ys = np.arange(h, dtype=np.float32)[:, None]
+        row = (self.ys / self.cfg[CROWD_H]).astype(np.int32)
+        colours = self._seats(row)
+        for k in range(CROWD_ROWS):
+            colours = self._row(row + k, colours)
+        line = (self.ys - row * self.cfg[CROWD_H]) < CROWD_RAIL
+        colours = np.where(line[..., None], colours * CROWD_SHADE, colours)
+        return primitives._to_byte(np.clip(colours, 0.0, 1.0))
+
+    def _seats(self, row):
+        """Two tones of seat (one per row parity), filled up to the edges."""
+        tones = np.where((row % 2 == 0)[..., None], self.pal[CROWD_SEAT_A],
+                         self.pal[CROWD_SEAT_B])
+        return np.array(np.broadcast_to(
+            tones, (self.ys.shape[0], self.w, CHANNELS)), np.float32)
+
+    def _row(self, r, colours):
+        """People (and flags) of one row of seats over the current image."""
+        cfg = self.cfg
+        cx = self.xs + ((r % 2) * (cfg[CROWD_W] // 2)).astype(np.float32)
+        col = (cx / cfg[CROWD_W]).astype(np.int32)
+        lx = cx - col * cfg[CROWD_W]
+        hsh = _crowd_hash(col, r)
+        free = (hsh % np.uint32(CROWD_FULL)) < cfg[CROWD_FILL]
+        team = self._team()
+        up = ((r + CROWD_ONE).astype(np.float32) * cfg[CROWD_H] - self.ys
+              - self._jump(hsh, team))
+        return self._people(lx, up, team, free, hsh, colours)
+
+    def _people(self, lx, up, team, free, hsh, colours):
+        """Bodies and flags over the seats that are already painted."""
+        person, covered = self._body(lx, up, team, free)
+        colours = np.where(covered[..., None], person, colours)
+        flag, pole = self._flag(hsh, lx, up, free & ~covered)
+        shirt = self.pal[CROWD_SHIRT_A + team]
+        light = CROWD_FLAG_LIGHT + (1.0 - CROWD_FLAG_LIGHT) * shirt
+        colours = np.where(flag[..., None], light, colours)
+        return np.where(pole[..., None], self.pal[CROWD_SEAT_A], colours)
+
+    def _team(self):
+        """Team of each half of the stands (left player, right player)."""
+        return np.where(self.xs < self.w / 2.0, 0, 1).astype(np.int32)
+
+    def _jump(self, hsh, team):
+        """Little jump of each person; the jumping stand goes higher."""
+        cfg = self.cfg
+        phase = (hsh % np.uint32(CROWD_PHASE_TOP)).astype(np.float32) \
+            * CROWD_PHASE
+        spread = ((hsh // CROWD_EVERY_SEAT) % np.uint32(CROWD_FULL))
+        amp = cfg[CROWD_JUMP] * (CROWD_JUMP_LOW + CROWD_JUMP_SPREAD
+                                 * spread.astype(np.float32) * CROWD_PHASE)
+        same = team == self.side
+        amp = amp + np.where(same, cfg[CROWD_GOAL_JUMP] * self.boost, 0.0)
+        hz = cfg[CROWD_HZ] + np.where(same,
+                                      cfg[CROWD_GOAL_HZ] * self.boost, 0.0)
+        return amp * (0.5 + 0.5 * np.sin(self.t * hz + phase))
+
+    def _body(self, lx, up, team, free):
+        """Body and head of the person of that seat: (colour, mask)."""
+        cfg = self.cfg
+        body = cfg[CROWD_H] - CROWD_BODY_GAP
+        head_y = body + CROWD_HEAD
+        torso = (free & (up >= CROWD_FEET) & (up <= body)
+                 & (lx >= CROWD_SIDE) & (lx <= cfg[CROWD_W] - CROWD_SIDE))
+        dx, dy = lx - cfg[CROWD_W] * 0.5, up - head_y
+        head = free & (dx * dx + dy * dy <= CROWD_HEAD * CROWD_HEAD)
+        colour = np.where(torso[..., None], self.pal[CROWD_SHIRT_A + team],
+                          self.pal[CROWD_SKIN_ROW])
+        colour = np.where((head & (up > head_y))[..., None],
+                          self.pal[CROWD_HAIR_ROW], colour)
+        return colour, torso | head
+
+    def _flag(self, hsh, lx, up, free):
+        """Flag of the seat (if it has one): (ribbon, pole) masks."""
+        cfg = self.cfg
+        base = (cfg[CROWD_H] - CROWD_BODY_GAP + 2.0 * CROWD_HEAD
+                + CROWD_FEET)
+        box = free & (hsh % cfg[CROWD_EVERY].astype(np.uint32) == 0)
+        box = box & (up >= base) & (up < base + cfg[CROWD_FLAG_H])
+        phase = (hsh % np.uint32(CROWD_PHASE_TOP)).astype(np.float32) \
+            * CROWD_PHASE
+        wave = cfg[CROWD_WAVE] * np.sin(self.t * CROWD_FLAG_HZ + phase
+                                       + up * CROWD_FLAG_CURVE)
+        pole = box & (lx < CROWD_SIDE)
+        fx = lx - wave - CROWD_SIDE
+        ribbon = box & (fx >= 0.0) & (fx < cfg[CROWD_FLAG_W]) & ~pole
+        return ribbon, pole
+
+
+def _crowd_hash(col, row):
+    """Same xorshift hash as `crowd_hash` in the kernel (uint32 maths)."""
+    hsh = (col.astype(np.uint32) * np.uint32(CROWD_HASH_C)) ^ (
+        row.astype(np.uint32) * np.uint32(CROWD_HASH_R))
+    hsh ^= hsh >> np.uint32(CROWD_SHIFT_1)
+    hsh *= np.uint32(CROWD_HASH_MUL)
+    hsh ^= hsh >> np.uint32(CROWD_SHIFT_2)
+    return hsh
 
 
 def _light_layer(light, h, w, gain):
