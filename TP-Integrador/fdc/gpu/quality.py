@@ -43,7 +43,7 @@ SKIPPED = {
 # Three explicit modes, chosen in the menu, with a key and with --calidad:
 #   full        everything at full resolution and no governor (it may
 #               stutter: that is the point on a notebook without NVIDIA);
-#   optimizado  only the cheap stage, without crowd and 4x smaller image;
+#   optimizado  only the cheap stage and no crowd, at full resolution (sharp);
 #   auto        the adaptive governor of F7 (the notebook case), not the
 #               default.
 FULL = "full"
@@ -134,7 +134,7 @@ def policy(mode=None, level=MIN_LEVEL):
 
 
 def _optimized(mode):
-    """The cheap mode: one stage, small image, no crowd, no governor."""
+    """The cheap mode: one stage, full resolution, no crowd, no governor."""
     gpu = config.Gpu
     return Mode(mode, gpu.MODE_STAGE[OPTIMIZED], gpu.OPTIMIZED_LEVEL,
                 False, False, gpu.MODE_PUNCH[OPTIMIZED],

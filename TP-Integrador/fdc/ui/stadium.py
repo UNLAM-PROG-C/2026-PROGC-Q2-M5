@@ -80,6 +80,32 @@ STAIRS_X0 = 64                     # first stairs (px)...
 STAIRS_EVERY = 128                 # ...and one every 128 px
 STAIRS_W = 8                       # width of the stairs (px)
 STEP_H = 3                         # height of each step (px)
+# --- stands at the final resolution (only the OPTIMIZADO mode sees them) ---
+# Same geometry and colours as the animated crowd of FULL (`k_tribuna`), so
+# both modes show the same people instead of blocks of 2 x 2 px.
+CROWD_TOP = config.Gpu.CROWD_TOP            # px: top of the stands
+CROWD_BOTTOM = config.Gpu.CROWD_BOTTOM      # px: its bottom (the wall)
+CROWD_SEAT = config.Gpu.CROWD_SEAT          # px: one seat of the grid
+CROWD_BODY = config.Gpu.CROWD_BODY          # px: shirt of one person
+CROWD_HEAD = config.Gpu.CROWD_HEAD          # px: radius of the head
+CROWD_STEP = int(config.Gpu.CROWD_STEP)     # px: dark step of a row
+CROWD_STEP_RIM = 1                 # px: lit edge of that step
+CROWD_SHOULDER_EDGE = 1            # px: darker line on top of the shirt
+CROWD_SHOULDER_SHADE = config.Gpu.CROWD_SHOULDER_SHADE   # how much it darkens
+CROWD_HAIR_DROP = 2                # px the hair goes up over the face
+CROWD_FACE_INSET = 1               # px the face shrinks inside the rim
+CROWD_SHIRTS = config.Gpu.CROWD_SHIRTS      # 0-1 rgb of each team's shirt
+CROWD_SKINS = config.Gpu.CROWD_SKINS        # 0-1 rgb: skin tones
+CROWD_HAIRS = config.Gpu.CROWD_HAIRS        # 0-1 rgb: hair tones
+CROWD_TREAD = config.Gpu.CROWD_TREAD        # 0-1 rgb: floor of a row
+CROWD_RISER = config.Gpu.CROWD_RISER        # ...its dark front
+CROWD_EDGE = config.Gpu.CROWD_EDGE          # ...and its lit edge
+CROWD_OUTLINE_COLOUR = config.Gpu.CROWD_OUTLINE_COLOUR   # rim of the heads
+CROWD_SHADE_TOP = config.Gpu.CROWD_SHADE_TOP      # darkness of the last row
+CROWD_SHADE_BOTTOM = config.Gpu.CROWD_SHADE_BOTTOM   # ...and of the first
+CROWD_VAR_MIN = config.Gpu.CROWD_VAR_MIN    # brightness of the dullest shirt
+CROWD_VAR_RANGE = config.Gpu.CROWD_VAR_RANGE   # extra brightness of a shirt
+BYTE_MAX = 255.0                   # top of a channel (colours are 0-1 here)
 # --- wall and advertising boards
 WALL_Y = 232                       # wall below the last stand (px)...
 WALL_H = 3                         # ...and its height
@@ -339,6 +365,13 @@ def build_background():
     custom = assets.load_override_image("backgrounds", "stadium.png")
     if custom is not None:
         return pygame.transform.scale(custom, (W, H)).convert()
+    big = retro.scale_px(_paint_stadium())
+    _crowd_band(big)          # OPTIMIZADO: the stands at final resolution
+    return big.convert()
+
+
+def _paint_stadium():
+    """Sky, roof, stands, boards and pitch at the native resolution."""
     rng = random.Random(STADIUM_SEED)
     s = pygame.Surface((NW, NH))
     _dither_band(s, 0, SKY_BOTTOM_Y, palette.SKY_TOP, palette.SKY_BOTTOM)
@@ -348,7 +381,103 @@ def build_background():
     _stands(s, rng)
     _boards(s)
     _pitch(s, rng)
-    return retro.scale_px(s).convert()
+    return s
+
+
+def _crowd_band(screen):
+    """Stands at one pixel per pixel (the animated crowd covers them in FULL).
+
+    The whole background is drawn at 640 x 360 and scaled x2, so its people
+    end up as 2 x 2 blocks in OPTIMIZADO. This band keeps the same geometry
+    as `k_tribuna` at the final size, so both modes show the same crowd.
+    """
+    height = CROWD_BOTTOM - CROWD_TOP
+    band = pygame.Surface((W, height))
+    rng = random.Random(STADIUM_SEED)
+    rows = height // CROWD_SEAT[1]
+    for row in range(rows):
+        _band_row(band, rng, row, rows)
+    _band_stairs(band)
+    screen.blit(band, (0, CROWD_TOP))
+
+
+def _band_row(band, rng, row, rows):
+    """Floor, step and people of one row of the full resolution stands."""
+    top = row * CROWD_SEAT[1]
+    edge = top + CROWD_SEAT[1] - CROWD_STEP
+    shade = _band_shade(row, rows)
+    band.fill(_tone(CROWD_TREAD, shade), (0, top, W, CROWD_SEAT[1]))
+    band.fill(_tone(CROWD_EDGE, shade), (0, edge, W, CROWD_STEP_RIM))
+    band.fill(_tone(CROWD_RISER, shade), (0, edge + CROWD_STEP_RIM, W,
+                                         CROWD_STEP - CROWD_STEP_RIM))
+    _band_people(band, rng, row, edge, shade)
+
+
+def _band_people(band, rng, row, edge, shade):
+    """The people of a row: one seat of the grid each, some of them empty."""
+    seat_w = CROWD_SEAT[0]
+    shift = (row % 2) * (seat_w // 2)
+    for seat in range(-1, W // seat_w + 1):
+        if rng.random() < CROWD_FILL:
+            _band_person(band, rng, seat * seat_w - shift, edge, shade)
+
+
+def _band_person(band, rng, x, edge, shade):
+    """Torso with shoulders and a head with hair, at the final size."""
+    body_w, body_h = CROWD_BODY
+    left = x + (CROWD_SEAT[0] - body_w) // 2
+    shirt = _tone(CROWD_SHIRTS[0 if x < W // 2 else 1], shade * _vary(rng))
+    band.fill(shirt, (left, edge - body_h, body_w, body_h))
+    band.fill(_darker(shirt, CROWD_SHOULDER_SHADE),
+              (left + 1, edge - body_h, body_w - 2, CROWD_SHOULDER_EDGE))
+    _band_head(band, rng, left + body_w // 2, edge - body_h - CROWD_HEAD, shade)
+
+
+def _band_head(band, rng, cx, cy, shade):
+    """Dark rim, face and hair of one person."""
+    r = int(CROWD_HEAD)
+    pygame.draw.circle(band, _tone(CROWD_OUTLINE_COLOUR, shade), (cx, cy), r)
+    pygame.draw.circle(band, _tone(rng.choice(CROWD_SKINS), shade), (cx, cy),
+                       r - 1)
+    pygame.draw.circle(band, _tone(rng.choice(CROWD_HAIRS), shade),
+                       (cx, cy - CROWD_HAIR_DROP), r - 1)
+    pygame.draw.circle(band, _tone(CROWD_SKINS[0], shade), (cx, cy + 1),
+                       r - CROWD_FACE_INSET)
+
+
+def _band_stairs(band):
+    """Dark aisles of the stands, at the same x as the scaled background."""
+    for x in range(STAIRS_X0 * PX, W, STAIRS_EVERY * PX):
+        band.fill(palette.SEAT_DEEP, (x, 0, STAIRS_W * PX, band.get_height()))
+        for y in range(0, band.get_height(), STEP_H * PX):
+            band.fill(palette.SEAT_DARK, (x, y, STAIRS_W * PX, PX))
+
+
+def _band_shade(row, rows):
+    """Darkness of a row: the ones up there are further away."""
+    far = row / (rows - 1)
+    return CROWD_SHADE_TOP + (CROWD_SHADE_BOTTOM - CROWD_SHADE_TOP) * far
+
+
+def _vary(rng):
+    """Brightness of one shirt (the hash does this in the kernel)."""
+    return CROWD_VAR_MIN + CROWD_VAR_RANGE * rng.random()
+
+
+def _tone(rgb, factor):
+    """Colour of the crowd (0-1 floats) times a brightness, as a byte rgb."""
+    return tuple(_clip(channel * factor * BYTE_MAX) for channel in rgb)
+
+
+def _darker(rgb, factor):
+    """Byte rgb darkened by `factor` (0-1)."""
+    return tuple(_clip(channel * factor) for channel in rgb)
+
+
+def _clip(value):
+    """Byte channel of a 0-255 float (rounded and clipped)."""
+    return min(palette.MAX_CHANNEL, int(value + 0.5))
+
 
 
 # ---------------------------------------------------------------------------
