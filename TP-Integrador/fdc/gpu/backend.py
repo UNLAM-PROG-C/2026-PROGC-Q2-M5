@@ -48,6 +48,25 @@ def available():
     return True
 
 
+def detect():
+    """{'kind', 'device', 'reason'}: PyCUDA status, without raising."""
+    try:
+        import pycuda.autoinit     # pylint: disable=unused-import
+        import pycuda.driver as drv
+        return {"kind": "gpu", "device": drv.Device(0).name(), "reason": None}
+    except Exception as exc:       # pylint: disable=broad-except
+        return {"kind": "cpu", "device": "CPU", "reason": str(exc)}
+
+
+def set_block(value):
+    """Changes the threads per block ('WxH'); keeps BLOCK1D in sync."""
+    global BLOCK, BLOCK1D          # pylint: disable=global-statement
+    width, height = (int(part) for part in str(value).lower().split("x"))
+    BLOCK = (width, height, 1)
+    BLOCK1D = (width, 1, 1)
+    return BLOCK
+
+
 def device_name():
     """Name of the GPU, or 'CPU' when there is none."""
     if not available():

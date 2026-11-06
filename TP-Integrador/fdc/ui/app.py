@@ -28,6 +28,9 @@ from fdc import config
 from fdc import profile as profiles
 from fdc.online import client
 from fdc.sim import inline
+from fdc.gpu import backend as gpu_backend
+from fdc.gpu import overlay as gpu_overlay
+from fdc.gpu import sysinfo
 from fdc.ui import assets
 from fdc.ui import audio
 from fdc.ui import browser
@@ -53,6 +56,7 @@ log = logging.getLogger("fdc.ui")
 
 FPS_SAMPLES = 60            # frames averaged to show the FPS
 EPSILON = 1e-6              # avoids dividing by zero when averaging
+MS_PER_S = 1000.0           # milliseconds in a second
 # s: a very late frame counts at most this much (no huge jumps).
 MAX_FRAME_DT = 0.1
 ICON_SIZE = 64              # px: window icon (the game ball)
@@ -73,7 +77,7 @@ LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
 LOG_FILE = "fdc.log"
 GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY,
                config.MUTE_KEY, config.GPU_TOGGLE_KEY,
-               config.NIGHT_KEY)
+               config.OVERLAY_KEY, config.NIGHT_KEY)
 
 
 def _yes(v):
@@ -161,7 +165,32 @@ class _NoFx:
         """Nothing to do."""
 
     def summary(self):
-        return {"mode": "off", "quality": "-", "gpu": "CPU", "fps": 0.0}
+        return {"mode": "off", "quality": "-", "quality_level": "Q0",
+                "active": "ninguno", "other": None, "gpu": "CPU", "fps": 0.0}
+
+    def quality_label(self):
+        """No adaptive quality without the effects."""
+        return "Q0"
+
+    def level_index(self):
+        """Always the full size without the effects."""
+        return 0
+
+    def force(self, **params):
+        """The demo cannot force anything without the effects."""
+
+    def begin_replay(self, var=False):
+        """No replay without the effects."""
+        del var
+        return False
+
+    def active_effects(self):
+        """Nothing is active: the effects are off."""
+        return "ninguno"
+
+    def other_measurement(self):
+        """No other backend to compare with."""
+        return None
 
 
 class App:
@@ -191,19 +220,33 @@ class App:
         self.current.enter()
 
     def _open_window(self):
+        if getattr(self.options, "render", None):
+            os.environ["SDL_RENDER_DRIVER"] = self.options.render
         pygame.mixer.pre_init(audio.AUDIO_RATE, audio.AUDIO_BITS,
                               audio.AUDIO_CHANNELS, audio.AUDIO_BUFFER)
         pygame.init()
         pygame.display.set_caption(config.GAME_NAME)
+        return pygame.display.set_mode(self._window_size(),
+                                       self._display_flags())
+
+    def _display_flags(self):
+        """Flags of the window: never exclusive unless --fullscreen."""
         if self.web:
-            flags = 0                  # the browser scales the canvas
-        else:
-            # Scales keeping the aspect ratio.
-            flags = pygame.SCALED | pygame.RESIZABLE
-            if self.options.fullscreen:
-                flags |= pygame.FULLSCREEN
-        return pygame.display.set_mode(
-            (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT), flags)
+            return 0                   # the browser scales the canvas
+        flags = pygame.SCALED | pygame.RESIZABLE
+        return flags | pygame.FULLSCREEN if self.options.fullscreen else flags
+
+    def _window_size(self):
+        """Window size: 1280x720 unless `--window WxH` says otherwise."""
+        value = getattr(self.options, "window", None)
+        if not value:
+            return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
+        try:
+            width, height = (int(part)
+                             for part in str(value).lower().split("x"))
+        except ValueError:
+            return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
+        return (width, height)
 
     def _load_resources(self):
         self.audio = audio.Audio(enabled=not self.options.no_audio)
@@ -224,10 +267,15 @@ class App:
         self.show_debug = options.debug_panel
         self.running = True
         self.last_dt = 0.0           # s: last frame time (effects need it)
+        self.work_ms = 0.0           # ms of the last frame without the limiter
+        self._init_overlay()
         self.keys = {k: ui_input.key_code(k) for k in GLOBAL_KEYS}
         self.first_frame_shown = False
         self._init_online()
-        # Player name: chosen once at the start, valid for every mode.
+        self._init_profile(options)
+
+    def _init_profile(self, options):
+        """Player name: chosen once at the start, valid for every mode."""
         self.profile_path = getattr(options, "profile_path", None)
         self.profile = profiles.load(self.profile_path)
 
@@ -268,7 +316,11 @@ class App:
     def first_screen(self):
         """After the boot: the name (if not chosen yet) and then the menu.
         If the browser reloaded in the middle of the online mode, back to
-        the room."""
+        the room. With `--demo` the automatic demo starts instead."""
+        if getattr(self.options, "demo", False):
+            # Lazy import: fdc.gpu.demo imports this module.
+            from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
+            return demo.DemoScreen(self)
         if self.profile is None:
             return profile_screen.ProfileScreen(self, first_run=True)
         if self.web and client.saved_session():
@@ -307,20 +359,31 @@ class App:
     # ------------------------------------------------------------ loop
     def frame(self):
         """One frame: events -> SIM messages -> health -> screen logic ->
-        drawing."""
+        drawing. `work_ms` is the cost without the sleep of the limiter."""
         dt = self._tick()
+        start = time.perf_counter()
+        try:
+            self._process(dt)
+        finally:
+            self.work_ms = (time.perf_counter() - start) * MS_PER_S
+
+    def _process(self, dt):
+        """Everything a frame does, in order (see `frame`)."""
         for ev in pygame.event.get():
             self.handle_event(ev)
             if not self.running:
                 return
         self._poll_simulation()
-        if self.net is not None:
-            # One at a time: if a message changes the screen, the next ones
-            # already go to the new screen (none is lost).
-            for msg in self.net.poll():
-                self.current.on_net(msg)
+        self._poll_network()
         self.current.update(dt)
         self._draw()
+
+    def _poll_network(self):
+        """One network message at a time: a screen change is respected."""
+        if self.net is None:
+            return
+        for msg in self.net.poll():
+            self.current.on_net(msg)
 
     def _tick(self):
         """Real frame time (s), capped so a late frame does not jump."""
@@ -340,6 +403,7 @@ class App:
         self.current.draw(self.screen)
         if self.show_debug:
             self.draw_debug(self.screen)
+        self.overlay.draw(self.screen, self._overlay_info())
         pygame.display.flip()
         if self.web and not self.first_frame_shown:
             self.first_frame_shown = True
@@ -378,24 +442,81 @@ class App:
         self.current.handle_event(ev)
 
     def _global_key(self, key):
-        """F3, F4, N, F11 and M work on every screen. True if it was one."""
-        actions = {
-            self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
-            self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
-            self.keys[config.NIGHT_KEY]: self._night_key,
-            self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
-            self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
-        }
-        action = actions.get(key)
+        """F2..F4, N, F11 and M work on every screen. True if it was one."""
+        action = self._global_actions().get(key)
         if action is None:
             return False
         if action() is False:
             return False        # the screen wants that key (typing a name)
         return True
 
+    def _global_actions(self):
+        """Table of the keys that work on every screen."""
+        return {
+            self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
+            self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
+            self.keys[config.OVERLAY_KEY]: self._overlay_key,
+            self.keys[config.NIGHT_KEY]: self._night_key,
+            self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
+            self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
+        }
+
     def _toggle_panel(self):
         """F3: test panel (powers, crashes)."""
         self.show_debug = not self.show_debug
+
+    def _overlay_mode(self):
+        """Off / compact / full of the performance overlay (F2)."""
+        mode = getattr(self.options, "overlay", None)
+        if mode:
+            return mode
+        return gpu_overlay.FULL if getattr(self.options, "demo", False) \
+            else gpu_overlay.COMPACT
+
+    def _init_overlay(self):
+        """Remote session and overlay of this run (F7)."""
+        self.remote = sysinfo.is_remote_session()
+        self.overlay = gpu_overlay.Overlay(self._overlay_mode())
+
+    def _overlay_key(self):
+        """F2: cycles the overlay; the key is never 'swallowed'."""
+        self.overlay.cycle()
+        return True
+
+    def _overlay_info(self):
+        """Everything the overlay shows of this frame."""
+        data = self.postfx.summary() if self.postfx else {"mode": "off"}
+        data["fx_ms"] = data.get("frame", 0.0)
+        data["device"] = data.get("gpu", "CPU")
+        data.update(self._display_info())
+        data.update(self._launch_info())
+        return gpu_overlay.info_of(data)
+
+    def _display_info(self):
+        """Frame time, FPS, sizes and remote session of the overlay."""
+        width, height = self.screen.get_size()
+        return {
+            "work_ms": self.work_ms,
+            "fps": self.clock.get_fps(),
+            "resolution": (f"{config.LOGICAL_WIDTH}x{config.LOGICAL_HEIGHT}"
+                           if self.postfx and self.postfx.enabled
+                           else "ninguna"),
+            "window": f"{width}x{height}",
+            "remote": self.remote,
+        }
+
+    @staticmethod
+    def _launch_info():
+        """Block, grid, threads and spare threads of the kernels."""
+        block = gpu_backend.BLOCK
+        across = (config.LOGICAL_WIDTH + block[0] - 1) // block[0]
+        down = (config.LOGICAL_HEIGHT + block[1] - 1) // block[1]
+        threads = block[0] * block[1]
+        spare = across * down * threads - config.LOGICAL_WIDTH * \
+            config.LOGICAL_HEIGHT
+        return {"block": f"{block[0]}x{block[1]}",
+                "grid": f"{across}x{down}", "threads": threads,
+                "surplus": spare}
 
     def _night_key(self):
         """N: night mode, but only inside a match (not while typing)."""

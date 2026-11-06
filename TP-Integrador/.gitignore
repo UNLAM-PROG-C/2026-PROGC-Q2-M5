@@ -3,6 +3,12 @@ __pycache__/
 .venv/
 logs/
 
+# Measurements, demo frames and the Colab package (they are regenerated
+# with tools/run_demo.py, tools/record_frames.py and tools/pack_colab.py).
+mediciones/
+frames/
+colab_pack.zip
+
 # Compiled web client (tools/build_web.py).
 build/
 

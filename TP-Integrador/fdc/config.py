@@ -41,6 +41,7 @@ DEBUG_PANEL_KEY = "f3"
 FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
 GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
+OVERLAY_KEY = "f2"          # F2: performance overlay off -> compact -> full
 NIGHT_KEY = "n"             # F8 is "give power to P1" in --test mode
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
@@ -459,6 +460,25 @@ class Gpu:
     HEAT_FLUSH_POINTS = 256   # points kept in the host buffer at most
     HEATMAP_ALPHA = 0.55      # weight of the map over the image (0-1)
     HEATMAP_GAIN = 4.0        # cells over the maximum that saturate the map
+    # --- F7: adaptive quality (CPU only), demo and measurements ---------------
+    QUALITY_DOWN_MS = 18.0    # mean frame ms above this: one level down
+    QUALITY_UP_MS = 11.0      # mean frame ms below this: it may go up
+    QUALITY_AVG_FRAMES = 30   # frames averaged by the governor
+    QUALITY_UP_FRAMES = 120   # frames below QUALITY_UP_MS needed to go up
+    QUALITY_MIN_SECONDS = 3.0   # s between two level changes
+    QUALITY_LEVELS = ("Q0", "Q1", "Q2", "Q3")   # richest to cheapest
+    QUALITY_SCALES = (1, 2, 4, 4)   # image divisor of each level
+    DEMO_SEED = 2026          # first seed of the automatic demo
+    DEMO_SECONDS = 10.0       # s of each segment of the demo
+    DEMO_BOT_LEVEL = 4        # skill of the two bots of the demo
+    DEMO_RESTART_SECONDS = 1.0   # s from whistle to next match
+    DEMO_SHOCK_EVERY = 2.5    # s between forced goal waves (segment 7)
+    DEMO_REPLAY_EVERY = 4.5   # s between replays of segment 8 and 9
+    MEASURE_WARMUP = 30       # frames dropped at the start of each segment
+    OVERLAY_ALPHA = 190       # opacity of the overlay background (0-255)
+    OVERLAY_FONT = 22         # px: minimum size of the overlay text
+    OVERLAY_REFRESH = 0.25    # s between overlay text rebuilds (4 Hz)
+    MEASURE_FPS = 1000.0      # milliseconds in a second (capacity of a frame)
 
 
 # ---------------------------------------------------------------------------

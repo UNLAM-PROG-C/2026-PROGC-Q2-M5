@@ -44,6 +44,44 @@ COMMAND_LINE = (
     (("--gpu-cpu",), {"dest": "force_cpu", "action": "store_true",
                       "help": "efectos con la versión numpy (para comparar "
                               "contra la GPU)"}),
+    (("--quality",), {"dest": "quality", "default": "auto",
+                      "choices": ("auto", "0", "1", "2", "3"),
+                      "help": "calidad de los efectos: auto (baja el nivel "
+                              "sola en CPU) o Q0..Q3 fija"}),
+    (("--backend",), {"dest": "backend", "default": "auto",
+                      "choices": ("auto", "gpu", "cpu"),
+                      "help": "backend de los efectos (auto|gpu|cpu)"}),
+    (("--block",), {"dest": "block", "default": None,
+                    "help": "hilos por bloque de los kernels, WxH "
+                            "(por defecto 32x8)"}),
+    (("--window",), {"dest": "window", "default": None,
+                     "help": "tamaño de la ventana, WxH (por defecto "
+                             "1280x720, nunca en pantalla exclusiva)"}),
+    (("--render",), {"dest": "render", "default": None,
+                     "help": "driver de SDL_RENDER_DRIVER (ej. software); "
+                             "útil por escritorio remoto"}),
+    (("--overlay",), {"dest": "overlay", "default": None,
+                      "choices": ("off", "compact", "full"),
+                      "help": "overlay de rendimiento (F2 lo cambia en vivo)"}),
+    (("--demo",), {"dest": "demo", "action": "store_true",
+                   "help": "demo automática de 10 segmentos, sin menús"}),
+    (("--demo-seconds",), {"dest": "demo_seconds", "type": float,
+                           "default": None,
+                           "help": "segundos de cada segmento (por defecto "
+                                   "10)"}),
+    (("--demo-backends",), {"dest": "demo_backends", "default": "both",
+                            "choices": ("both", "gpu", "cpu"),
+                            "help": "la demo corre en los dos backends o en "
+                                    "uno solo"}),
+    (("--demo-frame-clock",), {"dest": "demo_frame_clock",
+                               "action": "store_true",
+                               "help": "la demo avanza con 1/60 s fijo por "
+                                       "frame (para capturas reproducibles)"}),
+    (("--measure-csv",), {"dest": "measure_csv", "default": None,
+                          "help": "CSV de tiempos de la demo (por defecto "
+                                  "mediciones/demo_<fecha>_<host>.csv)"}),
+    (("--measure-frames",), {"dest": "measure_frames", "action": "store_true",
+                             "help": "además del resumen, un CSV por frame"}),
 )
 
 
@@ -59,6 +97,7 @@ def parse_args(argv=None):
 def main(argv=None):
     """Parses the options and runs the game."""
     options = parse_args(argv)
+    _apply_gpu_options(options)
     # The interface is imported here and not at the top: with the "spawn"
     # method the simulation process imports this module again, and this way
     # it never loads pygame nor opens windows.
@@ -66,6 +105,21 @@ def main(argv=None):
     from fdc.ui import app
     app.setup_logging()
     return app.run_app(options)
+
+
+def _apply_gpu_options(options):
+    """--backend, --block and --render: before the effects start."""
+    from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
+    if options.backend == "cpu":
+        options.force_cpu = True
+    if options.block:
+        backend.set_block(options.block)
+    if options.backend == "gpu" and not options.no_gpu:
+        found = backend.detect()
+        if found["kind"] != "gpu":
+            print("GPU pedida con --backend gpu pero no disponible: "
+                  f"{found['reason']}")
+            print("Se usan los efectos en CPU (numpy).")
 
 
 if __name__ == "__main__":

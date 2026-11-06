@@ -33,9 +33,14 @@ TOUCH_SPEED = 120.0     # px/s: from this impact a touch makes sparks
 GOAL_SPARKS = 40        # sparks of a goal
 BOMB_SPARKS = 26        # sparks of an explosion
 TOUCH_SPARKS = 10       # sparks of a kick or a bounce
+COORD_COLUMNS = 3                   # x, y and radius of a light
 SPARK_COLOUR = (1.0, 0.85, 0.55)     # rgb of the sparks
 FIRE_COLOUR = (1.0, 0.45, 0.15)      # rgb of the fire power
 ICE_COLOUR = (0.55, 0.85, 1.0)       # rgb of the ice power
+# Readable name of each effect for the overlay (line 4).
+_EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión",
+                 "fire": "fuego", "night": "noche", "shock": "onda",
+                 "trail": "estela", "crt": "repetición", "var": "VAR"}
 
 
 class PostFx:
@@ -45,8 +50,14 @@ class PostFx:
         self.mode = "cpu"
         self.enabled = _wanted(options)
         self.level, self.force_cpu = _choices(options)
-        self.ops = None
-        self.error = None
+        self.ops, self.error = None, None
+        self.device = "CPU"          # set again when the backend starts
+        self._init_buffers(size)
+        self._init_effects()
+        self._init_demo(options)
+
+    def _init_buffers(self, size):
+        """Metrics, particles, target surface and the effect buffers."""
         self.metrics = gpu_metrics.Metrics()
         self.particles = particles.Field()
         self.target = pygame.Surface(size).convert()
@@ -54,7 +65,16 @@ class PostFx:
         self.trail = None
         self.phase = 0.0
         self.lights = _no_lights()
-        self._init_effects()
+
+    def _init_demo(self, options):
+        """F7 state: adaptive quality, demo forcing and the overlay."""
+        self.options = options
+        self.quality_option = getattr(options, "quality", None)
+        self.governor = quality.QualityGovernor(self.quality_option, "cpu")
+        self.px = 1.0               # scale of the coordinates (Q1..Q3)
+        self.skips = ()             # stages the CPU level leaves out
+        self.forced = {}            # FxParams forced by the demo director
+        self.last_ms = {}           # last fx ms of each backend (overlay)
 
     def _init_effects(self):
         """State of the effects (viewer, night, clock, trail, replay, heat)."""
@@ -82,6 +102,19 @@ class PostFx:
         except Exception as exc:      # pylint: disable=broad-except
             self.error = str(exc)
             self.enabled = False
+        self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
+        self.governor = quality.QualityGovernor(self.quality_option, self.mode)
+        self._forget_device()
+        # The demo is a measurement: it keeps the level the user asked for.
+        # Without --quality the CPU may still adapt, so the university demo
+        # stays fluid on a notebook without NVIDIA.
+        if getattr(self.options, "demo", False) and self.quality_option:
+            self.governor.enabled = False
+
+    def _forget_device(self):
+        """New backend: its buffers are empty, the heat grid must restart."""
+        self.heat.started = False
+        self.heat.dirty = False
 
     def begin(self, screen, state):
         """Surface where the world has to be drawn this frame."""
@@ -132,9 +165,32 @@ class PostFx:
             return
         start = time.perf_counter()
         image = to_array(self.target)
-        result = self._chain(image, dt)
-        self.metrics.frame((time.perf_counter() - start) * MS_PER_S)
+        result = self._scaled(image, dt)
+        ms = (time.perf_counter() - start) * MS_PER_S
+        self.metrics.frame(ms)
+        self.last_ms[self.mode] = ms
+        self.governor.frame(ms, dt)
         to_screen(result, screen)
+
+    def _scaled(self, image, dt):
+        """Q1..Q3: the chain runs on a smaller image and it is stretched."""
+        divisor = quality.scale(self.level_index())
+        if divisor <= 1:
+            return self._chain(image, dt)
+        self.px = 1.0 / divisor
+        try:
+            small = self._chain(image[::divisor, ::divisor], dt)
+        finally:
+            self.px = 1.0
+        return _stretch(small, image.shape)
+
+    def level_index(self):
+        """0 with the GPU; with the CPU, what the governor decided."""
+        return 0 if self.mode != quality.CPU else self.governor.level
+
+    def quality_label(self):
+        """'Q0'..'Q3', for the overlay and the CSV."""
+        return quality.label(self.level_index())
 
     def toggle(self):
         """Switches between the GPU and the numpy version (F4 key)."""
@@ -143,6 +199,8 @@ class PostFx:
         self.force_cpu = self.mode == "gpu"
         self.ops = _make_ops(self.force_cpu)
         self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
+        self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
+        self._forget_device()
         self.metrics.clear()
         return self.mode
 
@@ -203,6 +261,7 @@ class PostFx:
     def _chain(self, image, dt):
         self.clock += dt
         self.frame_no += 1
+        self.skips = quality.skipped(self.level_index())
         self.particles.update(dt)
         self._record_heat()
         if self._advance_player():
@@ -215,7 +274,7 @@ class PostFx:
         """The stages of the fixed order (spec 5.3) plus the extras."""
         stages = quality.stages(self.level)
         out = image
-        if quality.GLOW in stages:
+        if quality.GLOW in stages and quality.GLOW not in self.skips:
             out = self._timed("glow", self._glow, image)
         out = self._timed("particles", self._sparks, out)
         out = self._timed("lights", self._lights, out)
@@ -237,7 +296,11 @@ class PostFx:
     def _screened(self, image):
         """Replay or VAR: the chain ends with the look of the screen."""
         if self.player.kind == replay.VAR_KIND:
+            if "crt" in self.skips:
+                return image
             return self._timed("var", self._var_look, image)
+        if "crt" in self.skips:
+            return image
         return self._timed("crt", self._crt, image)
 
     def _crt(self, image):
@@ -258,8 +321,59 @@ class PostFx:
     def _derive(self):
         """FxParams of this frame (pure rules, see effects_state)."""
         self.events = [fx for fx in self.events if fx.alive(self.clock)]
-        return effects_state.derive(self.state, self.viewer, self.clock,
-                                    self.events, night=self.night)
+        fx = effects_state.derive(self.state, self.viewer, self.clock,
+                                  self.events, night=self.night)
+        return self._forced(fx) if self.forced else fx
+
+    def _forced(self, fx):
+        """Demo: the director forces the parameters of the segment."""
+        for name in ("ice", "confusion", "trail", "crt"):
+            if name in self.forced:
+                setattr(fx, name, self.forced[name])
+        if "blackout" in self.forced:
+            fx.blackout = self.forced["blackout"](self.state)
+        if "fire" in self.forced:
+            fx.fire = self.forced["fire"](self.state)
+        return fx
+
+    def force(self, **params):
+        """Forces (or clears, with `clear=True`) the params of the demo."""
+        if params.pop("clear", False):
+            self.forced = {}
+            return
+        self.forced = params
+
+    def begin_replay(self, var=False):
+        """Starts a replay (or the VAR) of the last seconds of real play."""
+        frames = self.history.frames(config.Gpu.REPLAY_DURATION)
+        if not frames:
+            return False
+        if var:
+            self.player = replay.VarPlayer(frames[-1][1], self.clock)
+        else:
+            self.player = replay.ReplayPlayer(frames, self.clock,
+                                              config.Gpu.REPLAY_DURATION)
+        return True
+
+    def active_effects(self):
+        """Readable list of the effects on this frame (overlay line 4)."""
+        names = []
+        for name in ("ice", "blackout", "confusion", "fire", "night",
+                     "shock", "trail", "crt", "var"):
+            value = getattr(self.fx, name, None)
+            if value not in (None, (), 0, 0.0, False):
+                names.append(_EFFECT_NAMES.get(name, name))
+        return " + ".join(names) if names else "ninguno"
+
+    def other_measurement(self):
+        """Line 6 of the overlay: the last fx ms of the other backend."""
+        mode = "cpu" if self.mode == "gpu" else "gpu"
+        ms = self.last_ms.get(mode)
+        if not ms:
+            return None
+        speedup = self.last_ms.get(self.mode, 0.0)
+        ratio = f" (x{speedup / ms:.0f} vs GPU)" if mode == "cpu" else ""
+        return f"{mode.upper()} fx {ms:.1f} ms{ratio}"
 
     def _powers(self, image, dt):
         """F3/F4 stages, in the fixed order of the spec (5.3)."""
@@ -273,7 +387,7 @@ class PostFx:
     def _ball_trail(self, image, dt):
         """TRAIL: bright pixels of the fast ball stay a moment (maximum)."""
         speed = effects_state.ball_speed(self.state or {})
-        if not self.trail_gate.update(speed, dt):
+        if quality.TRAIL in self.skips or not self.trail_gate.update(speed, dt):
             self.trail = None
             return image
         if self.trail is None or self.trail.shape != image.shape:
@@ -292,16 +406,18 @@ class PostFx:
         gpu = config.Gpu
         radius = gpu.SHOCK_RADIUS * age
         amp = gpu.SHOCK_AMP * (1.0 - age / gpu.SHOCK_DURATION)
-        return self._timed("shock", self.ops.ripple_ring, image, x, y,
-                           radius, gpu.SHOCK_WIDTH, amp)
+        return self._timed("shock", self.ops.ripple_ring, image,
+                           x * self.px, y * self.px, radius * self.px,
+                           gpu.SHOCK_WIDTH * self.px, amp)
 
     def _fire(self, image):
         """FIRE: hot air around the ball."""
         if self.fx.fire is None:
             return image
         x, y, radius = self.fx.fire
-        return self._timed("fire", self.ops.heat_distort, image, x, y,
-                           radius, self.clock, config.Gpu.FIRE_AMP)
+        return self._timed("fire", self.ops.heat_distort, image,
+                           x * self.px, y * self.px, radius * self.px,
+                           self.clock, config.Gpu.FIRE_AMP)
 
     def _confusion(self, image):
         """CONFUSION: inverted and slowly turning image."""
@@ -336,7 +452,8 @@ class PostFx:
             return image
         lights = effects_state.light_array(self.fx.blackout,
                                            config.Gpu.BLACKOUT_RADIUS, 1.0)
-        return self._timed("blackout", self.ops.spotlights, image, lights,
+        return self._timed("blackout", self.ops.spotlights, image,
+                           self._scaled_lights(lights),
                            config.Gpu.BLACKOUT_AMBIENT,
                            config.Gpu.BLACKOUT_TINT)
 
@@ -346,7 +463,7 @@ class PostFx:
             self.exposure.reset()
             return image
         gpu = config.Gpu
-        lights = effects_state.night_lights()
+        lights = self._scaled_lights(effects_state.night_lights())
         out = self._timed("night", self.ops.spotlights, image, lights,
                           gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT)
         if self.exposure.gain != 1.0:
@@ -360,9 +477,10 @@ class PostFx:
         """The expensive stages (only in the 'alta' level)."""
         del dt  # the trail moved to `_powers` (F4)
         out = image
-        if quality.HEAT in stages:
+        if quality.HEAT in stages and quality.HEAT not in self.skips:
             out = self._timed("heat", self._heat, out)
-        if quality.HISTOGRAM in stages:
+        if (quality.HISTOGRAM in stages
+                and quality.HISTOGRAM not in self.skips):
             out = self._timed("histogram", self._contrast, out)
         return out
 
@@ -377,10 +495,11 @@ class PostFx:
         pos, col = self.particles.live()
         if len(pos) == 0:
             return image
-        return self.ops.particles(image, pos, col, config.Gpu.PARTICLE_GAIN)
+        return self.ops.particles(image, self._scaled_points(pos), col,
+                                  config.Gpu.PARTICLE_GAIN)
 
     def _lights(self, image):
-        table = self._light_table()
+        table = self._scaled_lights(self._light_table())
         if len(table) == 0:
             return image
         return self.ops.lights(image, table, config.Gpu.LIGHT_GAIN)
@@ -411,6 +530,20 @@ class PostFx:
         return (np.array(rows, np.float32) if rows
                 else _no_lights())
 
+    def _scaled_lights(self, table):
+        """Light table with the coordinates and radii of the small image."""
+        if self.px == 1.0:
+            return table
+        scaled = np.array(table, np.float32)
+        if scaled.size == 0:
+            return table
+        scaled[:, :COORD_COLUMNS] *= self.px
+        return scaled
+
+    def _scaled_points(self, points):
+        """Particle positions in the coordinates of the small image."""
+        return points if self.px == 1.0 else points * self.px
+
     def _timed(self, name, fn, *args):
         start = time.perf_counter()
         out = fn(*args)
@@ -422,7 +555,10 @@ class PostFx:
         data = self.metrics.summary()
         data["mode"] = self.mode if self.enabled else "off"
         data["quality"] = self.level
-        data["gpu"] = backend.device_name() if self.mode == "gpu" else "CPU"
+        data["quality_level"] = self.quality_label()
+        data["active"] = self.active_effects()
+        data["other"] = self.other_measurement()
+        data["gpu"] = self.device
         return data
 
 
@@ -460,6 +596,13 @@ def to_array(surface):
 def to_screen(image, surface):
     """numpy RGB (h, w, 3) -> pygame surface."""
     pygame.surfarray.blit_array(surface, np.transpose(image, (1, 0, 2)))
+
+
+def _stretch(image, shape):
+    """Stretches a small RGB image to `shape` (bilinear, through pygame)."""
+    small = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
+    big = pygame.transform.smoothscale(small, (shape[1], shape[0]))
+    return np.transpose(pygame.surfarray.array3d(big), (1, 0, 2))
 
 
 def _levels(hist, total, clip=None):
