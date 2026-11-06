@@ -563,3 +563,9 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
   - **los modos locales** usan `InlineLink` (`fdc/sim/inline.py`). Cumple el mismo contrato que `SimLink`, con el mismo núcleo de simulación (`fdc/sim/core.py`), pero avanza la física dentro de la página, una vez por cuadro y con paso fijo de 1/120 s.
 
 Reglas, catálogo de mensajes y la puesta en marcha en la NAS (Windows, dominio, HTTPS con Caddy o Cloudflare Tunnel) están en [docs/ONLINE.md](docs/ONLINE.md).
+
+## 13. Demo en la universidad (efectos GPU/numpy)
+
+Instalación en la notebook sin NVIDIA, demo reproducible con `--demo`, overlay de
+rendimiento (F2), CSV de mediciones, benchmark de kernels, capturas y paquete de
+Colab: ver [docs/DEMO.md](docs/DEMO.md).
