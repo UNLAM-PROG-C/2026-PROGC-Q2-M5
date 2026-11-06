@@ -16,3 +16,8 @@ build/
 
 # macOS folder metadata.
 .DS_Store
+
+# Exe of tools/build_exe.py (it is rebuilt with one command) and the local
+# deployment files of the server (deploy/.env has the tunnel token).
+dist/
+deploy/.env

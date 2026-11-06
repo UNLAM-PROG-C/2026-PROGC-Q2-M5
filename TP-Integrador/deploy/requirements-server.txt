@@ -1,0 +1,3 @@
+# Lo único que necesita el servidor online (la imagen del NAS).
+# pygame y numpy no hacen falta: la simulación corre sin interfaz.
+websockets==17.1

@@ -23,6 +23,7 @@ import threading
 import time
 
 from fdc import config
+from fdc.online import endpoint
 from fdc.online import wire
 
 log = logging.getLogger("fdc.net")
@@ -216,11 +217,11 @@ def install_js():
 
 def default_url():
     """In the browser, the same site the page came from; on the desktop,
-    config.Online.SERVER_URL (or --server / FDC_SERVER)."""
+    the address of --server, FDC_SERVER or servidor.txt (see endpoint)."""
     if IN_BROWSER:
         install_js()
         return str(_window().fdcNet.defaultUrl())
-    return ONLINE.SERVER_URL
+    return endpoint.resolve_url()
 
 
 def default_transport():

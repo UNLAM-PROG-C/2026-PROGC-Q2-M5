@@ -1,0 +1,20 @@
+# Contexto de la imagen del servidor: sólo entra lo que server.py importa.
+.git
+.gitignore
+.venv
+dist
+build
+logs
+mediciones
+frames
+capturas
+assets
+docs
+notebooks
+web
+tools
+tests
+*.md
+**/__pycache__
+**/*.pyc
+deploy/.env
