@@ -33,8 +33,9 @@ COMMAND_LINE = (
                             "inicio"}),
     (("--server",), {"dest": "server_url", "default": None,
                      "help": "servidor online (ej. ws://localhost:8765/ws o "
-                             "wss://mi-dominio/ws); también se puede usar la "
-                             "variable FDC_SERVER"}),
+                             "wss://mi-dominio/ws); también la variable "
+                             "FDC_SERVER o la primera línea de "
+                             "servidor.txt, junto al juego"}),
     (("--no-gpu",), {"dest": "no_gpu", "action": "store_true",
                      "help": "apaga los efectos de GPU (el juego queda "
                              "igual que antes)"}),

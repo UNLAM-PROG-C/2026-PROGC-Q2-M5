@@ -84,7 +84,7 @@ Ejemplo para la defensa: `.venv/bin/python main.py --test --debug --seed 7 --dur
 
 - **Jugar en el navegador:** abrí <http://127.0.0.1:8765>. Está el juego completo: Mundialito, multijugador local (dos personas en un teclado) y online. Para el online, abrilo en dos navegadores; también se puede usar *Jugar > Multijugador > Online* en `main.py`.
 - **Desde otra compu de tu casa:** el servidor muestra al arrancar la dirección de la red local (por ejemplo `http://192.168.0.84:8765`). La primera vez, la Mac pregunta si Python acepta conexiones entrantes: hay que permitirlo.
-- **Otro servidor:** `main.py --server wss://tu-dominio/ws` (o la variable `FDC_SERVER`).
+- **Otro servidor:** `main.py --server wss://tu-dominio/ws` (o la variable `FDC_SERVER`, o `servidor.txt` al lado del juego; ver `docs/ONLINE.md`).
 - **NAS con Windows:** la guía paso a paso (instalar, arranque automático, abrir un puerto o usar un dominio con HTTPS) está en [docs/NAS_DEPLOYMENT.md](docs/NAS_DEPLOYMENT.md). El resumen de la arquitectura online está en [docs/ONLINE.md](docs/ONLINE.md).
 
 Los personajes son los sprites en pixel art de `assets/originals/`, convertidos por `tools/import_sprites.py` a `assets/characters/` (ya incluidos). El estadio, los íconos, la fuente y los sonidos se generan por código al arrancar. Si no hay dispositivo de audio, el juego sigue en silencio.

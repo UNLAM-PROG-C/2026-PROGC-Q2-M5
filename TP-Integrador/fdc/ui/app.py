@@ -27,6 +27,7 @@ import pygame
 from fdc import config
 from fdc import profile as profiles
 from fdc.online import client
+from fdc.online import endpoint
 from fdc.sim import inline
 from fdc.gpu import backend as gpu_backend
 from fdc.gpu import overlay as gpu_overlay
@@ -281,7 +282,9 @@ class App:
 
     def _init_online(self):
         self.net = None             # online server connection (when online)
-        self.server_url = getattr(self.options, "server_url", None)
+        # --server, then FDC_SERVER, then servidor.txt (see endpoint).
+        self.server_url = endpoint.resolve_url(
+            getattr(self.options, "server_url", None))
         self.last_online_char = None
 
     def _create_link(self):
