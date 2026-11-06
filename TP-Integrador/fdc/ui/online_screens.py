@@ -20,6 +20,7 @@ from fdc import protocol
 from fdc.online import client
 from fdc.online import interp
 from fdc.online import lobby
+from fdc.online import prediction
 from fdc.online import wire
 from fdc.ui import assets
 from fdc.ui import characters
@@ -35,6 +36,7 @@ CHARACTER_IDS = characters.CHARACTER_IDS
 SELECT = match_screens.SelectScreen
 PLAYER_X = match_screens.PLAYER_X
 FACING = match_screens.FACING
+ONLINE = config.Online
 CONTROLS_HELP = ("Moverse: A/D o flechas  -  Saltar: W o flecha arriba  -  "
                  "Patear: Espacio o P  -  Pausa: Esc")
 ROOM_STATES = {lobby.WAITING: "esperando rival",
@@ -1084,6 +1086,10 @@ class OnlineMatchScreen(match_screens.MatchScreen):
     def _init_online(self):
         self.deduper = protocol.EventDeduper()
         self.interp = interp.Interpolator()
+        # Own player predicted by the client (the rest is authoritative).
+        self.predict = prediction.Prediction(self.you)
+        self.predict.enabled = bool(getattr(self.app, "prediction",
+                                            ONLINE.PREDICT_ENABLED))
         self.last_sent = None
         self.last_sent_t = -1.0
         self.confirm = None
@@ -1159,8 +1165,10 @@ class OnlineMatchScreen(match_screens.MatchScreen):
 
     def _on_state(self, msg):
         if msg.get("match") == self.match_id and self.filter.accept(msg):
+            now = time.monotonic()
             self.state = msg
-            self.interp.push(msg, time.monotonic())
+            self.interp.push(msg, now)
+            self.predict.reconcile(msg, now)
 
     def _on_remote_event(self, e):
         if e.get("match") != self.match_id:
@@ -1258,6 +1266,7 @@ class OnlineMatchScreen(match_screens.MatchScreen):
         overlay = self.overlay()
         self._update_menus(dt, overlay)
         self._send_online_controls(overlay)
+        self._step_prediction(dt, overlay)
         self.match_sounds_and_snow()
         self._pause_note()
         self._check_end(dt)
@@ -1283,17 +1292,36 @@ class OnlineMatchScreen(match_screens.MatchScreen):
         """Controls go only when they change (plus a heartbeat); both key
         sets are valid."""
         st = self.state
-        active = (st is not None and overlay is None and self.confirm is None
-                  and not st["paused"]
-                  and st["phase"] == protocol.PHASE_PLAYING)
-        snap = self.app.input.snapshot_single(active)
+        snap = self.app.input.snapshot_single(self._playing(overlay))
         now = time.monotonic()
         heartbeat = now - self.last_sent_t > self.INPUT_KEEPALIVE
         if snap != self.last_sent or heartbeat:
-            self.net.send_input(snap)
+            # The sequence number lets the client reconcile its prediction:
+            # the server echoes it back in every state ("ack").
+            self.net.send_input(snap, self.predict.push_input(snap))
             self.last_sent, self.last_sent_t = snap, now
         self.app.audio.crowd(st is not None and not st["paused"]
                              and overlay is None)
+
+    def _playing(self, overlay):
+        """True in effective play, with nothing covering the match."""
+        st = self.state
+        return (st is not None and overlay is None and self.confirm is None
+                and not st["paused"]
+                and st["phase"] == protocol.PHASE_PLAYING)
+
+    def _step_prediction(self, dt, overlay):
+        """Predicts the own player, but only in effective play: in a pause,
+        in the goal hold and in the replay the server state is drawn."""
+        st = self.state
+        if st is None:
+            return
+        self.predict.set_latency(self.net.rtt)
+        if not self._playing(overlay):
+            self.predict.hold(st)
+            return
+        self.predict.play()
+        self.predict.step(dt)
 
     def _pause_note(self):
         pause = self.net.pause
@@ -1309,7 +1337,7 @@ class OnlineMatchScreen(match_screens.MatchScreen):
             self._draw_waiting_server(surf)
             return
         view = self.interp.sample(time.monotonic()) or st
-        self.draw_match(surf, view, st)
+        self.draw_match(surf, self.predict.apply(view), st)
         overlay = self.overlay()
         self._signs(surf, overlay)
         self._draw_buttons(surf, overlay)
@@ -1433,6 +1461,7 @@ class OnlineMatchScreen(match_screens.MatchScreen):
     def debug_info(self):
         info = super().debug_info()
         info["ui_pause"] = self.net.pause.get("status")
+        info["prediccion"] = self.predict.debug_text()
         return info
 
 

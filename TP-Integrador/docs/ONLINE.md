@@ -107,7 +107,7 @@ Del servidor también llegan:
 
 - **Navegador:** abrí <http://127.0.0.1:8765> en **dos ventanas** (o dos navegadores), elegí nombres distintos, creá una sala con una y unite con la otra. La primera vez hay que hacer clic en la página para que arranque, porque el navegador exige un clic para habilitar el sonido.
 - **`localhost`:** si se escribe `localhost:8765`, el servidor redirige a `127.0.0.1:8765`. pygbag trata a las páginas servidas desde `localhost:8...` como su propio servidor de desarrollo y busca sus paquetes en `localhost:8000`, y ahí el juego no arranca.
-- **Escritorio:** `main.py` también juega online. Por defecto usa `ws://localhost:8765/ws`; el orden para cambiarlo es: la opción `--server URL`, la variable `FDC_SERVER`, la primera línea de `servidor.txt` (al lado del juego o del exe) y, si no hay nada de eso, el valor por defecto. Se aceptan `ws://` y `wss://`; un texto sin esquema se toma como `ws://`.
+- **Escritorio:** `main.py` también juega online. Por defecto usa `ws://setcomnas.ddns.net:18765/ws` (el puerto directo del NAS, sin túnel); el orden para cambiarlo es: la opción `--server URL`, la variable `FDC_SERVER`, la primera línea de `servidor.txt` (al lado del juego o del exe) y, si no hay nada de eso, el valor por defecto. Se aceptan `ws://` y `wss://`; un texto sin esquema se toma como `ws://`. Si no conecta, la pantalla muestra el host al que intentó.
 - **Opciones del servidor:**
   - `--port`;
   - `--host`: 127.0.0.1 para aceptar sólo conexiones locales;

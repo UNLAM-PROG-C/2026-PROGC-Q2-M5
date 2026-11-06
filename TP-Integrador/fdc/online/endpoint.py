@@ -7,7 +7,7 @@ the order in one place, so the game and the tests agree:
   2. the FDC_SERVER environment variable;
   3. the first useful line of servidor.txt, next to the exe (or next to
      main.py when the game runs from the sources);
-  4. config.Online.SERVER_URL (ws://localhost:8765/ws by default).
+  4. config.Online.SERVER_URL (ws://setcomnas.ddns.net:18765/ws by default).
 
 Both ws:// (the local server) and wss:// (the same server behind a tunnel
 with TLS) are accepted; a text without scheme is taken as ws://.

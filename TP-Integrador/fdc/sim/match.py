@@ -429,4 +429,7 @@ def _player_snapshot(player):
         "frozen": player.frozen, "no_kick": player.no_kick,
         "stride": player.stride, "knock": player.knockback > 0,
         "celebrate": player.celebrating, "on_head": player.on_head,
+        # Power modifiers: the client needs them to predict with the same
+        # physics (see fdc/online/prediction.py).
+        "speed": player.speed_mult, "jump": player.jump_mult,
     }

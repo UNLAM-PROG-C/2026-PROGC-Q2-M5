@@ -24,6 +24,7 @@ It also serves, on the same port:
 import argparse
 import asyncio
 import collections
+import ctypes
 import http
 import json
 import logging
@@ -96,6 +97,44 @@ SERVE_OPTIONS = {"max_size": ONLINE.MAX_MESSAGE_BYTES,
                  "ping_timeout": ONLINE.KEEPALIVE_TIMEOUT}
 # Message types handled by the room bridge during a match.
 MATCH_TYPES = (wire.INPUT, wire.PAUSE_REQUEST, wire.PAUSE_READY)
+
+
+def set_nodelay(ws):
+    """Sends every state as soon as it is written (no Nagle buffering).
+
+    At 60 states per second a delayed ACK of the other side could hold two
+    states together for tens of milliseconds: that is latency the player
+    feels. asyncio already turns TCP_NODELAY on for the sockets it creates,
+    so this is explicit (and checked by the tests) rather than new.
+    """
+    transport = getattr(ws, "transport", None)
+    sock = transport.get_extra_info("socket") if transport else None
+    if sock is not None:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
+def begin_precise_timers():
+    """Windows: 1 ms timers for this process (True if it could).
+
+    The system timer is ~15.6 ms by default, so an asyncio sleep of 1/120 s
+    lands at 15.6 ms: the bridge of each room would run at ~64 Hz and the
+    states would come out at ~34 per second. With 1 ms resolution the bridge
+    keeps its 120 Hz and the states leave at 60. It is system wide while the
+    server runs; end_precise_timers() undoes it.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        ctypes.windll.winmm.timeBeginPeriod(1)
+    except (AttributeError, OSError):
+        return False
+    return True
+
+
+def end_precise_timers(began):
+    """Undoes begin_precise_timers()."""
+    if began:
+        ctypes.windll.winmm.timeEndPeriod(1)
 
 
 class GameServer:
@@ -232,6 +271,7 @@ class GameServer:
 
     def _new_session(self, ws):
         """Session of a connection that has not introduced itself yet."""
+        set_nodelay(ws)
         pending = session_module.Session(self.traffic)
         pending.attach(ws)
         return pending
@@ -363,7 +403,7 @@ class GameServer:
         kind = msg["type"]
         try:
             if kind == wire.INPUT:
-                runner.set_input(side, wire.clean_input(msg.get("p")))
+                runner.set_input(side, *wire.clean_controls(msg))
             elif kind == wire.PAUSE_REQUEST:
                 runner.request_pause(side)
             else:
@@ -474,7 +514,15 @@ class GameServer:
                   started=None):
         """Serves until request_stop(); then closes every room."""
         self.stopped = asyncio.Event()
+        precise = begin_precise_timers()
         stats = asyncio.create_task(self._stats_loop())
+        try:
+            await self._serve_until_stopped(host, port, started, stats)
+        finally:
+            end_precise_timers(precise)
+
+    async def _serve_until_stopped(self, host, port, started, stats):
+        """Opens the port and runs until request_stop()."""
         async with ws_server.serve(self.handler, host, port,
                                    process_request=self.http,
                                    **SERVE_OPTIONS) as srv:

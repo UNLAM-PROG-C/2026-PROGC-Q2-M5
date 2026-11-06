@@ -13,6 +13,7 @@ thread and does not slow down the server loop.
 import asyncio
 import collections
 import logging
+import math
 import os
 import time
 
@@ -49,9 +50,10 @@ class RoomRunner:
         self.match = None   # {"id", "sids", "names", "chars", "start_msgs"}
         self.start_pending = False
         self.inputs = [[False, False, 0, 0] for _ in range(lobby.MAX_PLAYERS)]
+        self.input_seqs = [0] * lobby.MAX_PLAYERS   # for the prediction ack
         self.last_state = None
         self.sent_seq = -1
-        self.last_state_sent = 0.0
+        self.sent_at = -math.inf    # last state forwarded (s, monotonic)
         self.hold = set()   # reasons why the simulation must stay paused
         self.pause = None   # {"status", "by", "deadline", "ready"}
         self.away = {}      # side -> deadline to come back
@@ -101,21 +103,26 @@ class RoomRunner:
                                     detail)
 
     async def _pump(self):
-        """Bridge task: one tick every 1/PUMP_HZ s."""
+        """Bridge task: one tick every 1/PUMP_HZ s on a clock (not a sleep:
+        a late tick neither accumulates delay nor sends a burst)."""
         period = 1.0 / ONLINE.PUMP_HZ
+        next_tick = time.monotonic() + period
         while not self.closed:
             try:
                 self.tick(time.monotonic())
             except Exception:  # pylint: disable=broad-exception-caught
-                # A broken room does not bring the server down.
                 log.exception("room %s: bridge error", self.room_id)
                 self._fail("error interno de la sala")
                 return
-            await asyncio.sleep(period)   # fixed rhythm: not busy waiting
+            now = time.monotonic()
+            next_tick = max(next_tick, now)     # late: back on the clock
+            await asyncio.sleep(max(0.0, next_tick - now))
+            next_tick += period
 
     # --------------------------------------------------------------- bridge
     def tick(self, now):
         """One turn of the bridge (it never blocks)."""
+        self.counts["ticks"] += 1
         msgs, state = self.link.poll()
         if not self._link_healthy() or self.match is None:
             return
@@ -124,11 +131,15 @@ class RoomRunner:
             return
         self._forward_state(state, now)
         # Controls go every turn: they are also the watchdog "heartbeat".
-        self.link.send_input(self.inputs)
+        self.link.send_input(self.inputs, self.input_seqs)
+        self._housekeeping(now)
+
+    def _housekeeping(self, now):
+        """Pause check and the information each player sees in the F3 panel."""
         self._check_pause_end(now)
         if now - self.last_info >= ONLINE.ROOM_INFO_EVERY:
             self._update_rates(now)
-            self.broadcast(self.room_info())   # data for each player's F3
+            self.broadcast(self.room_info())
 
     def _send_start(self):
         """The start command leaves once the simulation is READY.
@@ -174,18 +185,26 @@ class RoomRunner:
         self.broadcast({"type": wire.EVENT, "e": event})
 
     def _forward_state(self, state, now):
-        """Sends the newest state, at most STATE_HZ times per second."""
+        """Sends the newest state: one per simulation step, never a burst.
+
+        The simulation publishes STATE_HZ states per second (one every
+        STATE_EVERY_TICKS physics steps), so forwarding each new one gives
+        the even cadence of the physics itself. The half period cap only
+        matters if the source ever goes faster than STATE_HZ: it keeps the
+        browser at two states per period instead of a flood.
+        """
         if state is not None and state.get("match") == self.match["id"]:
             self.last_state = state
         latest = self.last_state
-        min_gap = 1.0 / ONLINE.STATE_HZ - ONLINE.STATE_SEND_SLACK
-        if (latest is not None and latest["seq"] != self.sent_seq
-                and now - self.last_state_sent >= min_gap):
-            self.sent_seq = latest["seq"]
-            self.last_state_sent = now
-            self.counts["states"] += 1
-            self.broadcast_text(wire.encode(wire.compact_state(latest)),
-                                replaceable=True)
+        if latest is None or latest["seq"] == self.sent_seq:
+            return
+        if now - self.sent_at < 0.5 / ONLINE.STATE_HZ:
+            return
+        self.sent_seq = latest["seq"]
+        self.sent_at = now
+        self.counts["states"] += 1
+        self.broadcast_text(wire.encode(wire.compact_state(latest)),
+                            replaceable=True)
 
     def _check_pause_end(self, now):
         pause = self.pause
@@ -228,6 +247,8 @@ class RoomRunner:
                 "sim_alive": self.link.alive,
                 "match": self.match["id"] if self.match else None,
                 "states_per_s": self.rates.get("states", 0.0),
+                "states_in": self.link.states_received,
+                "ticks_per_s": self.rates.get("ticks", 0.0),
                 "inputs_per_s": self.rates.get("inputs", 0.0),
                 "ack_ms": self._ack_ms(),
                 "pending_acks": len(self.link.pending),
@@ -256,8 +277,10 @@ class RoomRunner:
         return [self.pause["status"]] if self.pause else []
 
     # -------------------------------------------------------------- players
-    def set_input(self, side, p):
+    def set_input(self, side, p, seq=0):
+        """Controls of a player; `seq` is the client's sequence number."""
         self.inputs[side] = p
+        self.input_seqs[side] = seq
         self.counts["inputs"] += 1
 
     def request_pause(self, side):

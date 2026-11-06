@@ -182,7 +182,7 @@ def _drop_duplicate_cuda(folder):
 
 
 def _write_server_file(folder):
-    """servidor.txt with the tunnel (never over the one of the player)."""
+    """servidor.txt with the default server (never over the player's)."""
     path = os.path.join(folder, SERVER_FILE)
     if not os.path.exists(path):
         shutil.copy(SERVER_EXAMPLE, path)

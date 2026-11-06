@@ -15,9 +15,11 @@ Client -> server
                                 player_id gives the tag
     list_rooms / create_room / join_room / leave_room / choose_character /
     ready                       rooms (see fdc/online/lobby.py)
-    input {p: [left, right, jumps, kicks]}
+    input {p: [left, right, jumps, kicks], seq}
                                 REPLACEABLE controls snapshot with cumulative
-                                counters (no press is lost)
+                                counters (no press is lost); `seq` (online,
+                                optional) numbers the snapshot so the client
+                                can reconcile its prediction with "ack"
     pause_request               ask for a pause: it starts after the next goal
     pause_ready                 "ready" during the pause
     abandon                     leave the match (loses)
@@ -29,6 +31,8 @@ Server -> client
     opponent_left               the rival left the room
     match_start {room, match, players, you}
     state {...}                 match snapshot (replaceable: "the newest wins")
+                                with "ack": last controls sequence number the
+                                simulation applied for each player
     ev {e}                      match event (goal, power, bounce...) with "eid"
     pause_info {status, by, left, ready}  pause requested / active / over
     opponent {connected, left}  the rival lost the connection (or came back)
@@ -133,6 +137,23 @@ def clean_input(p):
     return [bool(left), bool(right), jumps, kicks]
 
 
+def clean_seq(seq):
+    """Client sequence number of a controls snapshot (0 if it came without
+    one: an older client)."""
+    if seq is None:
+        return 0
+    valid = (not isinstance(seq, bool) and isinstance(seq, int)
+             and 0 <= seq <= MAX_COUNTER)
+    if not valid:
+        raise WireError("invalid sequence number")
+    return seq
+
+
+def clean_controls(msg):
+    """(controls snapshot, sequence number) of an input message."""
+    return clean_input(msg.get("p")), clean_seq(msg.get("seq"))
+
+
 def _round(obj):
     if isinstance(obj, float):
         return round(obj, POSITION_DECIMALS)
@@ -155,4 +176,6 @@ def compact_state(state):
     for player, source in zip(out["players"], state["players"]):
         player["kick"] = round(source["kick"], FINE_DECIMALS)
         player["scale"] = round(source["scale"], FINE_DECIMALS)
+        player["speed"] = round(source["speed"], FINE_DECIMALS)
+        player["jump"] = round(source["jump"], FINE_DECIMALS)
     return out

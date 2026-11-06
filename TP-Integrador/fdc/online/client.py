@@ -339,8 +339,12 @@ class NetClient:
         return (member["username"] == self.username
                 and member.get("tag") == self.tag)
 
-    def send_input(self, p):
-        self.send({"type": wire.INPUT, "p": p})
+    def send_input(self, p, seq=None):
+        """Controls snapshot; `seq` numbers it for the client's prediction."""
+        msg = {"type": wire.INPUT, "p": p}
+        if seq is not None:
+            msg["seq"] = seq
+        self.send(msg)
 
     def leave_room(self):
         self.send({"type": wire.LEAVE_ROOM})
@@ -430,7 +434,8 @@ class NetClient:
             self.transport.close()
         self.transport = None
         self.status = CLOSED
-        self.fatal = text
+        # The message always says which host was tried.
+        self.fatal = text if self.url in text else f"{text} ({self.url})"
         self.welcomed = False
 
     # ------------------------------------------- what the screens read

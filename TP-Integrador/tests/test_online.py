@@ -3,6 +3,7 @@ import base64
 import http.client
 import json
 import os
+import socket
 import tempfile
 import time
 import unittest
@@ -74,8 +75,9 @@ class FakeLink:
         self.cmds.append((ctype, kw))
         return len(self.cmds)
 
-    def send_input(self, p):
+    def send_input(self, p, seqs=None):
         self.inputs = [list(x) for x in p]
+        self.input_seqs = list(seqs) if seqs else None
 
 
 class FakeSession:
@@ -105,6 +107,19 @@ def _playing(match_id):
     m = match.Match(match_id)
     m.phase = protocol.PHASE_PLAYING
     return m
+
+
+def _nodelay(srv):
+    """TCP_NODELAY of the first introduced session (1 = on)."""
+    session = next(s for s in srv.server.sessions.values() if s.username)
+    sock = session.ws.transport.get_extra_info("socket")
+    return sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+
+
+def _wait_ack(client, side, seq, timeout=5):
+    """Waits for a state that says it applied controls `seq` of `side`."""
+    return client.wait(wire.STATE, timeout=timeout,
+                       cond=lambda m: m.get("ack", [-1, -1])[side] == seq)
 
 
 class RunnerTest(unittest.TestCase):
@@ -220,6 +235,48 @@ class RunnerTest(unittest.TestCase):
         st = self.a.last(wire.STATE)
         self.assertEqual((st["match"], st["seq"]), (7, 2))
         self.assertNotIn("dropped_states", st)
+
+    def _tick_with(self, seq, now):
+        """One tick with a brand-new state; returns the states it sent."""
+        self.link.state = self.match.snapshot(seq)
+        self.a.msgs.clear()
+        self.r.tick(now)
+        return [m for m in self.a.msgs if m["type"] == wire.STATE]
+
+    def test_states_leave_evenly_at_the_sim_rate(self):
+        """One state per simulation period: 60 per second, evenly."""
+        period = 1.0 / config.Online.STATE_HZ
+        tick = 0.5 / config.Online.PUMP_HZ          # the bridge at 120 Hz
+        stamps = []
+        for k in range(int(round(1.0 / tick)) + 1):
+            now = k * tick
+            seq = 2 + int(now / period)             # the sim publishes
+            if self._tick_with(seq, now):
+                stamps.append(now)
+        self.assertGreaterEqual(len(stamps), config.Online.STATE_HZ - 2)
+        self.assertLessEqual(len(stamps), config.Online.STATE_HZ + 1)
+        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+        self.assertLessEqual(max(gaps), period + tick + 1e-9)
+
+    def test_a_fast_source_cannot_flood_the_clients(self):
+        """The cap is two states per period, whatever the source does."""
+        period = 1.0 / config.Online.STATE_HZ
+        tick = 0.5 / config.Online.PUMP_HZ
+        stamps = [k * tick for k in range(int(round(1.0 / tick)) + 1)
+                  if self._tick_with(k + 2, k * tick)]
+        self.assertLessEqual(len(stamps), 2 * config.Online.STATE_HZ + 1)
+        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+        self.assertGreaterEqual(min(gaps), period / 2 - 1e-9)
+
+    def test_a_slow_tick_does_not_send_a_burst(self):
+        self._tick_with(2, 0.0)
+        self.assertEqual(len(self._tick_with(3, 0.5)), 1)
+        self.assertEqual(len(self._tick_with(4, 0.5)), 0)   # deadline moved
+
+    def test_the_input_sequence_reaches_the_simulation(self):
+        self.r.set_input(0, [False, True, 0, 0], seq=42)
+        self.r.tick(0.0)
+        self.assertEqual(self.link.input_seqs, [42, 0])
 
 
 class PauseAfterGoalTest(unittest.TestCase):
@@ -429,6 +486,25 @@ class ServerMatchTest(unittest.TestCase):
         self.assertIsNotNone(info["sim_pid"])
         # The room runs in another process.
         self.assertNotEqual(info["sim_pid"], info["server_pid"])
+
+    def test_the_state_says_which_controls_it_applied(self):
+        with ServerThread(duration=5.0, seed=5) as srv:
+            a, b, sa, _, _ = start_match(srv)
+            mine = sa["you"]
+            a.send({"type": wire.INPUT, "seq": 77, "p": [False, True, 0, 0]})
+            st = _wait_ack(a, mine, 77)
+            self.assertEqual(len(st["ack"]), 2)
+            # A client without "seq" (the old one) still plays: ack 0.
+            a.send({"type": wire.INPUT, "p": [False, False, 0, 0]})
+            self.assertEqual(_wait_ack(a, mine, 0)["ack"][mine], 0)
+            for c in (a, b):
+                c.close()
+
+    def test_tcp_nodelay_is_on(self):
+        with ServerThread() as srv:
+            c = Client(srv.url, "Nagle")
+            self.assertEqual(srv.call(lambda: _nodelay(srv)), 1)
+            c.close()
 
     def check_end_and_rematch(self, a, b, sa):
         over = b.wait(wire.MATCH_OVER, timeout=15)

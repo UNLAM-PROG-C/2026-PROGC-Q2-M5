@@ -101,7 +101,6 @@ class ResolveTest(unittest.TestCase):
 
 class ClientTest(unittest.TestCase):
     """The client of the game uses that address (real server, real socket)."""
-
     def setUp(self):
         self.folder = tempfile.mkdtemp(prefix="fdc-endpoint-")
         self.srv = self.enterContext(online_helpers.ServerThread())
@@ -122,6 +121,11 @@ class ClientTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ,
                                       {endpoint.ENV_NAME: TUNNEL}):
             self.assertEqual(client.default_url(), TUNNEL)
+
+    def test_a_failure_always_names_the_server(self):
+        net = client.NetClient(url=OTHER)
+        net._give_up("conexión cerrada")
+        self.assertIn(OTHER, net.fatal)
 
 
 def _wait_connected(net):

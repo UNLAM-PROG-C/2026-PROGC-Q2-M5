@@ -106,12 +106,12 @@ class InlineLink(link.MatchLink):
         self.pending[cid] = (ctype, self.clock())
         return cid
 
-    def send_input(self, players):
+    def send_input(self, players, seqs=None):
         if self.core is None or self.error:
             return
         self.iseq += 1
         # Replaceable: the newest one wins.
-        self.latest_input = protocol.make_input(self.iseq, players)
+        self.latest_input = protocol.make_input(self.iseq, players, seqs)
         self.inputs_sent += 1
 
     # ------------------------------------------------------------ simulation

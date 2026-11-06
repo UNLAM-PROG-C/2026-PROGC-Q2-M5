@@ -545,17 +545,38 @@ class PlayMenuScreen(SubMenuScreen):
 
 
 class MultiplayerMenuScreen(SubMenuScreen):
-    """Local (same keyboard) or online."""
+    """Local (same keyboard) or online.
+
+    It also holds the online prediction switch: on by default, off with the
+    third button or with "--sin-prediccion" when the connection makes the
+    own player look odd.
+    """
     TITLE = "MULTIJUGADOR"
     SUBTITLE = ("Local: dos personas en el mismo teclado.  "
-                "Online: cada uno desde su casa.")
+                "Online: cada uno desde su casa.  "
+                "Predicción: el jugador propio se mueve al instante.")
+    PREDICTION_ITEM = 2         # position of the switch in the menu
 
     def __init__(self, app):
         super().__init__(app, [("Local", self.local), ("Online", self.online),
+                               ("", self.cycle_prediction),
                                ("Volver", self.back)])
+        self.refresh()
 
     def back(self):
         self.app.switch(PlayMenuScreen(self.app))
+
+    def refresh(self):
+        """The third button always names the state of the prediction."""
+        on = getattr(self.app, "prediction", config.Online.PREDICT_ENABLED)
+        label = "Predicción online: " + ("SÍ" if on else "NO")
+        self.menu.items[self.PREDICTION_ITEM] = (label, self.cycle_prediction)
+
+    def cycle_prediction(self):
+        """Turns the online prediction on or off."""
+        on = getattr(self.app, "prediction", config.Online.PREDICT_ENABLED)
+        self.app.prediction = not on
+        self.refresh()
 
     def local(self):
         # pylint: disable-next=import-outside-toplevel

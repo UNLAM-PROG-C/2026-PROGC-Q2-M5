@@ -114,13 +114,14 @@ class SimLink(link.MatchLink):
         except queue.Full:
             return False
 
-    def send_input(self, players):
+    def send_input(self, players, seqs=None):
         """Replaceable controls snapshot: dropped if the queue is full."""
         if self.proc is None or self.error:
             return
         self.iseq += 1
         try:
-            self.input_q.put_nowait(protocol.make_input(self.iseq, players))
+            self.input_q.put_nowait(
+                protocol.make_input(self.iseq, players, seqs))
             self.inputs_sent += 1
         except queue.Full:
             # The next snapshot carries the same counters.

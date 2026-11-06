@@ -33,6 +33,7 @@ class SimulationCore:
         self.duration = options.get("duration")
         self.match = None
         self.eid = self.seq = 0
+        self.ack = [0, 0]       # online: last controls applied per player
         self.press = [[protocol.PressCounter(), protocol.PressCounter()]
                       for _ in range(2)]
         self.last_input_time = time.monotonic()
@@ -87,6 +88,9 @@ class SimulationCore:
     def publish_state(self):
         self.seq += 1
         snap = self.match.snapshot(self.seq)
+        # What the clients need to reconcile their prediction: the last
+        # controls snapshot this simulation applied for each player.
+        snap["ack"] = list(self.ack)
         snap["dropped_states"] = self.dropped_states
         snap["dropped_cosmetic"] = self.dropped_cosmetic
         self.put_state(snap)
@@ -186,6 +190,9 @@ class SimulationCore:
         """Latest controls snapshot: counters say how many presses there
         were."""
         self.last_input_time = time.monotonic()
+        seqs = latest.get("seqs")
+        if isinstance(seqs, list) and len(seqs) == 2:
+            self.ack = [int(seqs[0]), int(seqs[1])]
         for idx, (left, right, jumps, kicks) in enumerate(latest["p"][:2]):
             new_jumps = self.press[idx][0].update(jumps)
             new_kicks = self.press[idx][1].update(kicks)

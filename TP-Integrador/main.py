@@ -45,6 +45,10 @@ COMMAND_LINE = (
     (("--gpu-quality",), {"dest": "gpu_quality", "default": None,
                           "choices": ("baja", "media", "alta"),
                           "help": "calidad de los efectos (baja|media|alta)"}),
+    (("--sin-prediccion",),
+     {"dest": "sin_prediccion", "action": "store_true",
+      "help": "online: no predice el jugador propio (si se ve raro con "
+              "una conexión mala)"}),
     (("--gpu-cpu",), {"dest": "force_cpu", "action": "store_true",
                       "help": "efectos con la versión numpy (para comparar "
                               "contra la GPU)"}),

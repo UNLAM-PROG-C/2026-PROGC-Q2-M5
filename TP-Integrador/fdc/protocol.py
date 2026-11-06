@@ -91,10 +91,15 @@ def make_command(ctype, cid, **payload):
     return msg
 
 
-def make_input(iseq, players):
-    """players: [[left, right, jump_counter, kick_counter], [...]]."""
-    return {"type": MSG_INPUT, "iseq": iseq,
-            "p": [list(p) for p in players]}
+def make_input(iseq, players, seqs=None):
+    """players: [[left, right, jump_counter, kick_counter], [...]].
+
+    `seqs` are the client sequence numbers of those snapshots (online mode,
+    so the state can tell the client which input it applied)."""
+    msg = {"type": MSG_INPUT, "iseq": iseq, "p": [list(p) for p in players]}
+    if seqs is not None:
+        msg["seqs"] = list(seqs)
+    return msg
 
 
 # ---------------------------------------------------------------------------

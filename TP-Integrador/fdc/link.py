@@ -38,8 +38,11 @@ class MatchLink(abc.ABC):
         None."""
 
     @abc.abstractmethod
-    def send_input(self, players):
-        """Replaceable controls snapshot (cumulative press counters)."""
+    def send_input(self, players, seqs=None):
+        """Replaceable controls snapshot (cumulative press counters).
+
+        `seqs` (online) are the client sequence numbers of those snapshots:
+        the simulation echoes them back in every state ("ack")."""
 
     @abc.abstractmethod
     def poll(self):

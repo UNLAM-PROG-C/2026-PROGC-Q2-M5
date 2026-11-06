@@ -304,10 +304,10 @@ class App:
 
     def _init_state(self):
         options = self.options
-        self.last_characters = None
-        self.tournament = None          # tournament in progress (memory only)
+        self.last_characters = self.tournament = None
         self.match_counter = 0
         self.show_debug = options.debug_panel
+        self._init_prediction(options)
         self.running = True
         self.last_dt = 0.0           # s: last frame time (effects need it)
         self.work_ms = 0.0           # ms of the last frame without the limiter
@@ -316,6 +316,12 @@ class App:
         self.first_frame_shown = False
         self._init_online()
         self._init_profile(options)
+
+    def _init_prediction(self, options):
+        """Online: predict the own player (the menu can turn it off)."""
+        enabled = config.Online.PREDICT_ENABLED
+        self.prediction = enabled and not getattr(options, "sin_prediccion",
+                                                  False)
 
     def _init_profile(self, options):
         """Player name: chosen once at the start, valid for every mode."""

@@ -335,13 +335,17 @@ class Online:
     """Server, client and panel settings of the online mode."""
     PORT = 8765             # TCP port of the server (web page + WebSocket)
     WS_PATH = "/ws"
-    # Default server of the desktop version (the web version uses the site
-    # it was loaded from); change it with --server or FDC_SERVER.
-    SERVER_URL = os.environ.get("FDC_SERVER", "ws://localhost:8765/ws")
+    # Default server of the desktop version: the direct port of the NAS (the
+    # web version uses the site it was loaded from). Change it with
+    # --server, FDC_SERVER or servidor.txt.
+    SERVER_URL = os.environ.get(
+        "FDC_SERVER", "ws://setcomnas.ddns.net:18765/ws")
     RECONNECT_GRACE = 30.0      # s to come back before losing by forfeit
     PAUSE_MAX = 30.0            # s a requested pause lasts at most
-    PUMP_HZ = 60                # cycle of the room <-> simulation bridge
-    STATE_HZ = 30               # states per second sent to each browser
+    # Bridge cycle. Twice the state rate: every state has its own deadline
+    # and the tick only decides when it is checked (see room_runner).
+    PUMP_HZ = 120               # cycles of the room <-> simulation bridge
+    STATE_HZ = 60               # states per second sent to each browser
     PING_EVERY = 2.0            # s: the client measures the latency
     MAX_MESSAGE_BYTES = 2048    # bytes: largest message from a client
     MAX_MESSAGES_PER_SEC = 150  # more than this is abuse: disconnected
@@ -360,6 +364,23 @@ class Online:
     KEEPALIVE_TIMEOUT = 10.0    # s without a ping reply -> connection lost
     # s of slack so a state is not skipped for a few milliseconds
     STATE_SEND_SLACK = 0.004
+    # Online prediction of the own player: on by default. It can be turned
+    # off with "--sin-prediccion" or from the multiplayer menu.
+    PREDICT_ENABLED = True
+    # s of assumed round trip until the client measures its own RTT: it is
+    # how far back in the client's timeline the server state sits.
+    PREDICT_REWIND = 0.15
+    PREDICT_MAX_REWIND = 0.6    # s: a bigger RTT is not "rewound" that far
+    # px: a smaller error is fixed smoothly, a bigger one snaps to the server.
+    # 40 px at full speed (~340 px/s) is ~120 ms of timing jitter: smoothing
+    # that is cheaper than a visible teleport, and a goal or a knockback is
+    # far bigger anyway.
+    PREDICT_SOFT_PX = 40.0
+    PREDICT_GAIN = 0.25         # part of the error fixed in each state
+    PREDICT_HISTORY = 2.0       # s of predicted positions kept for the rewind
+    PREDICT_MAX_FRAME = 0.1     # s: a longer frame is not simulated whole
+    # inputs sent and not yet acknowledged: beyond this the server is behind
+    PREDICT_MAX_PENDING = 240
     RATE_WINDOW = 1.0           # s: window to count a client's messages
     # Random bytes of the session token (to come back after a drop).
     TOKEN_BYTES = 18

@@ -96,10 +96,12 @@ curl http://IP-DEL-NAS:18765/status.json      # panel público en JSON
 ```
 
 En el juego (escritorio o exe), para apuntar a ese servidor sin TLS:
-`servidor.txt` con `ws://IP-DEL-NAS:18765/ws`, o `--server`, o `FDC_SERVER`.
+`servidor.txt` con `ws://setcomnas.ddns.net:18765/ws` (o
+`ws://IP-DEL-NAS:18765/ws` en la LAN), o `--server`, o `FDC_SERVER`.
 
-Por el túnel, el juego usa `wss://futbol.timecore.com.ar/ws` (es el valor que
-viene en el `servidor.txt` que acompaña al exe). Ese hostname resuelve por
-TLS en Cloudflare y el tráfico viaja cifrado hasta el NAS.
+El juego de escritorio usa por defecto **la conexión directa**
+`ws://setcomnas.ddns.net:18765/ws`, que viene en el `servidor.txt` que
+acompaña al exe. Es el puerto 18765 del NAS publicado por `docker-compose`
+(no pasa por Cloudflare). El túnel `wss://futbol.timecore.com.ar/ws` admite clientes, pero no es el valor por defecto.
 
 El juego de escritorio conecta a `/ws`; `/status` y `/status.json` son el panel.
