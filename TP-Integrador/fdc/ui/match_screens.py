@@ -427,10 +427,12 @@ class MatchScreen(screens.Screen):
     TEST_ICON_INSET = 6                # icon, from the box corner (px)
     TEST_TEXT_X = 60                   # texts, from the left edge (px)
     TEST_LINE_Y = (8, 32)              # the two lines, from the top edge
+    VIEWER = None                      # player of the screen: shared screen
 
     def __init__(self, app, chars):
         super().__init__(app)
         self.chars = list(chars)
+        self.viewer = self.VIEWER
         self.renderer = render.MatchRenderer(app, self.chars)
         self.filter = protocol.StateFilter()
         self.state = None
@@ -465,6 +467,7 @@ class MatchScreen(screens.Screen):
         self.app.input.capture = True
         self.app.fx.clear()
         self.app.postfx.clear()
+        self.app.postfx.viewer = self.viewer
         self._start(protocol.CMD_START)
 
     def leave(self):

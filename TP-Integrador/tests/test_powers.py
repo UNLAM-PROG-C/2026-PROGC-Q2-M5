@@ -79,8 +79,8 @@ class ActivationTest(unittest.TestCase):
         self.assertAlmostEqual(m.goals[0].target_height,
                                ARENA.GOAL_HEIGHT * 0.75)
 
-    def test_all_seventeen_powers(self):
-        self.assertEqual(len(config.POWERS), 17)
+    def test_all_twenty_powers(self):
+        self.assertEqual(len(config.POWERS), 20)
         for pdef in config.POWERS:
             for receptor in (0, 1):
                 self.check_power(pdef, receptor)

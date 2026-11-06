@@ -171,6 +171,28 @@ SMALL_BALL = (-0.1, 0.2, 0.34)     # small ball (x, y, radius)
 PLUS_SIGN = (((0.5, -0.62), (0.5, -0.18)), ((0.28, -0.4), (0.72, -0.4)))
 MINUS_SIGN = (((0.3, -0.4), (0.72, -0.4)),)   # minus of the small ball
 SIGN_W = 0.13                      # thickness of the plus and minus
+# F3 powers: a bulb turned off, two opposite arrows and a flame.
+BULB_BODY = (0.0, -0.08, 0.28)     # x, y and radius of the bulb
+# Socket of the bulb (trapezoid below it).
+BULB_BASE = ((-0.15, 0.2), (0.15, 0.2), (0.11, 0.36), (-0.11, 0.36))
+BULB_RAY = (0.42, 0.54)            # from and to (radius) of the rays
+BULB_RAYS = 6                      # rays around the bulb
+BULB_RAY_W = 0.07                  # thickness of those rays
+SLASH = ((-0.42, 0.42), (0.42, -0.42))   # crossed out ("off")
+SLASH_W = 0.12                     # thickness of that line
+CONFUSION_RING = 0.4               # radius of the turning ring
+CONFUSION_RING_W = 0.12            # thickness of the ring
+CONFUSION_ARROW = 0.22             # size of the two arrows
+CONFUSION_HEAD = 0.44              # where the arrows start (x)
+CONFUSION_UP, CONFUSION_DOWN = -0.06, 0.06   # y of the two arrows
+FULL_TURN = 360.0                  # degrees of a full circle
+# Outline of the flame.
+FLAME_OUTER = ((0.0, -0.5), (0.25, -0.08), (0.18, 0.24), (0.0, 0.44),
+               (-0.18, 0.24), (-0.25, -0.08))
+# Dark tongue inside the flame.
+FLAME_INNER = ((0.0, -0.1), (0.11, 0.1), (0.0, 0.3), (-0.11, 0.1))
+# Small white core at the bottom of that tongue.
+FLAME_CORE = ((0.0, 0.06), (0.05, 0.16), (0.0, 0.26), (-0.05, 0.16))
 
 
 class Glyph:
@@ -377,6 +399,33 @@ def _small_ball(g):
     g.lines(WHITE, MINUS_SIGN, SIGN_W)
 
 
+def _blackout(g):
+    """Bulb with its rays and a line across: the lights go out."""
+    x, y, r = BULB_BODY
+    g.circle(WHITE, x, y, r)
+    g.poly(INK, list(BULB_BASE))
+    near, far = BULB_RAY
+    for k in range(BULB_RAYS):
+        a = math.radians(k * FULL_TURN / BULB_RAYS)
+        g.line(WHITE, [_polar(x, y, a, near), _polar(x, y, a, far)],
+               BULB_RAY_W)
+    g.line(INK, list(SLASH), SLASH_W)
+
+
+def _confusion(g):
+    """Two opposite arrows around a ring: everything spins."""
+    _arrow(g, -CONFUSION_HEAD, CONFUSION_UP, (0, -1), CONFUSION_ARROW)
+    _arrow(g, CONFUSION_HEAD, CONFUSION_DOWN, (0, 1), CONFUSION_ARROW)
+    g.ring(WHITE, 0.0, 0.0, CONFUSION_RING, CONFUSION_RING_W)
+
+
+def _fire(g):
+    """Flame: white body with the dark inner tongue."""
+    g.poly(WHITE, FLAME_OUTER)
+    g.poly(INK, FLAME_INNER)
+    g.poly(WHITE, FLAME_CORE)
+
+
 GLYPHS = {                          # pictogram of each power
     "speed_up": _speed_up,
     "speed_down": _snail,
@@ -395,6 +444,9 @@ GLYPHS = {                          # pictogram of each power
     "high_bounce": lambda g: _bounces(g, True),
     "big_ball": _big_ball,
     "small_ball": _small_ball,
+    "blackout": _blackout,
+    "confusion": _confusion,
+    "fire": _fire,
 }
 
 

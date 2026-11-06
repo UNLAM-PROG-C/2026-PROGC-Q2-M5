@@ -1073,6 +1073,7 @@ class OnlineMatchScreen(match_screens.MatchScreen):
         self.names = [p["display"] for p in players]
         self.you = start["you"]
         super().__init__(app, [p["character"] for p in players])
+        self.viewer = self.you
         self.net = app.online()
         self.match_id = start["match"]
         self.filter.expect(self.match_id)

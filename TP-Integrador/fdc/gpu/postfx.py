@@ -7,6 +7,7 @@ on the screen. The rest of the interface (HUD, menus) is never touched.
 
 The chain is presentation only: it reads the match state, never changes it.
 """
+import math
 import time
 
 import numpy as np
@@ -16,6 +17,8 @@ from fdc import config
 from fdc import protocol
 from fdc.gpu import backend
 from fdc.gpu import cpu_ref
+from fdc.gpu import effects_state
+from fdc.gpu import exposure
 from fdc.gpu import metrics as gpu_metrics
 from fdc.gpu import particles
 from fdc.gpu import quality
@@ -49,6 +52,17 @@ class PostFx:
         self.trail = None
         self.phase = 0.0
         self.lights = _no_lights()
+        self._init_effects()
+
+    def _init_effects(self):
+        """State of the F3/F4 effects (viewer, night, clock, trail...)."""
+        self.viewer = None          # 0, 1 or None on a shared screen
+        self.night = False          # local option (key N)
+        self.clock = 0.0            # s of the chain (ages of the effects)
+        self.events = []            # event driven effects (goal wave)
+        self.fx = effects_state.FxParams()
+        self.exposure = exposure.AutoExposure()
+        self.trail_gate = effects_state.TrailGate()
 
     # ------------------------------------------------------------- lifecycle
     def start(self):
@@ -95,10 +109,14 @@ class PostFx:
         return self.mode
 
     def clear(self):
-        """New match: no sparks, no trail, no lights."""
+        """New match: no sparks, no trail, no lights, no event effects."""
         self.particles.clear()
         self.trail = None
         self.lights = _no_lights()
+        self.events = []
+        self.fx = effects_state.FxParams()
+        self.exposure.reset()
+        self.trail_gate.reset()
 
     # ---------------------------------------------------------------- events
     def event(self, msg):
@@ -108,6 +126,9 @@ class PostFx:
         if kind == protocol.EV_GOAL:
             self.particles.spawn(x or 0.0, y or 0.0, SPARK_COLOUR,
                                  GOAL_SPARKS)
+            self.events.append(effects_state.EventFx(
+                effects_state.SHOCK_KIND, x or 0.0, y or 0.0, self.clock,
+                config.Gpu.SHOCK_DURATION))
         elif kind == protocol.EV_BOMB_EXPLODE:
             self.particles.spawn(x or 0.0, y or 0.0, FIRE_COLOUR,
                                  BOMB_SPARKS)
@@ -121,6 +142,8 @@ class PostFx:
 
     # ----------------------------------------------------------------- chain
     def _chain(self, image, dt):
+        self.clock += dt
+        self.fx = self._derive()
         self.particles.update(dt)
         self.phase += config.Gpu.HEAT_SPEED * dt
         stages = quality.stages(self.level)
@@ -129,15 +152,117 @@ class PostFx:
             out = self._timed("glow", self._glow, image)
         out = self._timed("particles", self._sparks, out)
         out = self._timed("lights", self._lights, out)
-        return self._extras(out, dt, stages)
+        out = self._powers(out, dt)
+        out = self._extras(out, dt, stages)
+        return self._night(out)
+
+    def _derive(self):
+        """FxParams of this frame (pure rules, see effects_state)."""
+        self.events = [fx for fx in self.events if fx.alive(self.clock)]
+        return effects_state.derive(self.state, self.viewer, self.clock,
+                                    self.events, night=self.night)
+
+    def _powers(self, image, dt):
+        """F3/F4 stages, in the fixed order of the spec (5.3)."""
+        out = self._ball_trail(image, dt)
+        out = self._shock(out)
+        out = self._fire(out)
+        out = self._confusion(out)
+        out = self._ice(out)
+        return self._blackout(out)
+
+    def _ball_trail(self, image, dt):
+        """TRAIL: bright pixels of the fast ball stay a moment (maximum)."""
+        speed = effects_state.ball_speed(self.state or {})
+        if not self.trail_gate.update(speed, dt):
+            self.trail = None
+            return image
+        if self.trail is None or self.trail.shape != image.shape:
+            self.trail = image.copy()
+            return image
+        out = self._timed("trail", self.ops.trail_blend, image, self.trail,
+                          config.Gpu.TRAIL_DECAY)
+        self.trail = image.copy()      # prev <- cur, as the spec asks
+        return out
+
+    def _shock(self, image):
+        """SHOCK: the ring of a goal grows and warps what it crosses."""
+        if self.fx.shock is None:
+            return image
+        x, y, age = self.fx.shock
+        gpu = config.Gpu
+        radius = gpu.SHOCK_RADIUS * age
+        amp = gpu.SHOCK_AMP * (1.0 - age / gpu.SHOCK_DURATION)
+        return self._timed("shock", self.ops.ripple_ring, image, x, y,
+                           radius, gpu.SHOCK_WIDTH, amp)
+
+    def _fire(self, image):
+        """FIRE: hot air around the ball."""
+        if self.fx.fire is None:
+            return image
+        x, y, radius = self.fx.fire
+        return self._timed("fire", self.ops.heat_distort, image, x, y,
+                           radius, self.clock, config.Gpu.FIRE_AMP)
+
+    def _confusion(self, image):
+        """CONFUSION: inverted and slowly turning image."""
+        if self.fx.confusion <= 0:
+            return image
+        out = self._timed("confusion", self.ops.invert, image)
+        gpu = config.Gpu
+        angle = (math.radians(gpu.CONFUSION_MAX_DEG) * self.fx.confusion
+                 * math.sin(gpu.CONFUSION_SPEED * self.clock))
+        return self._timed("confusion_rot", self.ops.rotate, out, angle)
+
+    def _ice(self, image):
+        """ICE: bright edges, then a blue tint weighted by the strength."""
+        if self.fx.ice <= 0:
+            return image
+        gpu = config.Gpu
+        out = self._timed("ice_edges", self._ice_edges, image)
+        tinted = self.ops.tint(out, gpu.ICE_TINT)
+        return self._timed("ice_tint", self.ops.mix, out, tinted,
+                           gpu.ICE_STRENGTH * self.fx.ice)
+
+    def _ice_edges(self, image):
+        """Edge glow of the ice (sobel normalised over the whole image)."""
+        edges = self.ops.sobel(self.ops.to_gray(image))
+        norm = self.ops.sobel_normalize(edges, float(edges.max() or 1.0))
+        return self.ops.edge_glow(image, norm,
+                                  config.Gpu.ICE_EDGES * self.fx.ice)
+
+    def _blackout(self, image):
+        """BLACKOUT: only the light around the affected player stays."""
+        if not self.fx.blackout:
+            return image
+        lights = effects_state.light_array(self.fx.blackout,
+                                           config.Gpu.BLACKOUT_RADIUS, 1.0)
+        return self._timed("blackout", self.ops.spotlights, image, lights,
+                           config.Gpu.BLACKOUT_AMBIENT,
+                           config.Gpu.BLACKOUT_TINT)
+
+    def _night(self, image):
+        """NIGHT: six spotlights and auto exposure (gain of the last frame)."""
+        if not self.fx.night:
+            self.exposure.reset()
+            return image
+        gpu = config.Gpu
+        lights = effects_state.night_lights()
+        out = self._timed("night", self.ops.spotlights, image, lights,
+                          gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT)
+        if self.exposure.gain != 1.0:
+            out = self._timed("exposure", self.ops.gain, out,
+                              self.exposure.gain)
+        mean = self.ops.luma_stats(out)[0]
+        self.exposure.update(mean)      # it is applied on the next frame
+        return out
 
     def _extras(self, image, dt, stages):
         """The expensive stages (only in the 'alta' level)."""
+        del dt  # the trail moved to `_powers` (F4)
         out = image
         if quality.HEAT in stages:
             out = self._timed("heat", self._heat, out)
-        if quality.TRAIL in stages:
-            out = self._timed("trail", self._trail, out, dt)
         if quality.HISTOGRAM in stages:
             out = self._timed("histogram", self._contrast, out)
         return out
@@ -166,12 +291,9 @@ class PostFx:
         return self.ops.heat(image, self.phase, gpu.HEAT_AMP, gpu.HEAT_PERIOD)
 
     def _trail(self, image, dt):
-        if self.trail is None or self.trail.shape != image.shape:
-            self.trail = image.copy()
-            return image
-        out, self.trail = self.ops.trail(image, self.trail,
-                                         config.Gpu.TRAIL_ALPHA)
-        return out
+        """Kept for the F2 API: the F4 trail is `_ball_trail`."""
+        del dt
+        return self._ball_trail(image, config.Gpu.TRAIL_MIN_SPEED)
 
     def _contrast(self, image):
         hist = self.ops.histogram(image)
@@ -179,12 +301,12 @@ class PostFx:
         return self.ops.stretch(image, low, high) if high > low else image
 
     def _light_table(self):
-        """Spotlights of the powers active right now (x, y, radius, ...)."""
+        """Soft glow of the freeze powers (x, y, radius, power, r, g, b)."""
         rows = []
         state = self.state or {}
-        effects = (state.get("powers") or {}).get("effects") or []
-        for effect in effects:
-            row = _power_light(effect, state)
+        players = state.get("players") or []
+        for effect in state.get("effects") or []:
+            row = _power_light(effect, players)
             if row is not None:
                 rows.append(row)
         return (np.array(rows, np.float32) if rows
@@ -269,23 +391,17 @@ def _last(hist, limit):
     return float(len(hist) - 1)
 
 
-def _power_light(effect, state):
-    """One spotlight row for an effect, or None if it is not a light."""
-    power = effect.get("power")
-    if power not in ("freeze_self", "freeze_rival", "blackout", "fire"):
+def _power_light(effect, players):
+    """Soft glow of a freeze power, or None if it is not one."""
+    if effect.get("prop") != effects_state.ICE_PROP:
         return None
-    colour = FIRE_COLOUR if power == "fire" else (
-        ICE_COLOUR if power.startswith("freeze") else SPARK_COLOUR)
-    for player in state.get("players") or []:
-        if _targets_player(effect, player):
+    for index, player in enumerate(players):
+        if _targets_player(effect, index):
             return (player["x"], player["y"], config.Gpu.FREEZE_RADIUS,
-                    LIGHT_POWER, colour[0], colour[1], colour[2])
+                    LIGHT_POWER, ICE_COLOUR[0], ICE_COLOUR[1], ICE_COLOUR[2])
     return None
 
 
-def _targets_player(effect, player):
-    """True if the effect belongs to that player (or to nobody)."""
-    target = effect.get("target") or ""
-    if target.startswith("p"):
-        return target == f"p{player['idx']}"
-    return effect.get("power") in ("blackout", "fire")
+def _targets_player(effect, index):
+    """True if the effect belongs to the player at `index`."""
+    return effect.get("target") == f"p{index}"

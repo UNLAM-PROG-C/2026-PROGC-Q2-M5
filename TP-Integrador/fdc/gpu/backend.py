@@ -22,6 +22,7 @@ COMPILER_OPTIONS = ["-std=c++17", "--use_fast_math"]
 DEFAULT_ARCH = "sm_120"         # RTX 50 series; it is detected at runtime
 KERNEL_FILE = "kernels.cu"      # the CUDA source, next to this module
 MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
+LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
 
 
@@ -52,6 +53,13 @@ def device_name():
         return "CPU"
     import pycuda.driver as drv
     return drv.Device(0).name()
+
+
+def sync():
+    """Waits until the GPU finishes the queued work (true timings)."""
+    if available():
+        import pycuda.driver as drv
+        drv.Context.synchronize()
 
 
 def _auto_arch(driver):
@@ -415,3 +423,76 @@ class Gpu(primitives.Primitives):
                                 np.float32(strength), grid=self._grid(w, h),
                                 block=BLOCK)
         return self._get(out, shape, np.uint8)
+
+    # -------------------------------------------------- pods and night (F3/F4)
+    def spotlights(self, img, lights, ambient, tint):
+        """Light of every lamp (0..1) times the pixel and the warm colour."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("spot_src", shape, np.uint8, img)
+        lamps, count = self._lamp_buffer(lights)
+        out = self._buf("spot_out", shape, np.uint8)
+        red, green, blue = (np.float32(c) for c in tint)
+        self._fn("k_spotlights")(src, out, np.int32(w), np.int32(h), lamps,
+                                 np.int32(count), np.float32(ambient),
+                                 red, green, blue, grid=self._grid(w, h),
+                                 block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def _lamp_buffer(self, lights):
+        """Device table of lamps (x, y, radius, power) and their count."""
+        table = np.asarray(lights, np.float32).reshape(-1, LAMP_FIELDS)
+        count = min(len(table), primitives.SPOT_MAX)
+        host = table[:count].reshape(-1) if count else None
+        shape = (max(count, 1), LAMP_FIELDS)
+        return self._buf("spot_tab", shape, np.float32, host), count
+
+    def heat_distort(self, img, cx, cy, rad, t, amp):
+        """Hot air inside a circle of `rad` px around (cx, cy)."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("fire_src", shape, np.uint8, img)
+        out = self._buf("fire_out", shape, np.uint8)
+        self._fn("k_heat_distort")(src, out, np.int32(w), np.int32(h),
+                                   np.float32(cx), np.float32(cy),
+                                   np.float32(rad), np.float32(t),
+                                   np.float32(amp), grid=self._grid(w, h),
+                                   block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def ripple_ring(self, img, cx, cy, radius, width, amp):
+        """Expanding ring of the goal: warp plus bright edge."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("ring_src", shape, np.uint8, img)
+        out = self._buf("ring_out", shape, np.uint8)
+        self._fn("k_ripple")(src, out, np.int32(w), np.int32(h),
+                             np.float32(cx), np.float32(cy),
+                             np.float32(radius), np.float32(width),
+                             np.float32(amp), grid=self._grid(w, h),
+                             block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def trail_blend(self, cur, prev, decay):
+        """Maximum of the frame and the decayed previous one (no ghosts)."""
+        h, w = cur.shape[:2]
+        shape = (h, w, CHANNELS)
+        now = self._buf("tbl_cur", shape, np.uint8, cur)
+        before = self._buf("tbl_prev", shape, np.uint8, prev)
+        out = self._buf("tbl_out", shape, np.uint8)
+        self._fn("k_trail_blend")(now, before, out, np.int32(w), np.int32(h),
+                                  np.float32(decay), grid=self._grid(w, h),
+                                  block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def luma_stats(self, img):
+        """(mean, p95, top) of the 0..255 luma histogram."""
+        h, w = img.shape[:2]
+        src = self._buf("lhist_src", (h, w, CHANNELS), np.uint8, img)
+        hist = self._buf("lhist_bins", (BINS,), np.uint32,
+                         np.zeros(BINS, np.uint32))
+        top = self._buf("lhist_top", (1,), np.uint32, np.zeros(1, np.uint32))
+        self._fn("k_luma_hist")(src, hist, top, np.int32(w), np.int32(h),
+                                grid=self._grid(w, h), block=BLOCK)
+        return primitives._stats(self._get(hist, (BINS,), np.uint32),
+                                 int(self._get(top, (1,), np.uint32)[0]))

@@ -24,6 +24,24 @@ W, H = 64, 48           # size of the test surface
 FRAMES = 3              # frames of the chain in each test
 DT = 1 / 60.0           # s between frames
 SEED = 3                # fixed random surface
+NIGHT_FRAMES = 12       # frames with the night mode on
+FAST_BALL = {"x": 30.0, "y": 20.0, "vx": 900.0, "vy": 0.0}
+SLOW_BALL = {"x": 30.0, "y": 20.0, "vx": 30.0, "vy": 0.0}
+# The four F3 powers at once, at full strength, on a shared screen.
+POWER_STATE = {
+    "players": [{"x": 10.0, "y": 40.0}, {"x": 50.0, "y": 40.0}],
+    "ball": FAST_BALL,
+    "effects": [
+        {"power": "freeze_self", "prop": "frozen", "target": "p0",
+         "left": 1.8, "dur": 2.0},
+        {"power": "blackout", "prop": "blackout", "target": "p1",
+         "left": 5.0, "dur": 6.0},
+        {"power": "confusion", "prop": "confusion", "target": "p0",
+         "left": 4.0, "dur": 5.0},
+        {"power": "fire", "prop": "fire", "target": "ball",
+         "left": 5.0, "dur": 6.0},
+    ],
+}
 
 
 def options(**extra):
@@ -156,6 +174,85 @@ class QualityTest(unittest.TestCase):
     def test_downgrade(self):
         self.assertEqual(quality.downgrade("alta"), "media")
         self.assertEqual(quality.downgrade("baja"), "baja")
+
+
+class PowerChainTest(unittest.TestCase):
+    """F3/F4 through the whole chain, on the numpy backend."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+        self.fx = postfx.PostFx(options(), (W, H))
+        self.fx.ops = cpu_ref.Cpu()
+        self.fx.enabled = True
+        self.fx.mode = "cpu"
+        self.fx.level = "alta"
+        self.screen = pygame.Surface((W, H))
+
+    def run_chain(self, state, frames=FRAMES):
+        for _ in range(frames):
+            target = self.fx.begin(self.screen, state)
+            target.fill((20, 30, 40))
+            pygame.draw.rect(target, (240, 240, 220), (8, 6, 20, 14))
+            self.fx.finish(self.screen, DT)
+        return self.fx.summary()
+
+    def test_every_power_draws(self):
+        self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
+        data = self.run_chain(POWER_STATE)
+        self.assertGreater(data["shock"], 0.0)
+        self.assertGreater(data["ice_tint"], 0.0)
+        self.assertGreater(data["blackout"], 0.0)
+        self.assertGreater(data["confusion"], 0.0)
+        self.assertGreater(data["fire"], 0.0)
+
+    def test_trail_needs_a_fast_ball(self):
+        fast = dict(POWER_STATE, effects=[], ball=FAST_BALL)
+        self.assertGreater(self.run_chain(fast)["trail"], 0.0)
+        slow_fx = self._fresh()
+        slow = dict(POWER_STATE, effects=[], ball=SLOW_BALL)
+        self.assertEqual(slow_fx.summary()["trail"], 0.0)
+        slow_fx.state = slow
+        slow_fx.finish(self.screen, DT)
+        self.assertFalse(slow_fx.trail_gate.active)
+
+    def _fresh(self):
+        """A second chain for the tests that need clean timings."""
+        fx = postfx.PostFx(options(), (W, H))
+        fx.ops = cpu_ref.Cpu()
+        fx.enabled = True
+        fx.mode = "cpu"
+        fx.level = "alta"
+        return fx
+
+    def test_goal_event_starts_the_wave(self):
+        self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
+        self.assertEqual(len(self.fx.events), 1)
+        self.run_chain(POWER_STATE, 1)
+        self.assertGreater(self.fx.summary()["shock"], 0.0)
+
+    def test_night_and_auto_exposure(self):
+        self.fx.night = True
+        data = self.run_chain(POWER_STATE, NIGHT_FRAMES)
+        self.assertGreater(data["night"], 0.0)
+        self.assertNotEqual(self.fx.exposure.gain, 1.0)
+
+    def test_night_off_resets_the_gain(self):
+        self.fx.night = True
+        self.run_chain(POWER_STATE, 2)
+        self.fx.night = False
+        self.run_chain(POWER_STATE, 1)
+        self.assertFalse(self.fx.fx.night)
+        self.assertEqual(self.fx.exposure.gain, 1.0)
+
+    def test_viewer_limits_the_powers(self):
+        self.fx.state = POWER_STATE
+        self.fx.viewer = 1
+        self.assertEqual(self.fx._derive().ice, 0.0)
+        self.fx.viewer = 0
+        self.assertEqual(self.fx._derive().ice, 1.0)
+        self.fx.viewer = None
+        self.assertEqual(self.fx._derive().ice, 1.0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 # Optional: GPU effects of the demo (fdc/gpu). The game runs without them.
 # Install with:  .venv\Scripts\python -m pip install -r requirements-gpu.txt
 # It also needs the CUDA toolkit (nvcc) and MSVC in the PATH, see INSTALACION.md.
-numpy==2.5.4
+-r requirements.txt
 pycuda==2026.1

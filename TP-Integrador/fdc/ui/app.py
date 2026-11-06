@@ -72,7 +72,8 @@ LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
               "%(name)s: %(message)s")
 LOG_FILE = "fdc.log"
 GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY,
-               config.MUTE_KEY, config.GPU_TOGGLE_KEY)
+               config.MUTE_KEY, config.GPU_TOGGLE_KEY,
+               config.NIGHT_KEY)
 
 
 def _yes(v):
@@ -120,6 +121,7 @@ class _NoFx:
     """Stand-in of the effects when they are not available (web, no numpy)."""
 
     enabled = False
+    night = False
 
     def begin(self, screen, state):
         return screen
@@ -355,18 +357,36 @@ class App:
         self.current.handle_event(ev)
 
     def _global_key(self, key):
-        """F3, F11 and M work on every screen. True if it was one."""
-        if key == self.keys[config.DEBUG_PANEL_KEY]:
-            self.show_debug = not self.show_debug
-        elif key == self.keys[config.GPU_TOGGLE_KEY]:
-            self.postfx.toggle()
-        elif key == self.keys[config.FULLSCREEN_KEY]:
-            if not self.web:
-                pygame.display.toggle_fullscreen()
-        elif key == self.keys[config.MUTE_KEY]:
-            self.audio.toggle_mute()
-        else:
+        """F3, F4, N, F11 and M work on every screen. True if it was one."""
+        actions = {
+            self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
+            self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
+            self.keys[config.NIGHT_KEY]: self._night_key,
+            self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
+            self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
+        }
+        action = actions.get(key)
+        if action is None:
             return False
+        if action() is False:
+            return False        # the screen wants that key (typing a name)
+        return True
+
+    def _toggle_panel(self):
+        """F3: test panel (powers, crashes)."""
+        self.show_debug = not self.show_debug
+
+    def _night_key(self):
+        """N: night mode, but only inside a match (not while typing)."""
+        if not self.input.capture:
+            return False
+        self.postfx.night = not self.postfx.night
+        return True
+
+    def _fullscreen_key(self):
+        """F11: full screen (not in the browser)."""
+        if not self.web:
+            pygame.display.toggle_fullscreen()
         return True
 
     def shutdown(self):

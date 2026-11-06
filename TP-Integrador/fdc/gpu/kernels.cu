@@ -509,3 +509,135 @@ __global__ void k_edge_glow(const unsigned char *src,
         dst[i + c] = (unsigned char)(v + 0.5f);
     }
 }
+
+// --------------------------------------- poderes y noche (F3/F4)
+// Lámparas de la cátedra: un hilo por píxel, índice 2D, borde y luz en
+// memoria global. Cada lámpara (x, y, radio, potencia) suma su luz y el
+// total multiplica al píxel: es la noche y también el apagón.
+#define SPOT_MAX 8          // lámparas que se recorren por píxel
+__global__ void k_spotlights(const unsigned char *src, unsigned char *dst,
+                             int w, int h, const float *lights, int n,
+                             float ambient, float tr, float tg, float tb)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    float light = ambient;
+    for (int k = 0; k < n && k < SPOT_MAX; ++k) {
+        float dx = x - lights[4 * k];
+        float dy = y - lights[4 * k + 1];
+        float r = lights[4 * k + 2];
+        float power = lights[4 * k + 3];
+        float d2 = (dx * dx + dy * dy) / (r * r);
+        if (d2 < 1.0f) {
+            float fall = 1.0f - d2;     // caída suave desde el centro
+            light += power * fall * fall;
+        }
+    }
+    int i = (y * w + x) * CH;
+    float r = src[i] * light * tr;
+    float g = src[i + 1] * light * tg;
+    float b = src[i + 2] * light * tb;
+    r = r < 0.0f ? 0.0f : (r > 255.0f ? 255.0f : r);
+    g = g < 0.0f ? 0.0f : (g > 255.0f ? 255.0f : g);
+    b = b < 0.0f ? 0.0f : (b > 255.0f ? 255.0f : b);
+    dst[i] = (unsigned char)(r + 0.5f);
+    dst[i + 1] = (unsigned char)(g + 0.5f);
+    dst[i + 2] = (unsigned char)(b + 0.5f);
+}
+
+// Aire caliente alrededor de la pelota (poder de fuego). Fuera del radio
+// el píxel se copia tal cual: el costo no depende del tamaño del radio.
+#define HEAT_FREQ_Y 0.12f       // ondas por píxel en vertical
+#define HEAT_SPEED_Y 18.0f      // rad/s de esas ondas
+#define HEAT_FREQ_X 0.09f       // ondas por píxel en horizontal
+#define HEAT_SPEED_X 14.0f      // rad/s de esas ondas
+#define HEAT_LATERAL 0.4f       // el desplazamiento horizontal es menor
+__global__ void k_heat_distort(const unsigned char *src, unsigned char *dst,
+                               int w, int h, float cx, float cy, float rad,
+                               float t, float amp)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    float dx = x - cx, dy = y - cy;
+    float d = sqrtf(dx * dx + dy * dy);
+    int sx = x, sy = y;
+    if (d < rad) {
+        float fall = 1.0f - d / rad;    // se apaga en el borde del radio
+        sx = x + (int)(amp * sinf(y * HEAT_FREQ_Y + t * HEAT_SPEED_Y) * fall);
+        sy = y + (int)(amp * HEAT_LATERAL
+                       * sinf(x * HEAT_FREQ_X + t * HEAT_SPEED_X) * fall);
+    }
+    sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);   // borde: se recorta
+    sy = sy < 0 ? 0 : (sy >= h ? h - 1 : sy);
+    int i = (y * w + x) * CH;
+    int j = (sy * w + sx) * CH;
+    dst[i] = src[j];
+    dst[i + 1] = src[j + 1];
+    dst[i + 2] = src[j + 2];
+}
+
+// Onda expansiva del gol: un anillo que crece y deforma lo que atraviesa,
+// con un realce de brillo en el borde del anillo.
+#define RIPPLE_PI 3.14159265f   // para el seno del anillo
+#define RIPPLE_GLOW 60.0f       // brillo máximo del anillo (0..255)
+__global__ void k_ripple(const unsigned char *src, unsigned char *dst,
+                         int w, int h, float cx, float cy, float radius,
+                         float width, float amp)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    float dx = x - cx, dy = y - cy;
+    float d = sqrtf(dx * dx + dy * dy);
+    float k = (d - radius) / (width > 0.0f ? width : 1.0f);
+    int sx = x, sy = y;
+    float glow = 0.0f;
+    if (k > -1.0f && k < 1.0f) {
+        float off = amp * sinf(RIPPLE_PI * k);
+        sx = (int)(x + off * dx / (d + 1.0f));
+        sy = (int)(y + off * dy / (d + 1.0f));
+        glow = RIPPLE_GLOW * (1.0f - fabsf(k));
+    }
+    sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);
+    sy = sy < 0 ? 0 : (sy >= h ? h - 1 : sy);
+    int i = (y * w + x) * CH;
+    int j = (sy * w + sx) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float v = src[j + c] + glow;
+        v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
+        dst[i + c] = (unsigned char)(v + 0.5f);
+    }
+}
+
+// Estela de la pelota: cada píxel queda con el máximo entre el frame
+// actual y el anterior atenuado. No es un promedio: no deja fantasmas.
+__global__ void k_trail_blend(const unsigned char *cur,
+                              const unsigned char *prev, unsigned char *dst,
+                              int w, int h, float decay)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float v = fmaxf((float)cur[i + c], (float)prev[i + c] * decay);
+        dst[i + c] = (unsigned char)(v + 0.5f);
+    }
+}
+
+// Histograma de luma de la noche (F4): 256 bins con atomicAdd y el máximo
+// con atomicMax. Las dos escrituras son compartidas: ahí van las atómicas.
+__global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
+                            unsigned int *luma_max, int w, int h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    float l = 0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2];
+    unsigned int bin = (unsigned int)(l + 0.5f);   // mismo redondeo que k_gray
+    atomicAdd(&hist[bin], 1u);
+    atomicMax(luma_max, bin);
+}

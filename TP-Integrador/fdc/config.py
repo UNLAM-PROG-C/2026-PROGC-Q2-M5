@@ -41,6 +41,7 @@ DEBUG_PANEL_KEY = "f3"
 FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
 GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
+NIGHT_KEY = "n"             # F8 is "give power to P1" in --test mode
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
 TEST_NEXT_POWER_KEY = "f6"
@@ -268,6 +269,17 @@ POWERS = (
     PowerDef("small_ball", "Pelota pequeña", "PELOTA -", CATEGORY_GLOBAL,
              "ball", "radius", 0.70, 6.0,
              "El radio de la pelota se reduce (×0,70)."),
+    # Cosmetic powers (F3): they only last a while and change what is drawn;
+    # the simulation ignores their property ("blackout", "confusion", "fire").
+    PowerDef("blackout", "Apagón", "APAGÓN", CATEGORY_GOOD, "rival",
+             "blackout", None, 6.0,
+             "Se apagan las luces: sólo se ve alrededor del rival."),
+    PowerDef("confusion", "Confusión", "CONFUSIÓN", CATEGORY_GOOD, "rival",
+             "confusion", None, 5.0,
+             "El rival ve la cancha al revés y torcida."),
+    PowerDef("fire", "Pelota de fuego", "FUEGO", CATEGORY_GLOBAL, "ball",
+             "fire", None, 6.0,
+             "La pelota arde y el aire tiembla a su alrededor."),
 )
 POWER_IDS = tuple(p.id for p in POWERS)
 POWERS_BY_ID = {p.id: p for p in POWERS}
@@ -395,6 +407,40 @@ class Gpu:
     REPLAY_SECONDS = 20.0   # s of states kept for the replay
     REPLAY_STEP = 0.25      # s between saved states
     METRICS_FRAMES = 120    # frames averaged by the overlay
+    # --- F3: cosmetic powers (all lengths in px, all times in s) -------------
+    FADE_IN = 0.15          # s a power takes to reach full strength
+    FADE_OUT = 0.3          # s of the smooth exit at the end of a power
+    HEAD_ABOVE = 65.0       # px above the feet: centre of the head
+    ICE_TINT = (0.55, 0.85, 1.0)   # rgb of the ice tint
+    ICE_STRENGTH = 0.55     # weight of the tint on the image (0-1)
+    ICE_EDGES = 0.9         # weight of the bright edges (0-1)
+    BLACKOUT_AMBIENT = 0.06   # light left far from the heads (0-1)
+    BLACKOUT_RADIUS = 150.0   # px: radius of the blackout light
+    BLACKOUT_TINT = (1.0, 1.0, 1.0)   # rgb multiplier of the blackout
+    CONFUSION_MAX_DEG = 6.0   # degrees of the rotation at full strength
+    CONFUSION_SPEED = 2.0     # rad/s of that rotation
+    FIRE_RADIUS = 140.0       # px around the ball with hot air
+    FIRE_AMP = 9.0            # px: depth of that distortion
+    # --- F4: night, auto exposure, shock wave, trail -------------------------
+    NIGHT_LIGHTS = 6          # spotlights over the pitch at night
+    NIGHT_FIRST_X = 160.0     # px: first one
+    NIGHT_STEP_X = 192.0      # px between two spotlights
+    NIGHT_Y = 20.0            # px: height of the spotlights
+    NIGHT_RADIUS = 420.0      # px: radius of each spotlight
+    NIGHT_POWER = 0.9         # intensity of each spotlight (0-1)
+    NIGHT_AMBIENT = 0.15      # light between the spotlights (0-1)
+    NIGHT_TINT = (1.0, 0.86, 0.66)   # warm rgb of the night lights
+    AUTOEXPOSURE_TARGET = 110.0   # mean luma the night tries to reach
+    AUTOEXPOSURE_MIN = 0.6        # lowest gain
+    AUTOEXPOSURE_MAX = 2.5        # highest gain
+    AUTOEXPOSURE_RATE = 0.1       # EMA weight of each frame (0-1)
+    SHOCK_DURATION = 1.2      # s of the goal shock wave
+    SHOCK_RADIUS = 900.0      # px/s: the ring grows this fast
+    SHOCK_WIDTH = 90.0        # px: thickness of the ring
+    SHOCK_AMP = 14.0          # px: displacement when it starts
+    TRAIL_MIN_SPEED = 800.0   # px/s: from here the ball leaves a trail
+    TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
+    TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
 
 
 # ---------------------------------------------------------------------------

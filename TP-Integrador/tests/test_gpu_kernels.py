@@ -21,6 +21,7 @@ SEED = 11               # fixed random frame
 LEVELS = 3              # gray levels of tolerance
 HIST_LEVELS = 1         # the histogram counts pixels: one bin may move
 WARP_MEAN = 8.0         # mean difference of a warp (it moves pixels)
+RING_MEAN = 15.0        # the shock ring also adds brightness
 SOFT = 4                # px: the warps are tested on a soft image
 GAIN = 1.0              # light weight
 
@@ -186,6 +187,52 @@ class PrimitiveTest(unittest.TestCase):
         norm = self.cpu.sobel_normalize(edges)
         self.assertClose(self.gpu.edge_glow(self.img, norm, 0.8),
                          self.cpu.edge_glow(self.img, norm, 0.8))
+
+
+@unittest.skipUnless(HAVE_GPU, REASON)
+class PowerAndNightTest(unittest.TestCase):
+    """F3/F4 kernels: lamps, fire, shock ring, trail and luma statistics."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.gpu = backend.Gpu()
+        cls.cpu = cpu_ref.Cpu()
+        cls.img = frame()
+        cls.soft = cls.cpu.blur(cls.img, SOFT)
+
+    def assertClose(self, ours, ref, limit=LEVELS):
+        self.assertLessEqual(biggest(ours, ref), limit)
+
+    def assertMean(self, ours, ref, limit=WARP_MEAN):
+        self.assertLessEqual(mean(ours, ref), limit)
+
+    def test_spotlights(self):
+        lights = ((20.0, 20.0, 40.0, 0.9), (60.0, 40.0, 60.0, 0.6))
+        params = (0.15, (1.0, 0.86, 0.66))
+        self.assertClose(self.gpu.spotlights(self.img, lights, *params),
+                         self.cpu.spotlights(self.img, lights, *params), 2)
+
+    def test_fire(self):
+        args = (40.0, 30.0, 30.0, 0.5, 4.0)
+        self.assertMean(self.gpu.heat_distort(self.soft, *args),
+                        self.cpu.heat_distort(self.soft, *args))
+
+    def test_shock_ring(self):
+        args = (40.0, 30.0, 12.0, 8.0, 5.0)
+        self.assertMean(self.gpu.ripple_ring(self.soft, *args),
+                        self.cpu.ripple_ring(self.soft, *args), RING_MEAN)
+
+    def test_trail_blend(self):
+        prev = self.img[::-1].copy()
+        self.assertClose(self.gpu.trail_blend(self.img, prev, 0.55),
+                         self.cpu.trail_blend(self.img, prev, 0.55), 1)
+
+    def test_luma_stats(self):
+        ours = self.gpu.luma_stats(self.img)
+        ref = self.cpu.luma_stats(self.img)
+        self.assertAlmostEqual(ours[0], ref[0], delta=0.5)
+        self.assertLessEqual(abs(ours[1] - ref[1]), 2)
+        self.assertEqual(ours[2], ref[2])
 
 
 if __name__ == "__main__":

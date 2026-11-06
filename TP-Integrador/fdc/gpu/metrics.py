@@ -9,7 +9,8 @@ import collections
 from fdc import config
 
 STAGES = ("glow", "composite", "particles", "lights", "heat", "trail",
-          "histogram")
+          "histogram", "shock", "fire", "confusion", "confusion_rot",
+          "ice_edges", "ice_tint", "blackout", "night", "exposure")
 PER_SECOND = 1000.0     # milliseconds in a second
 DECIMALS = 3            # decimals of the stage times
 FPS_DECIMALS = 1        # decimals of the frames per second
