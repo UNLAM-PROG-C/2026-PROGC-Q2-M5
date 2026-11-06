@@ -7,11 +7,17 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 # pylint: disable=wrong-import-position
+import main as game_main   # noqa: E402
 from fdc import config  # noqa: E402
 from fdc import protocol  # noqa: E402
 from fdc.sim import match  # noqa: E402
 
 NO_SPAWN = 1e9      # s: a power spawn timer that never fires
+
+
+def main_options(argv=()):
+    """Options of the game for `argv` (the same parser `main()` uses)."""
+    return game_main.parse_args(list(argv) + ["--no-audio"])
 
 
 def playing_match(seed=1, spawn_powers=False):

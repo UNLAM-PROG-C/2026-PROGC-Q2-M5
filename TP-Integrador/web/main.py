@@ -24,7 +24,8 @@ async def main():
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     options = types.SimpleNamespace(
         web=True, test_mode=False, seed=None, no_audio=False,
-        fullscreen=False, debug_panel=False, duration=None, server_url=None)
+        fullscreen=False, debug_panel=False, duration=None, server_url=None,
+        quality_mode="auto")     # the browser adapts the cost of the chain
     await game.App(options).run_async()
 
 

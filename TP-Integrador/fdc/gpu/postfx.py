@@ -792,7 +792,8 @@ def _choices(options):
 
 def _wanted(options):
     """True if the effects are enabled and the command line allows them."""
-    return bool(config.Gpu.ENABLED) and not getattr(options, "no_gpu", False)
+    return (bool(config.Effects.ENABLED)
+            and not getattr(options, "no_gpu", False))
 
 
 def _no_lights():
@@ -811,8 +812,8 @@ def _is_on(value):
 
 def _make_ops(force_cpu=False):
     """GPU if PyCUDA compiles the kernels here, numpy otherwise."""
-    if force_cpu:
-        return cpu_ref.Cpu()
+    if force_cpu or not config.Gpu.ENABLED:
+        return cpu_ref.Cpu()       # FDC_GPU=0: never import PyCUDA
     try:
         return backend.Gpu()
     except Exception:              # pylint: disable=broad-except

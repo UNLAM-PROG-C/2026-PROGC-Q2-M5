@@ -151,8 +151,15 @@ class DemoPassesTest(unittest.TestCase):
         return opts
 
     def test_both_measures_gpu_first(self):
-        with mock.patch.object(backend, "available", return_value=True):
-            self.assertEqual(demo._passes(self._options()), ["gpu", "cpu"])
+        with mock.patch.object(config.Gpu, "ENABLED", True):
+            with mock.patch.object(backend, "available", return_value=True):
+                self.assertEqual(demo._passes(self._options()),
+                                 ["gpu", "cpu"])
+
+    def test_fdc_gpu_0_measures_the_cpu_once(self):
+        with mock.patch.object(config.Gpu, "ENABLED", False):
+            with mock.patch.object(backend, "available", return_value=True):
+                self.assertEqual(demo._passes(self._options()), ["cpu"])
 
     def test_a_machine_without_nvidia_measures_once(self):
         with mock.patch.object(backend, "available", return_value=False):

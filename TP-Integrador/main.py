@@ -11,6 +11,8 @@ import multiprocessing
 import os
 import sys
 
+from fdc import config
+
 # Command line options: (flags, argparse settings). The help texts are in
 # Spanish because the player reads them.
 COMMAND_LINE = (
@@ -36,9 +38,10 @@ COMMAND_LINE = (
                              "wss://mi-dominio/ws); también la variable "
                              "FDC_SERVER o la primera línea de "
                              "servidor.txt, junto al juego"}),
-    (("--no-gpu",), {"dest": "no_gpu", "action": "store_true",
-                     "help": "apaga los efectos de GPU (el juego queda "
-                             "igual que antes)"}),
+    (("--no-gpu", "--sin-efectos"),
+     {"dest": "no_gpu", "action": "store_true",
+      "help": "apaga los efectos (igual que FDC_EFECTOS=0): el juego "
+              "queda igual que antes"}),
     (("--gpu-quality",), {"dest": "gpu_quality", "default": None,
                           "choices": ("baja", "media", "alta"),
                           "help": "calidad de los efectos (baja|media|alta)"}),
@@ -103,7 +106,7 @@ def parse_args(argv=None):
 def main(argv=None):
     """Parses the options and runs the game."""
     options = parse_args(argv)
-    _apply_gpu_options(options)
+    apply_gpu_options(options)
     # The interface is imported here and not at the top: with the "spawn"
     # method the simulation process imports this module again, and this way
     # it never loads pygame nor opens windows.
@@ -117,24 +120,37 @@ def _prepare_toolchain(options):
     """nvcc and cl.exe in the PATH (jugar.bat does not activate them)."""
     if options.backend == "cpu" or options.no_gpu:
         return
+    if not (config.Gpu.ENABLED and config.Effects.ENABLED):
+        return                     # no CUDA and/or no effects: nothing to set
     from fdc.gpu import env    # pylint: disable=import-outside-toplevel
     env.setup()
 
 
-def _apply_gpu_options(options):
+def apply_gpu_options(options):
     """--backend, --block and --render: before the effects start."""
     from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
     _prepare_toolchain(options)
-    if options.backend == "cpu":
-        options.force_cpu = True
+    if options.backend == "cpu" or not config.Gpu.ENABLED:
+        options.force_cpu = True   # FDC_GPU=0: numpy, never PyCUDA
     if options.block:
         backend.set_block(options.block)
-    if options.backend == "gpu" and not options.no_gpu:
-        found = backend.detect()
-        if found["kind"] != "gpu":
-            print("GPU pedida con --backend gpu pero no disponible: "
-                  f"{found['reason']}")
-            print("Se usan los efectos en CPU (numpy).")
+    if _asks_cuda(options):
+        _report_cuda(backend.detect())
+
+
+def _asks_cuda(options):
+    """True if this run wants CUDA: --backend gpu, FDC_GPU=1 and effects."""
+    return (options.backend == "gpu" and not options.no_gpu
+            and config.Gpu.ENABLED and config.Effects.ENABLED)
+
+
+def _report_cuda(found):
+    """One line when CUDA was asked for and it does not work here."""
+    if found["kind"] == "gpu":
+        return
+    print("GPU pedida con --backend gpu pero no disponible: "
+          f"{found['reason']}")
+    print("Se usan los efectos en CPU (numpy).")
 
 
 if __name__ == "__main__":

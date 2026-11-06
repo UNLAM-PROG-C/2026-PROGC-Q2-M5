@@ -69,7 +69,7 @@ def game_options(args):
     """Options of the real App for this client."""
     flags = ["--backend", args.backend, "--no-audio", "--overlay", "full"]
     options = game_main.parse_args(flags)
-    game_main._apply_gpu_options(options)
+    game_main.apply_gpu_options(options)
     options.profile_path = profile_file(args.name)
     options.server_url = args.server
     return options

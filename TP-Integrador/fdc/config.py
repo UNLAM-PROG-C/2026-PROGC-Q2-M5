@@ -382,11 +382,17 @@ class Online:
 
 
 # ---------------------------------------------------------------------------
-# GPU effects (optional: the game runs without them, see fdc/gpu)
+# Effects (optional: the game runs without them, see fdc/gpu)
 # ---------------------------------------------------------------------------
+class Effects:
+    """The post-processing chain: FDC_EFECTOS=0 leaves the game as before."""
+    ENABLED = os.environ.get("FDC_EFECTOS", "1") != "0"
+
+
 class Gpu:
-    """Knobs of the post-processing chain that runs on the GPU."""
-    ENABLED = os.environ.get("FDC_GPU", "1") != "0"   # FDC_GPU=0 turns it off
+    """Knobs of the post-processing chain (CUDA when there is a GPU)."""
+    # FDC_GPU=0 means "do not use CUDA": the chain runs on the CPU (numpy).
+    ENABLED = os.environ.get("FDC_GPU", "1") != "0"
     QUALITY = os.environ.get("FDC_GPU_QUALITY", "media")   # baja|media|alta
     QUALITIES = ("baja", "media", "alta")   # from the cheapest to the richest
     GLOW_THRESHOLD = 0.85   # from this luma (0-1) a pixel glows

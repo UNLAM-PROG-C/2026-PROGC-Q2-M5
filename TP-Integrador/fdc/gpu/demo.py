@@ -63,6 +63,7 @@ FIRST_SEGMENT = 0         # index of the first segment
 def run(frames=DEFAULT_FRAMES, argv=()):
     """Plays `frames` frames headless; returns the metrics of the chain."""
     options = main_module.parse_args(list(argv) + ["--no-audio"])
+    main_module.apply_gpu_options(options)
     game = ui_app.App(options)
     try:
         _play(game, frames)          # warm up: boot, first state
@@ -478,9 +479,14 @@ def _passes(options):
     wanted = getattr(options, "demo_backends", "both") or "both"
     if wanted != "both":
         return [wanted]
-    if getattr(options, "force_cpu", False) or not backend.available():
+    if getattr(options, "force_cpu", False) or not _cuda_here():
         return ["cpu"]          # a machine without NVIDIA measures once
     return ["gpu", "cpu"]
+
+
+def _cuda_here():
+    """True if the demo may use CUDA (FDC_GPU=1 and PyCUDA works)."""
+    return bool(config.Gpu.ENABLED) and backend.available()
 
 
 def run_demo(argv=(), max_frames=None):
@@ -488,6 +494,7 @@ def run_demo(argv=(), max_frames=None):
     headless()
     pygame.init()
     options = main_module.parse_args(list(argv) + ["--demo", "--no-audio"])
+    main_module.apply_gpu_options(options)
     game = ui_app.App(options)
     try:
         return _loop_demo(game, max_frames)

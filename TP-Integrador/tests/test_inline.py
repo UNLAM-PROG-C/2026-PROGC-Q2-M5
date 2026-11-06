@@ -187,6 +187,7 @@ class WebAppTest(unittest.TestCase):
             web=True, test_mode=False, seed=4, no_audio=False,
             fullscreen=False, debug_panel=True, duration=None,
             server_url=driver.NO_SERVER,
+            quality_mode="auto",      # the same as web/main.py
             profile_path=driver.profile_file("Web"))
         self.app = game.App(opts)
         self.d = driver.Driver(self.app)
