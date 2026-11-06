@@ -33,8 +33,10 @@ EXE_SUFFIX = ".exe"
 LAUNCHER_NAME = "jugar-cpu.bat"  # double click, next to the exe (per mode)
 MEGABYTE = 1024 * 1024           # bytes, to show the size like the Explorer
 # Files the game reads from disk at run time (PyInstaller only packs the .py).
-EXTRA_DATA = (("assets", "assets"),
-              ("fdc/online/panel.html", "fdc/online"))
+EXTRA_DATA = (("fdc/online/panel.html", "fdc/online"),)
+# Design material that must not ship inside the bundles.
+ASSETS_SKIP = (os.path.join("icono", "propuestas"),
+               os.path.join("icono", "mac"))
 # The CUDA source of the kernels: only the modes with effects in the GPU.
 CUDA_DATA = ("fdc/gpu/kernels.cu", "fdc/gpu")
 MODES = {
@@ -90,10 +92,26 @@ def pyinstaller_args(options):
     if os.path.exists(ICON):
         args += ["--icon", ICON]
     args += _window_args(options)
-    _add_data(args, EXTRA_DATA + mode["data"])
+    _add_data(args, tuple(asset_pairs()) + EXTRA_DATA + mode["data"])
     _add_modules(args, "--hidden-import", mode["hidden"])
     _add_modules(args, "--exclude-module", mode["exclude"])
     return args
+
+
+def asset_pairs():
+    """(source, target) for every file of assets/ except ASSETS_SKIP."""
+    pairs = []
+    base = os.path.join(ROOT, "assets")
+    for folder, _, names in os.walk(base):
+        rel = os.path.relpath(folder, base)
+        if any(rel == skip or rel.startswith(skip + os.sep)
+               for skip in ASSETS_SKIP):
+            continue
+        for name in names:
+            source = os.path.relpath(os.path.join(folder, name), ROOT)
+            target = os.path.normpath(os.path.join("assets", rel))
+            pairs.append((source, target))
+    return pairs
 
 
 def _window_args(options):

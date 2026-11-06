@@ -33,6 +33,8 @@ VERDE = "#0F9977"
 LIGHT = "#F2F5F0"
 DARK = "#23252F"
 WHITE = "#FFFFFF"
+RIM = "#A8A38C"             # muted cream rim of the ink tile
+RIM_WIDTH = 15              # 1.5 % of the side, visible on dark bars
 LABEL_ON_LIGHT = "#5A5A63"
 LABEL_ON_DARK = "#B9BAC4"
 FONT_BOLD = "C:/Windows/Fonts/arialbd.ttf"
@@ -60,7 +62,7 @@ ICONSET = (("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
            ("icon_512x512.png", 512), ("icon_512x512@2x.png", 1024))
 WINDOW_ICON = 32            # assets/icono/logo.png, used by pygame
 LANDING_ICON = 128          # landing/logo.png, shown at 30 CSS px
-CHOSEN = "a"                # the proposal that ships (see the sheet)
+CHOSEN = "c"                # the proposal that ships (see the sheet)
 
 
 # --------------------------------------------------------------- geometry
@@ -84,6 +86,13 @@ def tile(colour):
     """Rounded square of the whole icon (the app-tile shape)."""
     return [("rrect", TILE_MARGIN, TILE_MARGIN, SIZE - TILE_MARGIN,
              SIZE - TILE_MARGIN, TILE_RADIUS, colour)]
+
+
+def rimmed_tile(colour):
+    """Tile with a subtle outline so its edge survives a dark taskbar."""
+    inner = TILE_MARGIN + RIM_WIDTH
+    return tile(RIM) + [("rrect", inner, inner, SIZE - inner, SIZE - inner,
+                         TILE_RADIUS - RIM_WIDTH, colour)]
 
 
 def ball(level, detail, radius=BALL_RADIUS, center=BALL_CENTER, base=CREAM):
@@ -140,7 +149,7 @@ def propuesta_b(level):
 
 def propuesta_c(level):
     """C: ink tile, cream ball, green wordmark (the dark modern one)."""
-    return tile(INK) + ball(level, INK) + word(level, VERDE)
+    return rimmed_tile(INK) + ball(level, INK) + word(level, VERDE)
 
 
 PROPUESTAS_DEF = (("a", "A · baldosa bordó", propuesta_a),
