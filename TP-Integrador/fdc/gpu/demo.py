@@ -235,6 +235,7 @@ class DemoScreen(match_screens.MatchScreen):
                                      getattr(app.options, "demo_frame_clock",
                                              False))
         self.passes = _passes(app.options)
+        self.compare = len(self.passes) > 1     # two passes: same quality
         self.pass_index = 0
         self.finished = False
         self.measure = log or gpu_metrics.MeasurementLog(
@@ -383,6 +384,8 @@ class DemoScreen(match_screens.MatchScreen):
         """F4-like switch: GPU <-> numpy, without restarting the game."""
         if self.app.postfx.mode != target and self.app.postfx.mode != "off":
             self.app.postfx.toggle()
+        if self.compare:
+            self.app.postfx.governor.enabled = False
 
     # ------------------------------------------------------------ events
     def on_match_over(self):
@@ -475,10 +478,9 @@ def _passes(options):
     wanted = getattr(options, "demo_backends", "both") or "both"
     if wanted != "both":
         return [wanted]
-    first = "cpu"
-    if not getattr(options, "force_cpu", False) and backend.available():
-        first = "gpu"
-    return [first, "cpu" if first == "gpu" else "gpu"]
+    if getattr(options, "force_cpu", False) or not backend.available():
+        return ["cpu"]          # a machine without NVIDIA measures once
+    return ["gpu", "cpu"]
 
 
 def run_demo(argv=(), max_frames=None):

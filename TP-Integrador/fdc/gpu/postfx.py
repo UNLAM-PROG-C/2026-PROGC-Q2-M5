@@ -205,7 +205,7 @@ class PostFx:
         self.ops = _make_ops(self.force_cpu)
         self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
         self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
-        self._forget_device()
+        self._reset_backend()       # the governor of the new backend
         self.metrics.clear()
         return self.mode
 

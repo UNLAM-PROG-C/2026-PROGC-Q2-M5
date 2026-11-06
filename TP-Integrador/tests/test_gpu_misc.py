@@ -10,6 +10,7 @@ import os
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 import helpers  # pylint: disable=unused-import
 import main as main_module
@@ -138,6 +139,33 @@ class DirectorTest(unittest.TestCase):
         kinds = [kind for _, kind in demo.SEGMENTS[1:]]
         for kind in kinds:
             self.assertTrue(kind)
+
+
+class DemoPassesTest(unittest.TestCase):
+    """Which backends the demo measures, with and without the GPU."""
+
+    def _options(self, **kw):
+        opts = types.SimpleNamespace(demo_backends="both", force_cpu=False)
+        for name, value in kw.items():
+            setattr(opts, name, value)
+        return opts
+
+    def test_both_measures_gpu_first(self):
+        with mock.patch.object(backend, "available", return_value=True):
+            self.assertEqual(demo._passes(self._options()), ["gpu", "cpu"])
+
+    def test_a_machine_without_nvidia_measures_once(self):
+        with mock.patch.object(backend, "available", return_value=False):
+            self.assertEqual(demo._passes(self._options()), ["cpu"])
+
+    def test_forced_cpu_measures_numpy_only(self):
+        with mock.patch.object(backend, "available", return_value=True):
+            opts = self._options(force_cpu=True)
+            self.assertEqual(demo._passes(opts), ["cpu"])
+
+    def test_one_backend_is_respected(self):
+        opts = self._options(demo_backends="cpu")
+        self.assertEqual(demo._passes(opts), ["cpu"])
 
 
 class MeasurementLogTest(unittest.TestCase):

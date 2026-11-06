@@ -30,7 +30,9 @@ py main.py --demo
 
 - 10 segmentos de `--demo-seconds` (por defecto 10 s): sin efectos, hielo,
   apagón, confusión, fuego, noche, onda + estela, repetición con look de TV
-  vieja, VAR y mapa de calor. Termina sola y sale.
+  vieja, VAR y mapa de calor. Al terminar se queda en la pantalla `FIN DE LA
+  DEMO` (Esc sale); para que termine sola y devuelva la tabla, correr
+  `py tools\run_demo.py`.
 - Semilla fija (`DEMO_SEED = 2026`): mismos goles y mismas jugadas en cada
   máquina. `--seed 7` la cambia.
 - `--demo-backends cpu|gpu|both` (por defecto `both`): con `both` mide el mismo
@@ -91,3 +93,22 @@ py tools\pack_colab.py                          # colab_pack.zip para Colab
 `notebooks/gpu_efectos_colab.ipynb`: sube `colab_pack.zip`, lo descomprime,
 instala `pycuda` y corre el benchmark en la GPU de Colab; sirve para comparar
 con la RTX local cuando en la notebook no hay NVIDIA.
+
+## Dos instancias online (GPU + CPU)
+
+`tools/online_two_apps.py` levanta el servidor real en un puerto libre y
+arranca dos clientes de verdad (menús, sala, partido) sin ventana, uno con
+`--backend gpu` y otro con `--backend cpu`. Los dos se dan listos, juegan
+unos segundos con hielo y estela forzados y dejan una captura cada uno.
+
+```powershell
+py tools\online_two_apps.py --seconds 8 --duration 25
+py -m unittest tests.test_gpu_isolation -v
+```
+
+- Cada cliente imprime `mode`, frames, píxeles que se movió, `fx` medio y
+  máximo, y los efectos activos; termina con `OK` si los dos jugaron.
+- `--shots` cambia la carpeta de las capturas (`frames\` por defecto).
+- La prueba de aislamiento verifica que `fdc/sim`, `fdc/ipc` y `fdc/online`
+  no importan `numpy`, `pygame`, `pycuda` ni `fdc.gpu`, ni en el código ni en
+  un intérprete limpio.

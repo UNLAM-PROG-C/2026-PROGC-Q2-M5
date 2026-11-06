@@ -18,6 +18,49 @@ Se usa el entorno virtual que ya está en la carpeta (`.venv`, Python 3.13 con p
 .venv/bin/python main.py
 ```
 
+### Instalación y arranque (PC con GPU y notebook sin NVIDIA)
+
+Los efectos GPU son opcionales: sin placa NVIDIA el juego corre igual con la
+versión numpy (`--backend auto` lo detecta solo) y el overlay de `F2` dice
+`CPU`. En la PC de Alejandro, Python se llama con `py` (no está en el PATH).
+
+**Notebook o PC sin NVIDIA (modo CPU).** Nada de CUDA ni de Visual Studio:
+
+```powershell
+cd C:\ruta\a\futbolDeCabeza
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install -r requirements.txt
+py main.py
+```
+
+Sin activar el entorno alcanza con `.\instalar-cpu.bat` (crea el venv e
+instala) y después `.\jugar.bat`. Para la demo de la facultad:
+`py main.py --demo` o `.\demo.bat`.
+
+**PC con GPU NVIDIA (efectos en CUDA).** Además de lo anterior hace falta
+`pycuda`, el `nvcc` y un compilador de C++ (ver [INSTALACION.md](INSTALACION.md)):
+
+```powershell
+py -m pip install -r requirements-gpu.txt
+py main.py --backend gpu --overlay compact
+```
+
+`instalar-gpu.bat` instala todo; `activar-gpu.bat` (o `. .\activar-gpu.ps1`
+en PowerShell) pone `nvcc`, `cl.exe` y las DLL de CUDA en el entorno de esa
+consola: **es obligatorio abrirlo antes de `py main.py` con GPU**, porque
+PyCUDA compila los kernels al arrancar. Si falta el compilador, el juego no
+falla: avisa la razón y sigue en CPU.
+
+| Comando | Qué hace |
+|---|---|
+| `py main.py` | Juego normal (auto: GPU si hay, si no CPU) |
+| `py main.py --backend gpu --overlay compact` | Fuerza GPU y muestra el panel de rendimiento |
+| `py main.py --backend cpu` | Fuerza numpy (para comparar en la misma PC) |
+| `py main.py --demo` | Demo automática de 10 efectos, GPU y CPU |
+| `py tools\run_demo.py` | La misma demo sin ventana: tabla + CSV y termina sola |
+| `py -m unittest discover -s tests` | Suite completa (tests de kernels se saltean sin CUDA) |
+
 Opciones útiles:
 
 | Opción | Efecto |
@@ -569,3 +612,12 @@ Reglas, catálogo de mensajes y la puesta en marcha en la NAS (Windows, dominio,
 Instalación en la notebook sin NVIDIA, demo reproducible con `--demo`, overlay de
 rendimiento (F2), CSV de mediciones, benchmark de kernels, capturas y paquete de
 Colab: ver [docs/DEMO.md](docs/DEMO.md).
+
+Para comprobar que dos instancias juegan online (una con GPU y otra con
+numpy) por WebSocket local, y que el servidor y la simulación no cargan
+`numpy`/`pygame`/`pycuda`:
+
+```powershell
+py tools\online_two_apps.py            # deja una captura por instancia en frames\
+py -m unittest tests.test_gpu_isolation -v
+```
