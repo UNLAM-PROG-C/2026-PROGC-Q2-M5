@@ -26,15 +26,17 @@ from fdc.gpu import env       # noqa: E402
 
 
 def main(argv):
-    """Runs the demo twice and prints both summaries."""
+    """Runs the demo three times and prints the summaries."""
     frames = int(argv[0]) if argv else demo.DEFAULT_FRAMES
     extra = argv[1:]
     env.setup()
     pygame.init()
     print("GPU:", backend.device_name())
     con = demo.run(frames, extra)
+    cpu = demo.run(frames, extra + ["--gpu-cpu"])
     sin = demo.run(frames, extra + ["--no-gpu"])
-    _show("con efectos", con)
+    _show("con efectos (GPU)", con)
+    _show("con efectos (numpy)", cpu)
     _show("sin efectos", sin)
     return 0
 
@@ -43,12 +45,13 @@ def _show(title, data):
     print(f"\n{title} ({data['surface']}, {data['frames']} frames)")
     print(f"  modo {data['mode']} | calidad {data['quality']} | {data['gpu']}")
     for key in ("glow", "composite", "particles", "lights", "heat", "trail",
-                "histogram"):
+                "histogram", "shock", "fire", "confusion", "confusion_rot",
+                "ice_edges", "ice_tint", "blackout", "night", "exposure"):
         if data.get(key):
-            print(f"  {key:<10} {data[key]:7.3f} ms")
-    print(f"  cadena     {data.get('frame', 0):7.3f} ms   "
+            print(f"  {key:<13} {data[key]:7.3f} ms")
+    print(f"  cadena        {data.get('frame', 0):7.3f} ms   "
           f"{data.get('fps', 0):6.1f} fps")
-    print(f"  loop       {data.get('ms_frame', 0):7.3f} ms/frame   "
+    print(f"  loop          {data.get('ms_frame', 0):7.3f} ms/frame   "
           f"{data.get('fps_loop', 0):6.1f} fps")
 
 
