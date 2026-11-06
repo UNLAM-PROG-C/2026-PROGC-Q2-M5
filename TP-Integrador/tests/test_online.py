@@ -125,6 +125,23 @@ class RunnerTest(unittest.TestCase):
     def cmds(self, ctype):
         return [kw for c, kw in self.link.cmds if c == ctype]
 
+    def test_start_command_always_presents_the_goal(self):
+        self.r.start_pending = True
+        self.r.tick(100.0)
+        starts = self.cmds(protocol.CMD_START)
+        self.assertEqual(len(starts), 1)
+        self.assertTrue(starts[0]["presentation"])   # same hold for both
+        self.r.tick(100.5)
+        self.assertEqual(len(self.cmds(protocol.CMD_START)), 1)   # only once
+
+    def test_the_replay_event_reaches_both_players(self):
+        replay = {"type": protocol.EV_REPLAY, "match": 7, "eid": 4,
+                  "seconds": rules.GOAL_REPLAY, "score": [0, 1]}
+        self.link.events = [replay]
+        self.r.tick(100.0)
+        for session in (self.a, self.b):
+            self.assertEqual(session.last(wire.EVENT)["e"], replay)
+
     def activate_pause(self, now):
         self.link.events = [{"type": protocol.EV_PAUSED,
                              "reason": protocol.PAUSE_REASON_REQUEST, "by": 0,

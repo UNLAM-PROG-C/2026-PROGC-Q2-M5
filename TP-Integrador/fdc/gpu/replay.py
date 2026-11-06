@@ -142,6 +142,7 @@ class ReplayPlayer:
     """Plays the saved states again, interpolating the positions."""
 
     kind = REPLAY_KIND
+    from_goal = False      # the screen closes it when the window is over
 
     def __init__(self, frames, now, duration=G.REPLAY_DURATION):
         self.frames = list(frames)
@@ -165,13 +166,22 @@ class ReplayPlayer:
 
     def state_at(self, now):
         """State of the replay at `now` (positions interpolated)."""
+        return self.state_at_progress(self.progress(now))
+
+    def state_at_progress(self, progress):
+        """State at `progress` (0..1) of the clip (positions interpolated).
+
+        The screen drives it with the clock of the simulation, so every
+        client shows the same frame of the replay at the same moment.
+        """
         if len(self.frames) < MIN_FRAMES:
             return self.frames[-1][1] if self.frames else {}
-        target = self.frames[0][0] + self.progress(now) * self.span
+        mix = min(FULL, max(0.0, progress))
+        target = self.frames[0][0] + mix * self.span
         older, newer = self._pair(target)
         gap = newer[0] - older[0]
-        mix = 0.0 if gap <= 0 else min(FULL, (target - older[0]) / gap)
-        return _mix(older[1], newer[1], mix)
+        part = 0.0 if gap <= 0 else min(FULL, (target - older[0]) / gap)
+        return _mix(older[1], newer[1], part)
 
     def _pair(self, target):
         """The two saved states around `target`."""
@@ -185,6 +195,7 @@ class VarPlayer:
     """Freeze frame of the goal: "reviewing" and then the confirmation."""
 
     kind = VAR_KIND
+    from_goal = False      # the screen closes it when the window is over
 
     def __init__(self, state, now, review=G.VAR_DURATION,
                  confirm=G.VAR_CONFIRM):
@@ -192,6 +203,7 @@ class VarPlayer:
         self.start = now
         self.review = review
         self.confirm = confirm
+        self.duration = review + confirm   # s: the two signs together
 
     def stage(self, now):
         """REVIEW while the referee looks, CONFIRMED after that."""

@@ -44,7 +44,7 @@ class Match:
         self.id = match_id
         # Golden goal: if time ends in a draw, the next goal wins.
         self.golden_goal, self.golden = golden_goal, False
-        self.goal_hold = _goal_hold(presentation)   # party and (maybe) clip
+        self._set_presentation(presentation)
         self._set_seed(seed)
         # Only kept for the log: physics uses the same base abilities.
         self.characters = tuple(characters)
@@ -52,6 +52,11 @@ class Match:
         self.clock = (float(duration) if duration
                       else config.MatchRules.DURATION)
         self._reset_flow()
+
+    def _set_presentation(self, presentation):
+        """If the goal is presented (party and replay) and for how long."""
+        self.presentation = bool(presentation)
+        self.goal_hold = _goal_hold(presentation)
 
     def _set_seed(self, seed):
         """Random seed of the match and its generator."""
@@ -76,7 +81,8 @@ class Match:
         # goal) and side that asked for the active pause.
         self.pause_pending = self.pause_by = None
         self.last_touch = self.scorer = self.winner = None
-        self.goal_latched = False
+        # The replay of a goal still has to be announced to the clients.
+        self.goal_latched = self.replay_pending = False
         self.move = [0, 0]
         self.pending_jump = [False, False]
         self.pending_kick = [False, False]
@@ -155,11 +161,24 @@ class Match:
         """Frozen goal: the interface shows the party and then the replay."""
         self.phase_left -= dt
         if self.phase_left > 0:
+            self._announce_replay()
             return
         self._after_goal_hold()
 
+    def _announce_replay(self):
+        """Tells the clients that the replay starts (once, when due)."""
+        if not self.replay_pending:
+            return
+        if self.phase_left > config.MatchRules.GOAL_REPLAY:
+            return
+        self.replay_pending = False
+        self._events.append((protocol.EV_REPLAY, {
+            "seconds": config.MatchRules.GOAL_REPLAY,
+            "score": list(self.score)}))
+
     def _after_goal_hold(self):
         """End of the frozen goal: play comes back from the centre."""
+        self.replay_pending = False
         if self.golden:
             self._finish()          # golden goal: ends after the celebration
             return
@@ -319,11 +338,16 @@ class Match:
         own_goal = self.last_touch == goal.side
         self.phase = protocol.PHASE_GOAL
         self.phase_left = self.goal_hold
+        self.replay_pending = self.presentation   # announced when due
         self.powers.clear()
         self.powers.apply_modifiers(self)
-        self._events.append((protocol.EV_GOAL, {
-            "scorer": scorer, "side": goal.side, "score": list(self.score),
-            "own_goal": own_goal, "x": self.ball.x, "y": self.ball.y}))
+        event = self._goal_event(goal, scorer, own_goal)
+        self._events.append((protocol.EV_GOAL, event))
+
+    def _goal_event(self, goal, scorer, own_goal):
+        """Payload of the goal: who scored and where the ball went in."""
+        return {"scorer": scorer, "side": goal.side, "score": list(self.score),
+                "own_goal": own_goal, "x": self.ball.x, "y": self.ball.y}
 
     def _reset_after_goal(self):
         for player in self.players:

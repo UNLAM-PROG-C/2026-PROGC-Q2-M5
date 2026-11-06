@@ -370,19 +370,21 @@ class PostFx:
         here: the paper is cleared because the replay takes the screen.
         """
         pending, self.pending = self.pending, None
+        self.player = None      # the old clip (if any) is not shown again
         self.celebration = None
         self.confetti.clear()
-        if pending is None:
-            return
-        frames = self.history.window(pending["time"])
-        if not frames:
-            return
+        frames = self.history.window(pending["time"]) if pending else []
+        if frames:
+            self.player = self._replay_player(pending, frames)
+            # The screen closes the replay when the window of the goal ends.
+            self.player.from_goal = True
+
+    def _replay_player(self, pending, frames):
+        """The VAR when the ball grazed the bar, else the clip of the goal."""
         if pending["close"] or self.force_var:
-            self.player = replay.VarPlayer(pending["state"], self.clock)
-        else:
-            span = frames[-1][0] - frames[0][0]
-            self.player = replay.ReplayPlayer(frames, self.clock, span)
-        self.player.from_goal = True    # the screen closes it with the window
+            return replay.VarPlayer(pending["state"], self.clock)
+        span = frames[-1][0] - frames[0][0]
+        return replay.ReplayPlayer(frames, self.clock, span)
 
     def _celebrate(self):
         """Throws the confetti that is due and starts the replay at the end."""

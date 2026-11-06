@@ -5,8 +5,9 @@ are not told "play the clip now and take your time": the simulation sends
 EV_REPLAY when the window opens and resumes by itself when it closes. These
 tests check that window, the frozen goal, the resume and the skip.
 
-The real two-client run is `tools/probar_repe_dos_clientes.py`: it starts the
-server and two clients (FULL and SIN EFECTOS) and saves what each one saw.
+The real two-client run is `tools/replay_check.py`: it starts the server and
+two clients (one in FULL and one in the mode "SIN EFECTOS") and saves what each
+one saw.
 """
 import unittest
 

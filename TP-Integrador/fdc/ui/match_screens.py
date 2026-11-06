@@ -979,9 +979,14 @@ class MatchScreen(screens.Screen):
         return self.plain.state_at_progress(window[0])
 
     def _close_replay(self):
-        """The window is closed: nothing of the replay is drawn any more."""
+        """The window is closed: nothing of the replay is drawn any more.
+
+        Only when a window was announced: a clip the effects started on their
+        own (an older server that does not announce it) is not cut here.
+        """
         self.plain = None
-        self.app.postfx.end_goal_replay()
+        if self.replay_seconds:
+            self.app.postfx.end_goal_replay()
 
     def _draw_replay_sign(self, surf, window):
         """Sign of the replay (or the VAR) with the seconds left."""

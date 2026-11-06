@@ -131,11 +131,16 @@ class RoomRunner:
             self.broadcast(self.room_info())   # data for each player's F3
 
     def _send_start(self):
-        """The start command leaves once the simulation is READY."""
+        """The start command leaves once the simulation is READY.
+
+        The room always presents the goal (party and replay): the hold is
+        the same for the two players, whatever effects each one has.
+        """
         if self.start_pending and self.link.ready:
             self.start_pending = False
             self.link.send_command(protocol.CMD_START, match=self.match["id"],
-                                   characters=self.match["chars"])
+                                   characters=self.match["chars"],
+                                   presentation=True)
 
     def _link_healthy(self):
         if self.link.ready and not self.ready_logged:

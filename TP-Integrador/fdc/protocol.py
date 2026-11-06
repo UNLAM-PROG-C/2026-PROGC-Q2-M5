@@ -45,6 +45,9 @@ EV_ERROR = "error"
 EV_BYE = "bye"
 EV_KICKOFF = "kickoff"
 EV_GOAL = "goal"
+# The replay of the goal starts now (decided by the simulation): the match
+# stays frozen `seconds` more, alike for every client, and then resumes.
+EV_REPLAY = "replay"
 EV_MATCH_END = "match_end"
 EV_GOLDEN_GOAL = "golden_goal"   # draw at the end: the next goal wins
 EV_PAUSED = "paused"             # pause decided by the simulation (watchdog)
