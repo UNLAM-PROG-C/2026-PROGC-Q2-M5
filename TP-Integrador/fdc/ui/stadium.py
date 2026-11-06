@@ -63,15 +63,14 @@ LAMP_COLOR = (255, 250, 214)       # warm light
 TIERS = ((56, 112), (116, 176), (180, 232))
 TIER_RAIL = 4                      # rail over each stand (height, px)
 SEAT_ROW = 6                       # height of each row of seats (px)
-# Shirts of the crowd (pastel RGB).
-CROWD_COLORS = [(236, 170, 160), (170, 200, 236), (250, 226, 150),
-                (180, 222, 180), (236, 236, 240), (214, 180, 226),
-                (250, 200, 170), (200, 206, 214)]
-# Skin tones (RGB).
-SKIN_TONES = [(247, 214, 186), (232, 190, 150), (200, 150, 110),
-              (160, 112, 80)]
+# Shirts of the crowd: the muted tones of the animated stands (guia-visual).
+# Skin and hair come from the same table, so OPTIMIZADO and FULL match.
+CROWD_COLORS = [tuple(round(channel * 255) for channel in shirt)
+                for shirt in config.Gpu.CROWD_SHIRTS]
+SKIN_TONES = [tuple(round(channel * 255) for channel in skin)
+              for skin in config.Gpu.CROWD_SKINS]   # skin tones (RGB)
 CROWD_START_MAX = 3                # first person of a row: x from 0 to 3
-CROWD_FILL = 0.78                  # probability that a seat is taken
+CROWD_FILL = 0.62                  # probability that a seat is taken
 ARMS_UP = 0.06                     # probability of arms up
 CROWD_GAP = (5, 7)                 # px from one person to the next (random)
 BODY = (0, 2, 4, 3)                # body of a person (dx, dy, width, height)
@@ -232,8 +231,9 @@ def _floodlight(s, x, y0):
 def _stands(s, rng):
     """Three stands with seats, a random crowd and stairs."""
     for y0, y1 in TIERS:
-        pygame.draw.rect(s, palette.STRUCT, (0, y0 - TIER_RAIL, NW, TIER_RAIL))
-        _hline(s, palette.WHITE, y0 - TIER_RAIL)
+        pygame.draw.rect(s, palette.SEAT_DEEP, (0, y0 - TIER_RAIL, NW,
+                                                TIER_RAIL))
+        _hline(s, palette.SEAT_EDGE, y0 - TIER_RAIL)
         for row_y in range(y0, y1, SEAT_ROW):
             _seat_row(s, row_y)
             _crowd_row(s, rng, row_y)
@@ -242,10 +242,10 @@ def _stands(s, rng):
 
 
 def _seat_row(s, row_y):
-    seat = (palette.SEAT_RED if (row_y // SEAT_ROW) % 2 == 0
-            else palette.SEAT_RED_DARK)
+    seat = (palette.SEAT_DARK if (row_y // SEAT_ROW) % 2 == 0
+            else palette.SEAT_DEEP)
     pygame.draw.rect(s, seat, (0, row_y, NW, SEAT_ROW))
-    _hline(s, palette.SEAT_RED_DARK, row_y + SEAT_ROW - 1)
+    _hline(s, palette.SEAT_DEEP, row_y + SEAT_ROW - 1)
 
 
 def _crowd_row(s, rng, row_y):
@@ -257,7 +257,8 @@ def _crowd_row(s, rng, row_y):
 
 
 def _person(s, rng, x, row_y):
-    s.fill(rng.choice(CROWD_COLORS), _at(x, row_y, BODY))
+    shirt = CROWD_COLORS[0] if x < NW // 2 else CROWD_COLORS[1]
+    s.fill(shirt, _at(x, row_y, BODY))
     skin = rng.choice(SKIN_TONES)
     s.fill(skin, _at(x, row_y, HEAD))
     if rng.random() < ARMS_UP:
@@ -266,9 +267,9 @@ def _person(s, rng, x, row_y):
 
 
 def _stairs(s, x, y0, y1):
-    pygame.draw.rect(s, palette.STRUCT, (x, y0, STAIRS_W, y1 - y0))
+    pygame.draw.rect(s, palette.SEAT_DEEP, (x, y0, STAIRS_W, y1 - y0))
     for yy in range(y0, y1, STEP_H):
-        pygame.draw.line(s, palette.STRUCT_SHADE, (x, yy),
+        pygame.draw.line(s, palette.SEAT_DARK, (x, yy),
                          (x + STAIRS_W - 1, yy))
 
 
