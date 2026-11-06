@@ -29,9 +29,10 @@ CUDA: la cadena se hace con numpy y **FULL se ve completo** (tribuna animada,
 luces, partículas), más lento; `OPTIMIZADO` es la versión liviana y `AUTO`
 baja el nivel sólo si no llega. Para apagar los efectos hay que pedirlo:
 `--sin-efectos` o `FDC_EFECTOS=0` (`--no-gpu` sigue valiendo como alias).
-En esta PC, con el backend numpy a 1280x720: FULL ≈ 19 fps y OPTIMIZADO
-≈ 290 fps (`py tools\bench_calidades.py`); en una Mac o una notebook sin
-NVIDIA FULL queda en el orden de 10 a 20 fps y la tribuna igual se ve.
+En esta PC, con el backend numpy a 1280x720 (`py tools\bench_calidades.py`,
+180 cuadros por modo): FULL ≈ 10 fps y OPTIMIZADO ≈ 140 fps; en una Mac o una
+notebook sin NVIDIA FULL queda en el orden de 8 a 20 fps y la tribuna igual se
+ve. Para quien necesita fluidez sin placa, OPTIMIZADO o AUTO.
 
 **Notebook o PC sin NVIDIA (modo CPU).** Nada de CUDA ni de Visual Studio:
 
@@ -73,6 +74,11 @@ falla: avisa la razón y sigue en CPU.
 | `py tools\captura_cpu_full.py` | Un cuadro de FULL por CPU en `capturas\cpu-full.png` |
 | `py tools\run_demo.py` | La misma demo sin ventana: tabla + CSV y termina sola |
 | `py -m unittest discover -s tests` | Suite completa (tests de kernels se saltean sin CUDA) |
+
+**FULL u OPTIMIZADO.** El modo se elige con `--calidad full|optimizado|auto`
+(en el juego, **F10** recorre FULL → OPTIMIZADO → AUTO y F2 dice si va por GPU
+o CPU): FULL muestra todos los efectos (también sin CUDA, con numpy, más
+lento) y OPTIMIZADO es la versión liviana.
 
 Opciones útiles:
 
