@@ -472,16 +472,16 @@ class MatchScreen(screens.Screen):
     TOAST_TOP = 170                    # top edge of the first notice (px)
     TOAST_STEP = 46                    # px between notices
     TOAST_PADDING = 28                 # px added to the text (margins, band)
-    TOAST_ICON_ROOM = 30               # extra px if the notice has an icon
+    TOAST_ICON_ROOM = 36               # extra px if the notice has an icon
     TOAST_BAR_W = 6                    # band with the category colour (px)
     TOAST_TEXT_X = 12                  # icon or text, from the left edge
-    TOAST_ICON = 28                    # px: icon of the power
-    TOAST_ICON_ADVANCE = 34            # px taken by the icon and its gap
+    TOAST_ICON = 32                    # px: icon of the power
+    TOAST_ICON_ADVANCE = 40            # px taken by the icon and its gap
     # Test mode box, bottom left (x, y, width, height) in px.
     TEST_PANEL = (8, 646, 600, 68)
-    TEST_ICON = 44                     # px: icon of the chosen power
-    TEST_ICON_INSET = 6                # icon, from the box corner (px)
-    TEST_TEXT_X = 60                   # texts, from the left edge (px)
+    TEST_ICON = 52                     # px: icon of the chosen power
+    TEST_ICON_INSET = 4                # icon, from the box corner (px)
+    TEST_TEXT_X = 64                   # texts, from the left edge (px)
     TEST_LINE_Y = (8, 32)              # the two lines, from the top edge
     VIEWER = None                      # player of the screen: shared screen
 

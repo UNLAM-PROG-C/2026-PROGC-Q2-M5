@@ -28,9 +28,21 @@ _cache = {}
 VECTOR_SIZE = 128                  # px: drawn big, then turned to pixel art
 MIN_ICON_PX = 8                    # native px: minimum pixelated icon size
 BADGE_R = 0.46                     # badge radius (share of the icon side)
+BADGE_GLOW = 1.0                   # bright halo around the badge (radius)
+BADGE_GLOW_LIGHT = 0.55            # how much white the halo has
 BADGE_RIM = 0.86                   # white ring (share of the badge radius)
-BADGE_FACE = 0.74                  # circle with the category colour (same)
-GLYPH_SCALE = 0.54                 # radius of the pictogram (same)
+BADGE_FACE = 0.72                  # circle with the category colour (same)
+BADGE_SHADE = 0.35                 # the bottom of the face is this darker
+BADGE_LIFT = 0.10                  # px the lit part rises (share of radius)
+BADGE_FACE_LIT = 0.62              # radius of the lit part (same)
+GLYPH_SCALE = 0.62                 # radius of the pictogram (same)
+# --- pulse: the icon shines when the power appears (projector)
+PULSE_STEPS = 5                    # brightness levels kept in the cache
+PULSE_ADD = 45                     # white added to the icon (0-255)
+PULSE_RING = 4                     # px of the bright ring
+PULSE_RING_AT = 1.02               # ring radius (share of the badge radius)
+WHITE_ALPHA = 255                  # opaque white of the ring
+
 # Target of the powers that affect the rival (bottom right).
 TARGET_AT = 0.62                   # offset from the centre (share of radius)
 TARGET_OUTER = 0.32                # dark circle
@@ -465,9 +477,13 @@ def _vector_icon(power_id, size):
 
 
 def _badge(surf, c, r, color):
+    """Badge with a bright halo, dark outline, white rim and a lit face."""
+    art.circle(surf, art.shade(color, BADGE_GLOW_LIGHT), (c, c),
+               r * BADGE_GLOW)
     art.circle(surf, INK, (c, c), r)
     art.circle(surf, WHITE, (c, c), r * BADGE_RIM)
-    art.circle(surf, color, (c, c), r * BADGE_FACE)
+    art.circle(surf, art.shade(color, -BADGE_SHADE), (c, c), r * BADGE_FACE)
+    art.circle(surf, color, (c, c - r * BADGE_LIFT), r * BADGE_FACE_LIT)
 
 
 def _target(surf, mx, my, r):
@@ -480,19 +496,46 @@ def _target(surf, mx, my, r):
     g.line(TARGET_RED, [(0, -1), (0, 1)], TARGET_CROSS_W)
 
 
-def power_icon(power_id, size):
+def power_icon(power_id, size, pulse=0.0):
     """Pixel art icon: drawn at high resolution and reduced to native
-    pixels (size / PX), scaled up without smoothing (Flyweight cache)."""
-    key = (power_id, size)
+    pixels (size / PX), scaled up without smoothing (Flyweight cache).
+
+    `pulse` (0-1) is the brightness of a power that has just appeared: the
+    icon is lightened and gets a bright ring, so it is seen from the back of
+    the classroom. Only PULSE_STEPS levels are drawn and cached.
+    """
+    level = int(round(max(0.0, min(1.0, pulse)) * PULSE_STEPS))
+    key = (power_id, size, level)
     if key in _cache:
         return _cache[key]
-    custom = assets.load_override_image("icons", f"{power_id}.png")
-    if custom is not None:
-        icon = pygame.transform.scale(custom, (size, size))
-    else:
-        native = max(MIN_ICON_PX, size // retro.PX)
-        icon = retro.scale_px(
-            retro.pixelize(_vector_icon(power_id, VECTOR_SIZE), native),
-            retro.PX)
+    icon = _base_icon(power_id, size)
+    if level:
+        icon = _pulsed(icon, level / PULSE_STEPS)
     _cache[key] = icon
     return icon
+
+
+def _base_icon(power_id, size):
+    """Icon without the pulse: the file of assets/icons or the vector one."""
+    custom = assets.load_override_image("icons", f"{power_id}.png")
+    if custom is not None:
+        return pygame.transform.scale(custom, (size, size))
+    native = max(MIN_ICON_PX, size // retro.PX)
+    return retro.scale_px(
+        retro.pixelize(_vector_icon(power_id, VECTOR_SIZE), native), retro.PX)
+
+
+def _pulsed(icon, amount):
+    """Brighter copy of the icon with a ring: the power pops when it appears."""
+    out = icon.copy()
+    add = int(PULSE_ADD * amount)
+    if add:
+        out.fill((add, add, add), special_flags=pygame.BLEND_RGB_ADD)
+    side = icon.get_width()
+    ring = art.canvas(side, side)
+    pygame.draw.circle(ring, (*WHITE, int(WHITE_ALPHA * amount)),
+                       (side // 2, side // 2),
+                       int(side * BADGE_R * PULSE_RING_AT), PULSE_RING)
+    out.blit(ring, (0, 0))
+    return out
+
