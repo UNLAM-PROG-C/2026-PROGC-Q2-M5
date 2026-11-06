@@ -464,6 +464,7 @@ class MatchScreen(screens.Screen):
             self.app.sprites.warm(cid)
         self.app.input.capture = True
         self.app.fx.clear()
+        self.app.postfx.clear()
         self._start(protocol.CMD_START)
 
     def leave(self):
@@ -620,6 +621,7 @@ class MatchScreen(screens.Screen):
 
     def _on_event(self, m):
         """Dispatches a simulation event to its handler (if any)."""
+        self.app.postfx.event(m)
         name = EVENT_HANDLERS.get(m["type"])
         if name is not None:
             getattr(self, name)(m)
@@ -802,8 +804,10 @@ class MatchScreen(screens.Screen):
     def draw_match(self, surf, view, st):
         """World (from 'view'), effects, scoreboard, signs and notices."""
         off = self.app.fx.shake_offset()
-        self.renderer.draw_world(surf, view, off)
-        self.app.fx.draw(surf, off)
+        world = self.app.postfx.begin(surf, st)
+        self.renderer.draw_world(world, view, off)
+        self.app.fx.draw(world, off)
+        self.app.postfx.finish(surf, self.app.last_dt)
         self.renderer.draw_hud(surf, st)
         self.renderer.draw_center_messages(surf, st)
         self._draw_toasts(surf)

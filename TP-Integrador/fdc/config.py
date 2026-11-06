@@ -356,6 +356,47 @@ class Online:
 
 
 # ---------------------------------------------------------------------------
+# GPU effects (optional: the game runs without them, see fdc/gpu)
+# ---------------------------------------------------------------------------
+class Gpu:
+    """Knobs of the post-processing chain that runs on the GPU."""
+    ENABLED = os.environ.get("FDC_GPU", "1") != "0"   # FDC_GPU=0 turns it off
+    QUALITY = os.environ.get("FDC_GPU_QUALITY", "media")   # baja|media|alta
+    QUALITIES = ("baja", "media", "alta")   # from the cheapest to the richest
+    GLOW_THRESHOLD = 0.62   # from this luma (0-1) a pixel glows
+    GLOW_RADIUS = 3         # px of the halo blur
+    GLOW_PASSES = 2         # box blurs of the halo
+    EXPOSURE = 1.08         # brightness before the gamma
+    GAMMA = 1.0             # gamma curve of the composite
+    VIGNETTE = 0.35         # darkening of the corners
+    GLOW_STRENGTH = 0.65    # weight of the halo in the composite
+    PARTICLE_GAIN = 1.0     # weight of the sparks
+    LIGHT_GAIN = 0.9        # weight of the spotlights
+    PARTICLES = 1200        # particles alive at most
+    PARTICLE_SIZE = 2.4     # px: radius of a spark
+    PARTICLE_SPEED = (60.0, 320.0)   # px/s: speed of a spark
+    PARTICLE_LIFE = (0.18, 0.55)     # s: life of a spark
+    PARTICLE_GRAVITY = 420.0         # px/s^2 (y grows downwards)
+    PARTICLE_PER_TOUCH = 10          # sparks of a kick or a bounce
+    HEAT_AMP = 2.5          # px: depth of the heat waves
+    HEAT_PERIOD = 26.0      # px: wavelength of the heat waves
+    HEAT_SPEED = 2.4        # rad/s: how fast the waves move
+    RIPPLE_AMP = 5.0        # px: depth of the replay ripple
+    RIPPLE_PERIOD = 46.0    # px: wavelength of the replay ripple
+    TRAIL_ALPHA = 0.35      # s: how much of the previous frame stays
+    FREEZE_LIGHT = (0.45, 0.75, 1.0)   # rgb of the ice spotlight
+    FREEZE_RADIUS = 260.0   # px: radius of the ice spotlight
+    BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
+    HEATMAP_COLS = 64       # cells of the heat map
+    HEATMAP_ROWS = 36       # cells of the heat map
+    HEATMAP_DECAY = 0.994   # per frame: the heat fades out
+    HEATMAP_AMOUNT = 0.35   # heat added by a player each frame
+    REPLAY_SECONDS = 20.0   # s of states kept for the replay
+    REPLAY_STEP = 0.25      # s between saved states
+    METRICS_FRAMES = 120    # frames averaged by the overlay
+
+
+# ---------------------------------------------------------------------------
 # Optional folders to replace generated resources with own files
 # ---------------------------------------------------------------------------
 # assets/sprites/<character>/head.png, assets/sounds/<name>.wav, ...

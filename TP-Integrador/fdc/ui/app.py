@@ -42,6 +42,13 @@ from fdc.ui import screens
 from fdc.ui import sprites
 from fdc.ui import stadium
 
+# The effects need numpy (and PyCUDA for the GPU): without them the game
+# still runs, it just draws the frames as they are.
+try:
+    from fdc.gpu import postfx
+except Exception:               # pylint: disable=broad-except
+    postfx = None
+
 log = logging.getLogger("fdc.ui")
 
 FPS_SAMPLES = 60            # frames averaged to show the FPS
@@ -108,6 +115,27 @@ class FrameLimiter:
         return len(self.samples) / max(EPSILON, sum(self.samples))
 
 
+class _NoFx:
+    """Stand-in of the effects when they are not available (web, no numpy)."""
+
+    enabled = False
+
+    def begin(self, screen, state):
+        return screen
+
+    def finish(self, screen, dt):
+        """Nothing to do."""
+
+    def event(self, msg):
+        """Nothing to do."""
+
+    def clear(self):
+        """Nothing to do."""
+
+    def summary(self):
+        return {"mode": "off", "quality": "-", "gpu": "CPU", "fps": 0.0}
+
+
 class App:
     """The window, the current screen and the shared resources."""
 
@@ -157,6 +185,8 @@ class App:
         self._set_icon()
         self.fx = fx.Effects()
         self.input = ui_input.InputTracker()
+        self.postfx = postfx.PostFx(self.options, self.screen.get_size()) \
+            if postfx else _NoFx()
 
     def _init_state(self):
         options = self.options
@@ -165,6 +195,7 @@ class App:
         self.match_counter = 0
         self.show_debug = options.debug_panel
         self.running = True
+        self.last_dt = 0.0           # s: last frame time (effects need it)
         self.keys = {k: ui_input.key_code(k) for k in GLOBAL_KEYS}
         self.first_frame_shown = False
         self._init_online()
@@ -249,7 +280,7 @@ class App:
     def frame(self):
         """One frame: events -> SIM messages -> health -> screen logic ->
         drawing."""
-        dt = min(self.clock.tick(), MAX_FRAME_DT)
+        dt = self._tick()
         for ev in pygame.event.get():
             self.handle_event(ev)
             if not self.running:
@@ -262,6 +293,11 @@ class App:
                 self.current.on_net(msg)
         self.current.update(dt)
         self._draw()
+
+    def _tick(self):
+        """Real frame time (s), capped so a late frame does not jump."""
+        self.last_dt = min(self.clock.tick(), MAX_FRAME_DT)
+        return self.last_dt
 
     def _poll_simulation(self):
         if self.link is None:
@@ -350,8 +386,19 @@ class App:
             lines += _link_lines(self.link.debug_lines())
         if self.net is not None:
             lines += _net_lines(self.net)
+        lines += self._gpu_lines()
         lines += self._frame_lines(si)
         _draw_panel(surf, lines)
+
+    def _gpu_lines(self):
+        """Effects of the post-processing chain (mode, cost, fps)."""
+        data = self.postfx.summary()
+        if data.get("mode") == "off":
+            return [("Efectos: apagados", None)]
+        return [(f"Efectos: {data['gpu']} ({data['mode']}, "
+                 f"{data['quality']})  |  cadena {data['frame']:.2f} ms  "
+                 f"{data['fps']:.1f} fps  |  glow {data['glow']:.2f}  "
+                 f"part {data['particles']:.2f} ms", None)]
 
     def _process_lines(self):
         if getattr(self.link, "inline", False):

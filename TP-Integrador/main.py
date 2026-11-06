@@ -35,6 +35,15 @@ COMMAND_LINE = (
                      "help": "servidor online (ej. ws://localhost:8765/ws o "
                              "wss://mi-dominio/ws); también se puede usar la "
                              "variable FDC_SERVER"}),
+    (("--no-gpu",), {"dest": "no_gpu", "action": "store_true",
+                     "help": "apaga los efectos de GPU (el juego queda "
+                             "igual que antes)"}),
+    (("--gpu-quality",), {"dest": "gpu_quality", "default": None,
+                          "choices": ("baja", "media", "alta"),
+                          "help": "calidad de los efectos (baja|media|alta)"}),
+    (("--gpu-cpu",), {"dest": "force_cpu", "action": "store_true",
+                      "help": "efectos con la versión numpy (para comparar "
+                              "contra la GPU)"}),
 )
 
 

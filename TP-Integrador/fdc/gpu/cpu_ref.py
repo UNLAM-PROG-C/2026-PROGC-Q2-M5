@@ -30,19 +30,35 @@ def _box_axis(img, radius, axis):
     """Mean of the existing samples of [i-radius, i+radius] (clamped)."""
     if radius <= 0:
         return img.astype(np.float32)
-    n = img.shape[axis]
     acc = np.zeros(img.shape, dtype=np.float32)
-    count = np.zeros(n, dtype=np.float32)
-    base = np.arange(n)
-    shape = [1] * img.ndim
-    shape[axis] = n
+    count = _sample_count(img.shape[axis], radius, axis, img.ndim)
+    _accumulate(img, acc, radius, axis)
+    return acc / count
+
+
+def _sample_count(size, radius, axis, dims):
+    """How many samples each index has (the borders have fewer)."""
+    count = np.zeros(size, dtype=np.float32)
+    base = np.arange(size)
     for k in range(-radius, radius + 1):
         index = base + k
-        valid = ((index >= 0) & (index < n)).astype(np.float32)
-        count += valid
-        acc += np.take(img, np.clip(index, 0, n - 1), axis=axis) \
+        count += (index >= 0) & (index < size)
+    shape = [1] * dims
+    shape[axis] = size
+    return count.reshape(shape)
+
+
+def _accumulate(img, acc, radius, axis):
+    """Sums the window of every index (repeating the border sample)."""
+    size = img.shape[axis]
+    base = np.arange(size)
+    shape = [1] * img.ndim
+    shape[axis] = size
+    for k in range(-radius, radius + 1):
+        index = base + k
+        valid = ((index >= 0) & (index < size)).astype(np.float32)
+        acc += np.take(img, np.clip(index, 0, size - 1), axis=axis) \
             * valid.reshape(shape)
-    return acc / count.reshape(shape)
 
 
 class Cpu:
@@ -79,6 +95,11 @@ class Cpu:
         out = np.power(np.maximum(value, 0.0), gamma)
         out = out * _vignette(h, w, vignette)[..., None]
         return _clamp(np.minimum(out, 1.0))
+
+    def glow_composite(self, img, threshold, radius, passes, params):
+        """Same result as glow + composite, in one call."""
+        field = self.glow(img, threshold, radius, passes)
+        return self.composite(img, field, *params)
 
     def particles(self, img, pos, col, gain):
         """Additive glowing particles: pos (n,2), col (n,4) r,g,b,size."""

@@ -133,6 +133,30 @@ class Gpu:
         self._blur_field(a, b, gw, gh, radius, passes)
         return self._get(a, (gh, gw, CHANNELS), np.float32)
 
+    def glow_composite(self, img, threshold, radius, passes, params):
+        """Glow and composite without leaving the device (one trip)."""
+        h, w = img.shape[:2]
+        gw, gh = w // 2, h // 2
+        src = self._buf("gc_src", (h, w, CHANNELS), np.uint8, img)
+        a = self._buf("gc_a", (gh, gw, CHANNELS), np.float32)
+        b = self._buf("gc_b", (gh, gw, CHANNELS), np.float32)
+        out = self._buf("gc_out", (h, w, CHANNELS), np.uint8)
+        self._fn("bright_pass")(src, a, np.int32(gw), np.int32(gh),
+                                np.int32(w), np.float32(threshold),
+                                grid=self._grid(gw, gh), block=BLOCK)
+        self._blur_field(a, b, gw, gh, radius, passes)
+        self._composite(src, a, out, w, h, gw, gh, params)
+        return self._get(out, (h, w, CHANNELS), np.uint8)
+
+    def _composite(self, src, field, out, w, h, gw, gh, params):
+        """Exposure, gamma, vignette and halo, already on the device."""
+        exposure, gamma, vignette, strength = params
+        self._fn("composite")(src, field, out, np.int32(w), np.int32(h),
+                              np.int32(gw), np.int32(gh),
+                              np.float32(exposure), np.float32(gamma),
+                              np.float32(vignette), np.float32(strength),
+                              grid=self._grid(w, h), block=BLOCK)
+
     def _blur_field(self, src, tmp, w, h, radius, passes):
         """`passes` separable box blurs of a float field, in place."""
         size = (np.int32(w), np.int32(h), np.int32(radius))
@@ -149,11 +173,8 @@ class Gpu:
         src = self._buf("cmp_src", shape, np.uint8, img)
         field = self._buf("cmp_glow", glow.shape, np.float32, glow)
         out = self._buf("cmp_out", shape, np.uint8)
-        self._fn("composite")(src, field, out, np.int32(w), np.int32(h),
-                              np.int32(gw), np.int32(gh),
-                              np.float32(exposure), np.float32(gamma),
-                              np.float32(vignette), np.float32(strength),
-                              grid=self._grid(w, h), block=BLOCK)
+        self._composite(src, field, out, w, h, gw, gh,
+                        (exposure, gamma, vignette, strength))
         return self._get(out, shape, np.uint8)
 
     def particles(self, img, pos, col, gain):
