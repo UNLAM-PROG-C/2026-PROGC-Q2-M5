@@ -521,18 +521,41 @@ class Gpu:
     # --- F11: crowd of the stands (a kernel per pixel, FULL only) ----------
     CROWD_TOP = 112           # px: top of the stands
     CROWD_BOTTOM = 464        # px: the wall below the last stand
-    CROWD_SEAT = (14, 12)     # px: one seat of the grid (width, height)
-    CROWD_FILL = 86           # % of the seats with somebody
+    CROWD_SEAT = (22, 22)     # px: one seat of the grid (width, height)
+    CROWD_BODY = (15, 11)     # px: shirt of one person (width, height)
+    CROWD_HEAD = 5.0          # px: radius of the head (above the shirt)
+    CROWD_HEAD_CUT = 0.05     # part of the head that is hair (0-1)
+    CROWD_OUTLINE = 1.2       # px of the dark rim around the head
+    CROWD_SHOULDER_EDGE = 1.0  # px of the darker line on top of the shirt
+    CROWD_SHOULDER_SHADE = 0.78   # how much that line darkens the shirt
+    CROWD_STEP = 5.0          # px: dark step at the bottom of each row
+    CROWD_FILL = 78           # % of the seats with somebody
     CROWD_JUMP = 2.0          # px of the little jump of each person
     CROWD_JUMP_HZ = 1.7       # jumps per second
     CROWD_GOAL_JUMP = 5.0     # extra px of the jumping stand on a goal
     CROWD_GOAL_HZ = 3.2       # extra jumps per second while celebrating
-    CROWD_FLAGS = 9           # one flag every N seats
-    CROWD_FLAG = (10, 9)      # px: width and height of a flag
-    CROWD_WAVE = 2.5          # px the flags flutter
-    CROWD_HAIR = (0.16, 0.12, 0.10)     # rgb (0-1) of the hair
-    CROWD_SKIN = (0.95, 0.78, 0.62)     # rgb (0-1) of the skin
-    CROWD_SEATS = ((0.55, 0.16, 0.18), (0.40, 0.11, 0.14))   # two rows
+    CROWD_FLAGS = 17          # one flag every N seats (few and big)
+    CROWD_FLAG = (17, 12)     # px: width and height of a flag
+    CROWD_POLE = 20.0         # px: the pole goes this far above the shoulder
+    CROWD_WAVE = 2.0          # px the flags flutter
+    CROWD_SHADE_TOP = 0.62    # darkness of the last row (up, far away)
+    CROWD_SHADE_BOTTOM = 1.0  # ... and of the first one (down, near)
+    CROWD_VAR_MIN = 0.86      # brightness of the dullest shirt
+    CROWD_VAR_RANGE = 0.20    # extra brightness the hash may add
+    # Shirts are duller and darker than the players' (they must not compete).
+    CROWD_SHIRTS = ((0.70, 0.42, 0.22), (0.62, 0.30, 0.44))
+    CROWD_SKINS = ((0.60, 0.44, 0.34), (0.78, 0.61, 0.47),   # skin tones
+                   (0.93, 0.77, 0.63))
+    CROWD_HAIRS = ((0.09, 0.07, 0.06), (0.27, 0.17, 0.10),   # hair tones
+                   (0.55, 0.45, 0.30))
+    CROWD_TREAD = (0.17, 0.17, 0.21)      # floor of one step
+    CROWD_RISER = (0.11, 0.11, 0.15)      # its dark front
+    CROWD_EDGE = (0.33, 0.33, 0.40)       # lit edge of the step
+    CROWD_POLE_COLOUR = (0.72, 0.72, 0.76)   # the pole of the flags
+    CROWD_OUTLINE_COLOUR = (0.07, 0.06, 0.08)     # rim of the heads
+    CROWD_FLAG_COLOURS = ((0.95, 0.55, 0.25),    # flag of each team
+                          (0.93, 0.35, 0.62))
+    CROWD_FLAG_WHITE = (0.93, 0.93, 0.90)   # the white stripe of the flags
     CROWD_BOOST_BURST = 60    # extra paper bits of the stand on a goal
     # --- F11: extra life of the effects in FULL ---------------------------
     PULSE_HZ = 7.0            # rad/s of the breathing of the powers (FULL)

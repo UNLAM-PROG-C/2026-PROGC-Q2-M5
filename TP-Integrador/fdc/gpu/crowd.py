@@ -18,7 +18,6 @@ NO_TEAM = -1                # nobody is celebrating: the stands just move
 NO_BOOST = 0.0              # stands at rest (no goal)
 FULL_BOOST = 1.0            # stands jumping as hard as they can
 SCORER_KEYS = ("scorer", "side")   # who scored, or which goal it was
-WHITE = 255.0               # channel value: the colours go 0-1
 
 
 def band(size):
@@ -31,17 +30,31 @@ def band(size):
 
 def params():
     """(cfg, pal) of the kernel: seat geometry and the colours of the day."""
+    return _cfg(), _pal()
+
+
+def _cfg():
+    """Parameters of the kernel: the seat, the person and the animation."""
     seat_w, seat_h = G.CROWD_SEAT
+    body_w, body_h = G.CROWD_BODY
     flag_w, flag_h = G.CROWD_FLAG
-    cfg = (float(seat_w), float(seat_h), G.CROWD_JUMP, G.CROWD_JUMP_HZ,
-           G.CROWD_GOAL_JUMP, G.CROWD_GOAL_HZ, G.CROWD_WAVE,
-           float(flag_w), float(flag_h), float(G.CROWD_FILL),
-           float(G.CROWD_FLAGS))
-    shirts = tuple(channel / WHITE
-                   for colour in config.PLAYER_COLORS for channel in colour)
-    pal = (shirts + G.CROWD_HAIR + G.CROWD_SKIN + G.CROWD_SEATS[0]
-           + G.CROWD_SEATS[1])
-    return cfg, pal
+    return (float(seat_w), float(seat_h), G.CROWD_JUMP, G.CROWD_JUMP_HZ,
+            G.CROWD_GOAL_JUMP, G.CROWD_GOAL_HZ, G.CROWD_WAVE,
+            float(flag_w), float(flag_h), float(G.CROWD_FILL),
+            float(G.CROWD_FLAGS), float(body_w), float(body_h),
+            float(G.CROWD_HEAD), float(G.CROWD_STEP), float(G.CROWD_POLE),
+            G.CROWD_SHADE_TOP, G.CROWD_SHADE_BOTTOM, G.CROWD_VAR_MIN,
+            G.CROWD_VAR_RANGE, G.CROWD_HEAD_CUT, G.CROWD_OUTLINE,
+            G.CROWD_SHOULDER_EDGE, G.CROWD_SHOULDER_SHADE)
+
+
+def _pal():
+    """Colours of the kernel: shirts, skins, hairs, steps, flags and rim."""
+    colours = (G.CROWD_SHIRTS + G.CROWD_SKINS + G.CROWD_HAIRS
+               + (G.CROWD_TREAD, G.CROWD_RISER, G.CROWD_EDGE,
+                  G.CROWD_POLE_COLOUR, G.CROWD_FLAG_WHITE)
+               + G.CROWD_FLAG_COLOURS + (G.CROWD_OUTLINE_COLOUR,))
+    return tuple(channel for colour in colours for channel in colour)
 
 
 def scene(celebration, clock):

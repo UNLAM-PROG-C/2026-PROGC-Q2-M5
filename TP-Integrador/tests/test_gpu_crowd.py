@@ -18,6 +18,10 @@ from fdc.gpu import crowd
 
 WIDTH, HEIGHT = 320, 96      # small band: the numpy version is slow on purpose
 TOLERANCE = 2                # channel difference allowed between the two
+EDGE_SHARE = 0.05            # % of pixels that may sit on a shape edge: the
+                             # sines of the GPU and numpy differ in the last
+                             # bits and one pixel of an edge can flip
+QUARTER = 4.0                # the mean difference must stay well under it
 BACKGROUND = (12, 40, 24)    # "grass" behind the band: it must disappear
 SAME_BACKGROUND = 1.0        # % of pixels that may keep the background
 TIME = 1.7                   # s of the animation
@@ -105,20 +109,19 @@ class CrowdGpuTest(unittest.TestCase):
         cls.gpu = backend.Gpu()
         cls.cpu = cpu_ref.Cpu()
 
+    def _check(self, one, other):
+        """The pictures match but for the stray pixel of a shape edge."""
+        diff = np.abs(one.astype(np.int32) - other.astype(np.int32))
+        edges = float((diff.max(axis=2) > TOLERANCE).mean()) * 100.0
+        self.assertLessEqual(edges, EDGE_SHARE)
+        self.assertLess(float(diff.mean()), TOLERANCE / QUARTER)
+
     def test_gpu_and_numpy_agree(self):
-        image = band()
-        gpu = paint(self.gpu, image)
-        cpu = paint(self.cpu, image)
-        diff = np.abs(gpu.astype(np.int32) - cpu.astype(np.int32))
-        self.assertLessEqual(int(diff.max()), TOLERANCE)
-        self.assertLess(float(diff.mean()), TOLERANCE / 4.0)
+        self._check(paint(self.gpu, band()), paint(self.cpu, band()))
 
     def test_gpu_animates_like_numpy(self):
-        image = band()
-        gpu = paint(self.gpu, image, t=LATER)
-        cpu = paint(self.cpu, image, t=LATER)
-        diff = np.abs(gpu.astype(np.int32) - cpu.astype(np.int32))
-        self.assertLessEqual(int(diff.max()), TOLERANCE)
+        self._check(paint(self.gpu, band(), t=LATER),
+                    paint(self.cpu, band(), t=LATER))
 
 
 if __name__ == "__main__":
