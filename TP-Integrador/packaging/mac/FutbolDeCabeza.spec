@@ -14,8 +14,7 @@ analysis = Analysis(
 )
 # assets/ without the logo proposals and the iconset (design material only).
 assets = Tree(os.path.join(ROOT, "assets"), prefix="assets",
-              excludes=["icono/propuestas", "icono/propuestas/*",
-                        "icono/mac", "icono/mac/*"])
+              excludes=["propuestas", "mac", "__pycache__"])
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True,
           name="FutbolDeCabeza", console=False, target_arch="arm64")
