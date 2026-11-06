@@ -35,7 +35,9 @@ TIME = 1.7                    # s of the animation of the shot
 SIDE = 0                      # the left stand is celebrating
 BOOST = 1.0                   # how hard it is celebrating (0-1)
 FRAMES = 3                    # runs timed to warm up the buffers
+TIMED = 5                     # runs timed for the report (the mean wins)
 CPU = "--cpu"                 # argument: only the numpy version
+OUT_FLAG = "--out"            # argument: folder of the PNGs
 CUDA = "gpu"                  # name of the CUDA version
 NUMPY = "cpu"                 # name of the fallback
 WINDOW = (64, 64)             # dummy window (pygame needs one for surfaces)
@@ -54,14 +56,24 @@ def main(argv):
     gpu_env.setup()
     pygame.init()
     pygame.display.set_mode(WINDOW)
-    os.makedirs(FOLDER, exist_ok=True)
+    folder = _folder(argv)
+    os.makedirs(folder, exist_ok=True)
     image = _band()
     cfg, pal = crowd.params()
     names = [NUMPY] if CPU in argv else [CUDA, NUMPY]
-    results = {name: _run(name, image, cfg, pal) for name in names}
+    results = {name: _run(name, image, cfg, pal, folder) for name in names}
     _report(results)
     _compare(results)
     return 0
+
+
+def _folder(argv):
+    """Folder of the PNGs: `--out DIR` or the default one."""
+    if OUT_FLAG in argv:
+        index = argv.index(OUT_FLAG)
+        if index + 1 < len(argv):
+            return argv[index + 1]
+    return FOLDER
 
 
 def _band():
@@ -81,16 +93,18 @@ def _ops(name):
     return cpu_ref.Cpu(), NUMPY
 
 
-def _run(name, image, cfg, pal):
+def _run(name, image, cfg, pal, folder):
     """Paints one band, times it and saves it: (seconds, image)."""
     ops, real = _ops(name)
     for _ in range(FRAMES):
         ops.tribuna(image, TIME, SIDE, BOOST, cfg, pal)
     start = time.perf_counter()
-    out = ops.tribuna(image, TIME, SIDE, BOOST, cfg, pal)
-    elapsed = time.perf_counter() - start
-    _save(out, f"tribuna-{real}.png")
-    _save(_zoom(out), f"tribuna-{real}-zoom.png")
+    out = image
+    for _ in range(TIMED):
+        out = ops.tribuna(image, TIME, SIDE, BOOST, cfg, pal)
+    elapsed = (time.perf_counter() - start) / TIMED
+    _save(out, f"tribuna-{real}.png", folder)
+    _save(_zoom(out), f"tribuna-{real}-zoom.png", folder)
     return elapsed, out
 
 
@@ -105,10 +119,10 @@ def _zoom(image):
     return np.transpose(pygame.surfarray.array3d(big), (1, 0, 2))
 
 
-def _save(image, name):
+def _save(image, name, folder):
     """Writes an RGB array as a PNG."""
     surface = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
-    pygame.image.save(surface, os.path.join(FOLDER, name))
+    pygame.image.save(surface, os.path.join(folder, name))
 
 
 def _report(results):
