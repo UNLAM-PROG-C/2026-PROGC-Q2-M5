@@ -70,6 +70,7 @@ class PostFx:
         self.enabled = self.allowed
         self.level, self.force_cpu = _choices(options)
         self.ops, self.error = None, None
+        self.reasons = []            # why the GPU was not used (screen)
         self.device = "CPU"          # set again when the backend starts
         self._init_buffers(size)
         self._init_effects()
@@ -130,12 +131,13 @@ class PostFx:
         if not self.enabled:
             return
         try:
-            self.ops = _make_ops(self.force_cpu)
+            self.ops = _make_ops(self.force_cpu, self.reasons)
             self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
         except Exception as exc:      # pylint: disable=broad-except
             self.error = str(exc)
             self.enabled = False
         self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
+        backend.log_backend(self.mode, self.device)
         self._reset_backend()
 
     def _reset_backend(self):
@@ -308,7 +310,8 @@ class PostFx:
         if not self.enabled:
             return self.mode
         self.force_cpu = self.mode == "gpu"
-        self.ops = _make_ops(self.force_cpu)
+        self.reasons.clear()
+        self.ops = _make_ops(self.force_cpu, self.reasons)
         self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
         self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
         self._reset_backend()       # the governor of the new backend
@@ -379,6 +382,7 @@ class PostFx:
         else:
             span = frames[-1][0] - frames[0][0]
             self.player = replay.ReplayPlayer(frames, self.clock, span)
+        self.player.from_goal = True    # the screen closes it with the window
 
     def _celebrate(self):
         """Throws the confetti that is due and starts the replay at the end."""
@@ -507,6 +511,29 @@ class PostFx:
             span = frames[-1][0] - frames[0][0]
             self.player = replay.ReplayPlayer(frames, self.clock, span)
         return True
+
+    def start_goal_replay(self):
+        """Starts the replay (or the VAR) of the goal the tally announced.
+
+        The clip is the one around the goal (not "the last seconds"): the
+        screen calls it when the simulation says the replay begins.
+        """
+        if not self.enabled or self.pending is None:
+            return False
+        self.celebration = None
+        self.confetti.clear()
+        self._start_replay()
+        return self.player is not None
+
+    def drive_replay(self, progress):
+        """Puts the clip at `progress` (0..1) of the simulation's window."""
+        if self.player is not None:
+            self.player.start = self.clock - progress * self.player.duration
+
+    def end_goal_replay(self):
+        """The window of the goal replay is over: back to the live match."""
+        if getattr(self.player, "from_goal", False):
+            self.player = None
 
     def skip(self):
         """Jumps the party of the goal and its replay: the match comes back."""
@@ -795,7 +822,14 @@ class PostFx:
         data["active"] = self.active_effects()
         data["other"] = self.other_measurement()
         data["gpu"] = self.device
+        data["reason"] = self.gpu_failure()
         return data
+
+    def gpu_failure(self):
+        """Why the GPU is not used (None if it works or was not wanted)."""
+        if self.mode == "gpu" or not self.reasons:
+            return None
+        return self.reasons[-1]
 
 
 def _choices(options):
@@ -825,14 +859,30 @@ def _is_on(value):
     return bool(value)
 
 
-def _make_ops(force_cpu=False):
-    """GPU if PyCUDA compiles the kernels here, numpy otherwise."""
+def _make_ops(force_cpu=False, reasons=None):
+    """GPU if PyCUDA loads the kernels here, numpy otherwise.
+
+    The reason of a failure goes to the log and to `reasons` (a list the
+    caller shows on screen). A build without PyCUDA (the CPU zip) is not a
+    failure: it is silent.
+    """
     if force_cpu or not config.Gpu.ENABLED:
         return cpu_ref.Cpu()       # FDC_GPU=0: never import PyCUDA
     try:
         return backend.Gpu()
-    except Exception:              # pylint: disable=broad-except
-        return cpu_ref.Cpu()
+    except ModuleNotFoundError as exc:
+        if not str(exc.name).startswith("pycuda"):
+            _report(exc, reasons)
+    except Exception as exc:       # pylint: disable=broad-except
+        _report(exc, reasons)
+    return cpu_ref.Cpu()
+
+
+def _report(exc, reasons):
+    """Logs why the GPU is not used and keeps the reason for the screen."""
+    reason = backend.failure_reason(exc)
+    if reasons is not None:
+        reasons.append(reason)
 
 
 def to_array(surface):

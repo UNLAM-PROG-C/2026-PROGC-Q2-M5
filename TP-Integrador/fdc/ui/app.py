@@ -76,6 +76,10 @@ DEBUG_MARGIN = 8            # px between the box and the screen edge
 DEBUG_TEXT_X = 20           # px: x of the text
 DEBUG_TEXT_TOP = 2          # px: gap of the first line
 DEBUG_ALPHA = 225           # opacity of the panel background
+NOTICE_TIME = 12.0          # s the "GPU not available" banner stays
+NOTICE_HEIGHT = 64          # px: height of that banner
+NOTICE_X = 10               # px: margin of its text
+NOTICE_CHARS = 110          # characters per line of the banner
 DEBUG_BORDER = 2            # px: thickness of the golden frame
 LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
               "%(name)s: %(message)s")
@@ -210,6 +214,17 @@ class _NoFx:
         del var
         return False
 
+    def start_goal_replay(self):
+        """No replay without the effects: the screen draws it plain."""
+        return False
+
+    def drive_replay(self, progress):
+        """Nothing to drive without the effects."""
+        del progress
+
+    def end_goal_replay(self):
+        """Nothing to close without the effects."""
+
     def active_effects(self):
         """Nothing is active: the effects are off."""
         return "ninguno"
@@ -284,6 +299,8 @@ class App:
         self.input = ui_input.InputTracker()
         self.postfx = postfx.PostFx(self.options, self.screen.get_size()) \
             if postfx else _NoFx()
+        if self.postfx.enabled and self.postfx.ops is None:
+            self.postfx.start()          # CUDA check now: banner + log
 
     def _init_state(self):
         options = self.options
@@ -438,10 +455,20 @@ class App:
         if self.show_debug:
             self.draw_debug(self.screen)
         self.overlay.draw(self.screen, self._overlay_info())
+        self._draw_gpu_notice(self.screen)
         pygame.display.flip()
         if self.web and not self.first_frame_shown:
             self.first_frame_shown = True
             browser.hide_loading_screen()
+
+    def _draw_gpu_notice(self, surf):
+        """Banner for the first seconds: why the effects run on the CPU."""
+        why = getattr(self.postfx, "gpu_failure", lambda: None)()
+        self.notice_left -= self.last_dt
+        if not why or self.notice_left <= 0:
+            return
+        _draw_notice_box(surf, ("GPU no disponible: los efectos usan la CPU",
+                                why))
 
     def run(self):
         try:
@@ -512,6 +539,7 @@ class App:
         """Remote session and overlay of this run (F7)."""
         self.remote = sysinfo.is_remote_session()
         self.overlay = gpu_overlay.Overlay(self._overlay_mode())
+        self.notice_left = NOTICE_TIME   # s left of the "no GPU" banner
 
     def _overlay_key(self):
         """F2: cycles the overlay; the key is never 'swallowed'."""
@@ -722,3 +750,16 @@ def setup_logging():
         pass
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT,
                         handlers=handlers, force=True)
+
+
+def _draw_notice_box(surf, lines):
+    """Dark strip at the top with the lines of the "no GPU" banner."""
+    box = pygame.Surface((config.LOGICAL_WIDTH, NOTICE_HEIGHT),
+                         pygame.SRCALPHA)
+    box.fill((*palette.INK, DEBUG_ALPHA))
+    surf.blit(box, (0, 0))
+    for k, line in enumerate(lines):
+        assets.draw_text(surf, line[:NOTICE_CHARS], layout.FONT_SMALL,
+                         (NOTICE_X, NOTICE_X + k * DEBUG_LINE_H),
+                         palette.GOLD if k == 0 else palette.CREAM,
+                         anchor="topleft", outline=None)

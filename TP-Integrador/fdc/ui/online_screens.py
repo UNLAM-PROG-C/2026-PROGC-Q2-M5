@@ -1066,6 +1066,7 @@ class OnlineMatchScreen(match_screens.MatchScreen):
     OVERLAY_TITLE_Y = 40               # title, from the sign top (px)
     OVERLAY_TEXT_Y = 92                # first line, from the sign top (px)
     READY_LINES_Y = 156                # ready line of each player (px)
+    REPLAY_CAN_SKIP = False            # the server decides: no S here
 
     def __init__(self, app, start):
         players = sorted(start["players"], key=lambda p: p["side"])
@@ -1116,6 +1117,9 @@ class OnlineMatchScreen(match_screens.MatchScreen):
             self.app.sprites.warm(cid)
         self.app.input.capture = True
         self.app.fx.clear()
+        # The effects are this player's: no leftovers of the last match.
+        self.app.postfx.clear()
+        self.app.postfx.viewer = self.viewer
         self.waiting = None
 
     def on_link(self, msgs, state):

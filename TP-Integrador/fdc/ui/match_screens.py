@@ -65,10 +65,12 @@ TEST_COMMANDS = {"f7": (protocol.CMD_DEBUG_POWER, "spawn"),
                  "f12": (protocol.CMD_DEBUG_CRASH, None)}
 TEST_STEPS = {"f5": -1, "f6": 1}   # test mode keys that change the power
 # --- replay and VAR (F5)
-REPLAY_SIGN_Y = 56                 # px: height of the sign on screen
-REPLAY_HINT_Y = 84                 # px: below the sign (how to go back)
-REPLAY_HINT = "S: volver al partido"   # key that skips the replay
-REPLAY_BLINK_HZ = 3                # blinks per second of that sign
+# Below the scoreboard (it ends at 96 px): the sign is drawn over the pitch.
+REPLAY_SIGN_Y = 118                # px: height of the sign on screen
+REPLAY_HINT_Y = 148                # px: below the sign (seconds left)
+REPLAY_HINT = "  -  S: volver al partido"   # key that skips the replay
+# s left of the replay window (the countdown under the sign).
+REPLAY_COUNTDOWN = "{0} s"
 REPLAY_SIGNS = {replay.REPLAY_KIND: "REPETICIÓN",
                 replay.REVIEW: "VAR: REVISANDO...",
                 replay.CONFIRMED: "GOL CONFIRMADO"}
@@ -84,6 +86,7 @@ EVENT_HANDLERS = {
     protocol.EV_GOLDEN_GOAL: "_golden_goal",
     protocol.EV_KICKOFF: "_kickoff",
     protocol.EV_GOAL: "_goal",
+    protocol.EV_REPLAY: "_goal_replay",
     protocol.EV_MATCH_END: "_match_end",
     protocol.EV_PAUSED: "_paused",
     protocol.EV_POWER: "_power",
@@ -453,6 +456,7 @@ class MatchScreen(screens.Screen):
     KICKOFF_BANNER = 0.8               # s the go sign is shown
     GOAL_SHAKE = 0.25                  # s the camera shakes with a goal
     SKIP_KEY = pygame.K_s              # jumps the party and the replay
+    REPLAY_CAN_SKIP = True             # S cuts the replay (local only)
     CONFETTI_INSET = 50                # px from the pitch side for confetti
     CONFETTI_HEIGHT = 120              # px above the floor for that confetti
     FINAL_WAIT = 1.8                   # s from final whistle to the result
@@ -496,6 +500,7 @@ class MatchScreen(screens.Screen):
         self.waiting = None    # "start" | "restart" while not confirmed
         self._init_pause()
         self._init_counters()
+        self._init_replay()
 
     def _init_pause(self):
         # None | "requested" | "paused" | "resuming".
@@ -514,6 +519,20 @@ class MatchScreen(screens.Screen):
         self.ignored_events = 0
         self.test_sel = 0
         self.expected_cid = {}
+
+    def _init_replay(self):
+        """Replay of the goal: the simulation says when it starts."""
+        self.replay_history = replay.StateHistory()
+        self.replay_seconds = None     # s of the window announced
+        self.goal_t = None             # time of the goal on this screen
+        self.plain = None              # replay without the effects
+
+    def _reset_replay(self):
+        """New match: nothing of the previous goal is shown again."""
+        self.replay_history.clear()
+        self.replay_seconds = None
+        self.goal_t = None
+        self.plain = None
 
     # ------------------------------------------------------------ cycle
     def enter(self):
@@ -539,6 +558,7 @@ class MatchScreen(screens.Screen):
         self.renderer.reset()
         self.app.fx.clear()
         self.toasts.clear()
+        self._reset_replay()
         cid = self.app.link.send_command(cmd, **self._start_payload())
         self.expected_cid[cid] = cmd
         self.waiting = "start" if cmd == protocol.CMD_START else "restart"
@@ -724,6 +744,7 @@ class MatchScreen(screens.Screen):
         self.app.audio.play("whistle")
 
     def _goal(self, m):
+        self.goal_t = self.t            # the replay looks back from here
         self.renderer.goal_banner = (config.MatchRules.GOAL_CELEBRATION, m)
         gx = (self.CONFETTI_INSET if m["side"] == 0
               else config.Arena.WIDTH - self.CONFETTI_INSET)
@@ -732,6 +753,20 @@ class MatchScreen(screens.Screen):
                               palette.GOLD])
         self.app.fx.shake = self.GOAL_SHAKE
         self.app.audio.play("goal")
+
+    def _goal_replay(self, m):
+        """The simulation says the replay starts: show it (or the sign)."""
+        self.replay_seconds = float(m["seconds"])
+        self.renderer.goal_banner = None    # the replay takes the screen
+        if not self.app.postfx.start_goal_replay():
+            self.plain = self._plain_replay()
+
+    def _plain_replay(self):
+        """Replay of the goal drawn as is: the effects are off (F10)."""
+        frames = self.replay_history.window(self.goal_t or self.t)
+        if len(frames) < replay.MIN_FRAMES:
+            return None
+        return replay.ReplayPlayer(frames, self.t, self.replay_seconds)
 
     def _match_end(self, m):
         self.end_info = m
@@ -889,19 +924,26 @@ class MatchScreen(screens.Screen):
 
     def draw_match(self, surf, view, st):
         """World (from 'view'), effects, scoreboard, signs and notices."""
+        self.replay_history.feed(st, self.t)
+        window = self.goal_window(st)
         mode = self.app.postfx.replay_mode()
-        off = (0, 0) if mode else self.app.fx.shake_offset()
+        view = self._replay_view(st, view, window)
         world = self.app.postfx.begin(surf, st)
+        self._draw_world(world, view, mode)
+        self.app.postfx.finish(surf, self.app.last_dt)
+        self.renderer.draw_hud(surf, st)
+        self.renderer.draw_center_messages(surf, st)
+        self._draw_replay_sign(surf, window)
+        self._draw_toasts(surf)
+
+    def _draw_world(self, world, view, mode):
+        """Pitch, players and ball, with the shake or the VAR zoom."""
+        off = (0, 0) if mode else self.app.fx.shake_offset()
         self.renderer.draw_world(world, view, off)
         if mode:
             self._replay_frame(world)
         else:
             self.app.fx.draw(world, off)
-        self.app.postfx.finish(surf, self.app.last_dt)
-        self._draw_replay_sign(surf)
-        self.renderer.draw_hud(surf, st)
-        self.renderer.draw_center_messages(surf, st)
-        self._draw_toasts(surf)
 
     def _replay_frame(self, world):
         """The VAR zooms on the ball before the chain draws the review."""
@@ -909,26 +951,60 @@ class MatchScreen(screens.Screen):
         if centre is not None:
             zoom_around(world, centre)
 
-    def _draw_replay_sign(self, surf):
-        """Sign of the replay or the VAR (the HUD stays in live)."""
-        mode = self.app.postfx.replay_mode()
-        if mode is None:
-            return
-        key = (mode if mode == replay.REPLAY_KIND
-               else self.app.postfx.replay_stage())
-        blink = int(self.t * REPLAY_BLINK_HZ) % 2
-        if blink and key != replay.CONFIRMED:
-            return
-        assets.draw_text(surf, REPLAY_SIGNS.get(key, ""), layout.FONT_LARGE,
-                         (layout.CENTER_X, REPLAY_SIGN_Y), palette.WHITE,
-                         outline=palette.INK)
-        self._draw_skip_hint(surf)
+    def goal_window(self, st):
+        """(progress, seconds left) of the replay window, or None if closed.
 
-    def _draw_skip_hint(self, surf):
-        """Small line that says how to go back to the match."""
-        assets.draw_text(surf, REPLAY_HINT, layout.FONT_SMALL,
+        The simulation holds the goal for `seconds` and then resumes, so the
+        same numbers drive every client: the replay never leaks into the
+        live match, however slow the machine is.
+        """
+        seconds = self.replay_seconds
+        if not seconds or st is None or st["phase"] != protocol.PHASE_GOAL:
+            return None
+        left = st["phase_left"]
+        if left <= 0 or left > seconds:
+            return None
+        return (seconds - left) / seconds, left
+
+    def _replay_view(self, st, view, window):
+        """World to draw: the replay wins over the live view."""
+        if window is None:
+            self._close_replay()
+            return view
+        self.app.postfx.drive_replay(window[0])
+        if self.app.postfx.enabled:
+            return self.app.postfx.view_state(st)
+        if self.plain is None:
+            return view          # nothing to show: the sign says it all
+        return self.plain.state_at_progress(window[0])
+
+    def _close_replay(self):
+        """The window is closed: nothing of the replay is drawn any more."""
+        self.plain = None
+        self.app.postfx.end_goal_replay()
+
+    def _draw_replay_sign(self, surf, window):
+        """Sign of the replay (or the VAR) with the seconds left."""
+        if window is None:
+            return
+        assets.draw_text(surf, REPLAY_SIGNS.get(self._replay_key(), ""),
+                         layout.FONT_LARGE, (layout.CENTER_X, REPLAY_SIGN_Y),
+                         palette.WHITE, outline=palette.INK)
+        assets.draw_text(surf, self._replay_note(window[1]), layout.FONT_SMALL,
                          (layout.CENTER_X, REPLAY_HINT_Y), palette.INK,
                          outline=palette.WHITE)
+
+    def _replay_key(self):
+        """Sign on top: the replay, the VAR or its verdict."""
+        mode = self.app.postfx.replay_mode()
+        if mode is None or mode == replay.REPLAY_KIND:
+            return replay.REPLAY_KIND
+        return self.app.postfx.replay_stage()
+
+    def _replay_note(self, left):
+        """Countdown under the sign (and how to skip it, in local mode)."""
+        note = REPLAY_COUNTDOWN.format(math.ceil(left))
+        return note + REPLAY_HINT if self.REPLAY_CAN_SKIP else note
 
     def _draw_waiting(self, surf):
         surf.blit(self.app.background, (0, 0))

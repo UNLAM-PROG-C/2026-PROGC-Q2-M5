@@ -8,6 +8,8 @@ shape h x w x 3) and the intermediate light buffers as float32.
 `fdc.gpu.cpu_ref.Cpu` has the same methods with numpy, so the tests compare
 both and the game falls back to the CPU when there is no CUDA.
 """
+import hashlib
+import logging
 import os
 
 import numpy as np
@@ -21,6 +23,9 @@ BLOCK1D = (32, 1, 1)            # for the kernels with one index (particles)
 COMPILER_OPTIONS = ["-std=c++17", "--use_fast_math"]
 DEFAULT_ARCH = "sm_120"         # RTX 50 series; it is detected at runtime
 KERNEL_FILE = "kernels.cu"      # the CUDA source, next to this module
+FATBIN_FILE = "kernels.fatbin"  # the same, compiled (tools/build_kernels)
+HASH_FILE = "kernels.sha256"    # sha256 of the .cu the fatbin comes from
+REASON_MAX = 160                # characters of the failure shown on screen
 MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
@@ -39,6 +44,44 @@ def kernel_source():
     """The CUDA source as a string (read once per call: it is small)."""
     with open(kernel_path(), encoding="utf-8") as fh:
         return fh.read()
+
+
+def source_hash():
+    """sha256 (hex) of the CUDA source."""
+    return hashlib.sha256(kernel_source().encode("utf-8")).hexdigest()
+
+
+def prebuilt_path():
+    """Path of the compiled kernels, or None if missing or out of date.
+
+    The fatbin is only trusted when the hash saved at build time is the one
+    of the current `kernels.cu`; otherwise the source is compiled (dev PCs).
+    """
+    folder = os.path.dirname(os.path.abspath(__file__))
+    fatbin = os.path.join(folder, FATBIN_FILE)
+    try:
+        with open(os.path.join(folder, HASH_FILE), encoding="ascii") as fh:
+            saved = fh.read().strip()
+    except OSError:
+        return None
+    if os.path.isfile(fatbin) and saved == source_hash():
+        return fatbin
+    return None
+
+
+def failure_reason(exc):
+    """One line for the player: why the GPU is not used (also logged)."""
+    text = " ".join(str(exc).split()) or type(exc).__name__
+    reason = f"{type(exc).__name__}: {text}"[:REASON_MAX]
+    logging.getLogger("fdc.gpu").warning(
+        "GPU no disponible, se usan los efectos en CPU. Motivo: %s", reason)
+    return reason
+
+
+def log_backend(mode, device):
+    """One log line with the backend the effects run on."""
+    logging.getLogger("fdc.gpu").info(
+        "efectos: backend %s (%s)", mode.upper(), device)
 
 
 def available():
@@ -102,10 +145,17 @@ class Gpu(primitives.Primitives):
         import pycuda.driver as drv
         self.driver = drv
         self.arch = arch or _auto_arch(drv)
-        self.module = pycuda.compiler.SourceModule(
-            kernel_source(), arch=self.arch, options=COMPILER_OPTIONS)
+        self.module = self._load_module(arch, pycuda.compiler)
         self._fns = {}
         self._buffers = {}
+
+    def _load_module(self, arch, compiler):
+        """Compiled kernels if they match; else nvcc compiles the source."""
+        fatbin = None if arch else prebuilt_path()
+        if fatbin:
+            return self.driver.module_from_file(fatbin)
+        return compiler.SourceModule(
+            kernel_source(), arch=self.arch, options=COMPILER_OPTIONS)
 
     # ------------------------------------------------------------- plumbing
     def _fn(self, name):

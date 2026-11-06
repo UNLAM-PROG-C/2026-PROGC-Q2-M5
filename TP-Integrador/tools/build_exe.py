@@ -17,6 +17,7 @@ modules. Everything else is the same command.
 import argparse
 import os
 import shutil
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +39,13 @@ EXTRA_DATA = (("fdc/online/panel.html", "fdc/online"),)
 ASSETS_SKIP = (os.path.join("icono", "propuestas"),
                os.path.join("icono", "mac"))
 # The CUDA source of the kernels: only the modes with effects in the GPU.
-CUDA_DATA = ("fdc/gpu/kernels.cu", "fdc/gpu")
+CUDA_DATA = (("fdc/gpu/kernels.cu", "fdc/gpu"),
+             ("fdc/gpu/kernels.fatbin", "fdc/gpu"),
+             ("fdc/gpu/kernels.sha256", "fdc/gpu"))
+# DLLs that pycuda._driver imports: they must sit next to the exe (the pip
+# nvidia package keeps them in a subfolder the loader does not search).
+CUDA_DLLS = (os.path.join("nvidia", "cu13", "bin", "x86_64",
+                         "curand64_10.dll"),)
 MODES = {
     "cpu": {
         "suffix": "cpu",
@@ -49,8 +56,9 @@ MODES = {
     },
     "full": {
         "suffix": "full",
-        "data": (CUDA_DATA,),
+        "data": CUDA_DATA,
         "hidden": ("pycuda.driver", "pycuda.autoinit", "pycuda.compiler"),
+        "binaries": CUDA_DLLS,
         "exclude": ("tkinter",),
         "launcher": "jugar-gpu.bat",
     },
@@ -93,6 +101,7 @@ def pyinstaller_args(options):
         args += ["--icon", ICON]
     args += _window_args(options)
     _add_data(args, tuple(asset_pairs()) + EXTRA_DATA + mode["data"])
+    _add_binaries(args, mode.get("binaries", ()))
     _add_modules(args, "--hidden-import", mode["hidden"])
     _add_modules(args, "--exclude-module", mode["exclude"])
     return args
@@ -128,6 +137,13 @@ def _add_data(args, pairs):
         args.extend(["--add-data", os.pathsep.join((path, target))])
 
 
+def _add_binaries(args, names):
+    """--add-binary for each DLL of the virtualenv (to the exe folder)."""
+    for name in names:
+        path = os.path.join(sys.prefix, "Lib", "site-packages", name)
+        args.extend(["--add-binary", os.pathsep.join((path, "."))])
+
+
 def _add_modules(args, flag, names):
     """--hidden-import or --exclude-module for each module name."""
     for name in names:
@@ -156,6 +172,13 @@ def _extras(folder, name, launcher):
         raise SystemExit(f"PyInstaller did not create {folder}")
     _write_launcher(os.path.join(folder, launcher), name + EXE_SUFFIX)
     _write_server_file(folder)
+    _drop_duplicate_cuda(folder)
+
+
+def _drop_duplicate_cuda(folder):
+    """PyInstaller also copies the pip nvidia tree (100 MB twice): remove."""
+    shutil.rmtree(os.path.join(folder, "_internal", "nvidia"),
+                  ignore_errors=True)
 
 
 def _write_server_file(folder):
