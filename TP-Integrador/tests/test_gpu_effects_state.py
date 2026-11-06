@@ -180,7 +180,8 @@ class ExposureTest(unittest.TestCase):
 
     def test_one_step_only(self):
         auto = exposure.AutoExposure(1.0)
-        self.assertAlmostEqual(auto.update(40.0), 1.0 + 0.1 * (2.5 - 1.0))
+        self.assertAlmostEqual(auto.update(40.0), 1.0 + 0.1 * (
+            G.AUTOEXPOSURE_MAX - 1.0))
 
     def test_reset(self):
         auto = exposure.AutoExposure(2.0)

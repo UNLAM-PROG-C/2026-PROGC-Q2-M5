@@ -27,6 +27,16 @@ FRAMES = 3              # frames of the chain in each test
 DT = 1 / 60.0           # s between frames
 SEED = 3                # fixed random surface
 NIGHT_FRAMES = 12       # frames with the night mode on
+# Night rules (`guia-visual.md`): below the day, above the black, no burns.
+NIGHT_SETTLE = 40       # frames until the gain of the night stops moving
+WHITE_LEVEL = 255       # a frame as bright as it gets
+NIGHT_TOP = 250         # from here a pixel would look burnt
+NIGHT_WHITE_FLOOR = 100   # even a white frame keeps some light at night
+NIGHT_SHARE = 0.85      # the grass of the night, as a share of the day
+NIGHT_FLOOR = 0.45      # ... and its floor: the pitch is never lost
+NIGHT_BAND = 24         # rows compared to see the fall of the light
+NIGHT_GRADIENT = 6      # gray levels the light falls from the stands down
+NIGHT_GAIN_DELTA = 0.005   # the meter must not see the sky
 FAST_BALL = {"x": 30.0, "y": 20.0, "vx": 900.0, "vy": 0.0}
 SLOW_BALL = {"x": 30.0, "y": 20.0, "vx": 30.0, "vy": 0.0}
 # Art rules: the effects are checked on the size of the real screen.
@@ -92,6 +102,11 @@ def surface(colour=(40, 60, 90)):
     surf.fill(colour)
     pygame.draw.rect(surf, (240, 240, 220), (8, 6, 30, 20))
     return surf
+
+
+def _mean(block):
+    """Mean gray level of a block of pixels."""
+    return float(block.astype(np.float32).mean())
 
 
 class ChainTest(unittest.TestCase):
@@ -465,6 +480,50 @@ class ArtRulesTest(unittest.TestCase):
         top = config.Gpu.CROWD_TOP
         self.assertLess(int(out[:top].max()), FLAT)
         self.assertTrue(np.array_equal(out[top:], self.image[top:]))
+
+    def night(self, image, frames=NIGHT_SETTLE):
+        """The night over `image`, with the auto exposure already settled."""
+        self.fx.fx.night = True
+        for _ in range(frames):
+            out = self.fx._night(image.copy())
+        return out
+
+    def test_night_never_reaches_white(self):
+        """Six lamps and the gain together stay below the white: no burns."""
+        white = np.full_like(self.image, WHITE_LEVEL)
+        out = self.night(white)
+        self.assertLessEqual(int(out.max()), NIGHT_TOP)
+        self.assertGreater(int(out.max()), NIGHT_WHITE_FLOOR)
+
+    def test_night_is_darker_than_the_day(self):
+        """The grass of the night stays well below the level of the day."""
+        out = self.night(self.image)
+        pitch = _mean(out[config.Gpu.PITCH_TOP:])
+        self.assertLess(pitch, FLAT * NIGHT_SHARE)
+        self.assertGreater(pitch, FLAT * NIGHT_FLOOR)
+
+    def test_night_lights_the_pitch_from_the_stands(self):
+        """The light of the lamps falls from the stands to the near line."""
+        out = self.night(self.image)
+        top = config.Gpu.PITCH_TOP
+        near_stands = _mean(out[top:top + NIGHT_BAND])
+        near_line = _mean(out[-NIGHT_BAND:])
+        self.assertGreater(near_stands, near_line + NIGHT_GRADIENT)
+
+    def test_night_meter_reads_only_the_grass(self):
+        """A white sky does not ask the night for more gain than a black one."""
+        dark = postfx.PostFx(options(), (PIXEL_W, PIXEL_H))
+        dark.ops = cpu_ref.Cpu()
+        dark.enabled = True
+        dark.state = ICE_STATE
+        black = self.image.copy()
+        black[:config.Gpu.CROWD_TOP] = 0
+        self.night(self.image)
+        dark.fx.night = True
+        for _ in range(NIGHT_SETTLE):
+            dark._night(black)
+        self.assertAlmostEqual(self.fx.exposure.gain, dark.exposure.gain,
+                               delta=NIGHT_GAIN_DELTA)
 
 
 class ScreenHelpersTest(unittest.TestCase):
