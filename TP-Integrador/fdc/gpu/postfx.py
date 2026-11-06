@@ -108,7 +108,8 @@ class PostFx:
         # The demo is a measurement: it keeps the level the user asked for.
         # Without --quality the CPU may still adapt, so the university demo
         # stays fluid on a notebook without NVIDIA.
-        if getattr(self.options, "demo", False) and self.quality_option:
+        if getattr(self.options, "demo", False) and self.quality_option not in (
+                None, quality.AUTO):
             self.governor.enabled = False
 
     def _forget_device(self):
