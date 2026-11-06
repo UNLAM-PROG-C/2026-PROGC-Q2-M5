@@ -158,7 +158,7 @@ class WebAppTest(unittest.TestCase):
                 MENU_WAIT, "menu")
         labels = [label for label, _ in d.screen().menu.items]
         # No quit button on the web.
-        self.assertEqual(labels, ["Jugar", "Controles", "Poderes"])
+        self.assertEqual(labels, ["Jugar", "Controles", "Poderes", "Opciones"])
         self.check_tournament()
         self.check_local()
         self.check_online_entry()

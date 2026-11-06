@@ -42,6 +42,7 @@ FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
 GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
 OVERLAY_KEY = "f2"          # F2: performance overlay off -> compact -> full
+QUALITY_KEY = "f10"         # F10: quality mode FULL <-> OPTIMIZADO <-> AUTO
 NIGHT_KEY = "n"             # F8 is "give power to P1" in --test mode
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
@@ -177,8 +178,12 @@ class MatchRules:
 # ---------------------------------------------------------------------------
 class PowerRules:
     """When and where the powers appear, and how strong they are."""
-    SPAWN_MIN = 7.0         # s of effective play, at least, between pickups
-    SPAWN_MAX = 10.0        # s at most between two pickups
+    # Powers appear more often than in v1 (they were barely seen in a match):
+    # the two times below are divided by SPAWN_RATE, so 3.5 s - 5 s in v2.
+    SPAWN_BASE = (7.0, 10.0)   # s between pickups at SPAWN_RATE = 1
+    SPAWN_RATE = 2.0           # how many times more often than the base
+    SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
+    SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
     PICKUP_TTL = 6.0        # s a pickup lasts if the ball does not touch it
     PICKUP_RADIUS = 26      # px: pickup radius (touched with the ball)
     # px: horizontal band where pickups appear (away from the goals)
@@ -496,6 +501,48 @@ class Gpu:
     CONFETTI_FLASH_TIME = 0.18   # s the flash takes to fade out
     # --- F10: the replay ends this long after the goal (constant) -----------
     REPLAY_AFTER_GOAL = 0.5   # s of the net the replay shows after the goal
+    # --- F11: quality modes of the projector demo ---------------------------
+    # full: everything at full resolution, no governor (it may stutter);
+    # optimizado: only the cheap stage, no crowd, 4x smaller image;
+    # auto: the governor of the notebook decides (the F7 behaviour).
+    QUALITY_MODE = os.environ.get("FDC_QUALITY_MODE", "full")
+    MODES = ("full", "optimizado", "auto")
+    MODE_NAMES = {"full": "FULL", "optimizado": "OPTIMIZADO", "auto": "AUTO"}
+    MODE_STAGE = {"full": "alta", "optimizado": "baja"}   # level of LEVELS
+    FULL_PUNCH = 1.6          # powers this much stronger in FULL (1.0 = as F4)
+    FULL_PARTICLES = 1.5       # sparks this much brighter in FULL
+    # Strength of the powers per mode (see `PostFx.punch`).
+    MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0}
+    # Gain of the sparks per mode (see `PostFx._sparks`).
+    MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0}
+    OPTIMIZED_LEVEL = 3       # index of QUALITY_LEVELS (divisor 4)
+    CROWD_MODE = "full"       # only here the stands are animated
+    CROWD_PUNCH = 1.6         # extra strength of the crowd on a goal
+    # --- F11: crowd of the stands (a kernel per pixel, FULL only) ----------
+    CROWD_TOP = 112           # px: top of the stands
+    CROWD_BOTTOM = 464        # px: the wall below the last stand
+    CROWD_SEAT = (14, 12)     # px: one seat of the grid (width, height)
+    CROWD_FILL = 86           # % of the seats with somebody
+    CROWD_JUMP = 2.0          # px of the little jump of each person
+    CROWD_JUMP_HZ = 1.7       # jumps per second
+    CROWD_GOAL_JUMP = 5.0     # extra px of the jumping stand on a goal
+    CROWD_GOAL_HZ = 3.2       # extra jumps per second while celebrating
+    CROWD_FLAGS = 9           # one flag every N seats
+    CROWD_FLAG = (10, 9)      # px: width and height of a flag
+    CROWD_WAVE = 2.5          # px the flags flutter
+    CROWD_HAIR = (0.16, 0.12, 0.10)     # rgb (0-1) of the hair
+    CROWD_SKIN = (0.95, 0.78, 0.62)     # rgb (0-1) of the skin
+    CROWD_SEATS = ((0.55, 0.16, 0.18), (0.40, 0.11, 0.14))   # two rows
+    CROWD_BOOST_BURST = 60    # extra paper bits of the stand on a goal
+    # --- F11: extra life of the effects in FULL ---------------------------
+    PULSE_HZ = 7.0            # rad/s of the breathing of the powers (FULL)
+    ICE_PULSE = 0.35          # how much the ice breathes (0-1)
+    BLACKOUT_PULSE = 0.45     # flicker of the blackout (0-1)
+    NIGHT_SWEEP = 40.0        # px the lamps of the night swing (FULL)
+    NIGHT_SWEEP_HZ = 0.9      # rad/s of that swing
+    NIGHT_SWEEP_GAP = 1.1     # rad of phase between two lamps
+    SHOCK_ECHO = 0.62         # radius of the second ring of the goal
+    SHOCK_ECHO_AMP = 0.55     # strength of that second ring
 
 
 # ---------------------------------------------------------------------------

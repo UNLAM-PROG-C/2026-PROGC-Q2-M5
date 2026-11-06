@@ -50,11 +50,20 @@ def lines(info, mode=FULL):
 
 
 def _mode_line(info):
-    """Line 1: mode, real FPS and capacity (work without the limiter)."""
+    """Line 1: quality mode, backend, real FPS and cost of the effects."""
     ms = float(info.get("work_ms") or 0.0)
     capacity = config.Gpu.MEASURE_FPS / ms if ms > 0 else 0.0
-    return (f"MODO: {_mode_name(info)}   ·   FPS {info.get('fps', 0):.0f}"
-            f"   ·   capacidad {capacity:.0f} fps ({ms:.1f} ms/frame)")
+    fx = float(info.get("fx_ms") or 0.0)
+    return (f"CALIDAD {_quality_name(info)}   ·   {_mode_name(info)}   ·   "
+            f"FPS {info.get('fps', 0):.0f}   ·   efectos {fx:.1f} ms"
+            f"   ·   capacidad {capacity:.0f} fps")
+
+
+def _quality_name(info):
+    """Quality mode of the chain: FULL, OPTIMIZADO, AUTO or '-'."""
+    return info.get("quality_name") or config.Gpu.MODE_NAMES.get(
+        info.get("quality_mode"), "-")
+
 
 
 def _mode_name(info):
@@ -129,7 +138,7 @@ def _kernels(data):
     keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
             "histogram", "shock", "fire", "confusion", "confusion_rot",
             "ice_edges", "ice_tint", "blackout", "night", "exposure", "crt",
-            "var")
+            "var", "tribuna")
     return [(key, float(data.get(key) or 0.0)) for key in keys
             if (data.get(key) or 0.0) > 0.0]
 

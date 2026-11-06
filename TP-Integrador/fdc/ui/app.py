@@ -77,7 +77,7 @@ LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
 LOG_FILE = "fdc.log"
 GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY,
                config.MUTE_KEY, config.GPU_TOGGLE_KEY,
-               config.OVERLAY_KEY, config.NIGHT_KEY)
+               config.OVERLAY_KEY, config.NIGHT_KEY, config.QUALITY_KEY)
 
 
 def _yes(v):
@@ -155,6 +155,22 @@ class _NoFx:
         del surface, channel
         return False
 
+    def draw_crowd(self, surface):
+        """No animated stands without the effects."""
+        del surface
+
+    def standing_crowd(self):
+        """No crowd without the effects."""
+        return False
+
+    def cycle_quality_mode(self):
+        """No quality modes without the effects."""
+        return None
+
+    def quality_mode_name(self):
+        """No quality mode without the effects."""
+        return "-"
+
     def finish(self, screen, dt):
         """Nothing to do."""
 
@@ -170,6 +186,7 @@ class _NoFx:
 
     def summary(self):
         return {"mode": "off", "quality": "-", "quality_level": "Q0",
+                "quality_mode": "off", "quality_name": "SIN EFECTOS",
                 "active": "ninguno", "other": None, "gpu": "CPU", "fps": 0.0}
 
     def quality_label(self):
@@ -460,6 +477,7 @@ class App:
             self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
             self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
             self.keys[config.OVERLAY_KEY]: self._overlay_key,
+            self.keys[config.QUALITY_KEY]: self._quality_key,
             self.keys[config.NIGHT_KEY]: self._night_key,
             self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
             self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
@@ -485,6 +503,12 @@ class App:
     def _overlay_key(self):
         """F2: cycles the overlay; the key is never 'swallowed'."""
         self.overlay.cycle()
+        return True
+
+    def _quality_key(self):
+        """F10: next quality mode (FULL -> OPTIMIZADO -> AUTO)."""
+        if self.postfx.cycle_quality_mode() is None:
+            return False
         return True
 
     def _overlay_info(self):

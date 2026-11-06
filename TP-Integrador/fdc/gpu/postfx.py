@@ -17,6 +17,7 @@ from fdc import config
 from fdc import protocol
 from fdc.gpu import backend
 from fdc.gpu import celebration
+from fdc.gpu import crowd
 from fdc.gpu import cpu_ref
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
@@ -27,6 +28,7 @@ from fdc.gpu import quality
 from fdc.gpu import replay
 
 MS_PER_S = 1000.0       # seconds to milliseconds
+CHANNELS = 3            # rgb (the images of the chain)
 WHITE = 255             # channel value of the flash
 LIGHT_FIELDS = 7        # x, y, radius, power, r, g, b
 CLIP = 0.005            # fraction of pixels left outside the contrast range
@@ -44,6 +46,10 @@ _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión
                  "fire": "fuego", "night": "noche", "shock": "onda",
                  "trail": "estela", "crt": "repetición", "var": "VAR"}
 _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
+# Breathing of the powers (F11): the three numbers the formula needs.
+PULSE_ONE = 1.0         # no breathing (OPTIMIZADO and AUTO)
+PULSE_HALF = 0.5        # the sine goes between -PULSE_HALF and +PULSE_HALF
+PULSE_ZERO = 0.0        # an amount of zero means "no breathing"
 
 
 class PostFx:
@@ -73,7 +79,11 @@ class PostFx:
         """F7 state: adaptive quality, demo forcing and the overlay."""
         self.options = options
         self.quality_option = getattr(options, "quality", None)
+        self.quality_mode = quality.mode_of(
+            getattr(options, "quality_mode", None) or config.Gpu.QUALITY_MODE)
         self.governor = quality.QualityGovernor(self.quality_option, "cpu")
+        if self.quality_mode != quality.AUTO:
+            self.governor.enabled = False    # FULL and OPTIMIZADO never adapt
         self.px = 1.0               # scale of the coordinates (Q1..Q3)
         self.skips = ()             # stages the CPU level leaves out
         self.forced = {}            # FxParams forced by the demo director
@@ -119,6 +129,10 @@ class PostFx:
     def _reset_backend(self):
         """Governor, buffers and demo rule for the backend just built."""
         self.governor = quality.QualityGovernor(self.quality_option, self.mode)
+        # F11: only AUTO adapts. FULL keeps the quality it was asked for and
+        # OPTIMIZADO is already the cheap mode, so neither one moves.
+        if self.quality_mode != quality.AUTO:
+            self.governor.enabled = False
         self._forget_device()
         forced = self.quality_option not in (None, quality.AUTO)
         # The demo is a measurement: it keeps the level the user asked for.
@@ -150,6 +164,61 @@ class PostFx:
             return state
         return self.player.state_at(self.clock)
 
+    # ------------------------------------------------------- quality modes
+    def policy(self):
+        """What the quality mode draws now (see `fdc.gpu.quality`)."""
+        return quality.policy(self.quality_mode, self.governor.level)
+
+    def quality_mode_name(self):
+        """FULL / OPTIMIZADO / AUTO, for the overlay and the menu."""
+        return quality.name_of(self.quality_mode)
+
+    def set_quality_mode(self, mode):
+        """Changes the mode (key F10, options menu): returns the new one."""
+        self.quality_mode = quality.mode_of(mode)
+        self.metrics.clear()
+        self._reset_backend()       # a fresh governor for the new mode
+        return self.quality_mode
+
+    def cycle_quality_mode(self):
+        """Next quality mode: full -> optimizado -> auto -> full."""
+        return self.set_quality_mode(quality.next_mode(self.quality_mode))
+
+    def punch(self):
+        """Strength of the powers: everything in FULL, little in OPTIMIZADO."""
+        return self.policy().punch
+
+    def full_quality(self):
+        """True in FULL: the extra animation of the powers (F11)."""
+        return self.policy().name == quality.FULL
+
+    def _pulse(self, amount):
+        """FULL only: the effect breathes (a 0-1 multiplier of its strength)."""
+        if amount <= PULSE_ZERO or not self.full_quality():
+            return PULSE_ONE
+        wave = PULSE_HALF + PULSE_HALF * math.sin(
+            self.clock * config.Gpu.PULSE_HZ)
+        return PULSE_ONE - amount * wave
+
+    def standing_crowd(self):
+        """True if the stands have to be animated this frame."""
+        return bool(self.enabled and self.ops is not None
+                    and self.policy().crowd)
+
+    def draw_crowd(self, surface):
+        """Repaints the band of the stands of `surface` (before the world)."""
+        if not self.standing_crowd():
+            return
+        rect = crowd.band(surface.get_size())
+        if rect.height <= 0:
+            return
+        side, boost = crowd.scene(self.celebration, self.clock)
+        cfg, pal = crowd.params()
+        band = surface.subsurface(rect)
+        image = self._timed(crowd.CROWD, self.ops.tribuna, to_array(band),
+                            self.clock, side, boost, cfg, pal)
+        to_screen(image, band)
+
     def replay_mode(self):
         """None, replay.REPLAY_KIND or replay.VAR_KIND (what is on screen)."""
         return None if self.player is None else self.player.kind
@@ -180,29 +249,40 @@ class PostFx:
             self.metrics.skip()
             return
         start = time.perf_counter()
-        image = to_array(self.target)
-        result = self._scaled(image, dt)
+        result, divisor = self._scaled(dt)
         ms = (time.perf_counter() - start) * MS_PER_S
         self.metrics.frame(ms)
         self.last_ms[self.mode] = ms
         self.governor.frame(ms, dt)
-        to_screen(result, screen)
+        _paint(result, screen, divisor)
 
-    def _scaled(self, image, dt):
-        """Q1..Q3: the chain runs on a smaller image and it is stretched."""
+    def _scaled(self, dt):
+        """The chain on the full image, or on a 1/4 copy of it (Q1..Q3)."""
         divisor = quality.scale(self.level_index())
         if divisor <= 1:
-            return self._chain(image, dt)
+            return self._chain(to_array(self.target), dt), divisor
+        small = pygame.transform.smoothscale(
+            self.target, _small_size(self.target.get_size(), divisor))
         self.px = 1.0 / divisor
         try:
-            small = self._chain(image[::divisor, ::divisor], dt)
+            return self._chain(to_array(small), dt), divisor
         finally:
             self.px = 1.0
-        return _stretch(small, image.shape)
 
     def level_index(self):
-        """0 with the GPU; with the CPU, what the governor decided."""
+        """Resolution index: FULL and OPTIMIZADO are fixed, AUTO adapts."""
+        if self.quality_mode != quality.AUTO:
+            return self.policy().scale
         return 0 if self.mode != quality.CPU else self.governor.level
+
+    def stage_level(self):
+        """Level of LEVELS the chain runs (the mode decides in F11)."""
+        stage = self.policy().stage
+        if stage:
+            return stage
+        order = config.Gpu.QUALITIES      # from the cheapest to the richest
+        return order[min(len(order) - 1 - self.governor.level,
+                         len(order) - 1)]
 
     def quality_label(self):
         """'Q0'..'Q3', for the overlay and the CSV."""
@@ -304,7 +384,7 @@ class PostFx:
     def _chain(self, image, dt):
         self.clock += dt
         self.frame_no += 1
-        self.skips = quality.skipped(self.level_index())
+        self.skips = self.policy().skips
         self.particles.update(dt)
         self.confetti.update(dt)
         self._celebrate()
@@ -327,14 +407,15 @@ class PostFx:
 
     def _stages(self, image, dt):
         """The stages of the fixed order (spec 5.3) plus the extras."""
-        stages = quality.stages(self.level)
+        stages = quality.stages(self.stage_level())
         out = image
         if quality.GLOW in stages and quality.GLOW not in self.skips:
             out = self._timed("glow", self._glow, image)
         out = self._timed("particles", self._sparks, out)
-        if self.confetti.alive():
+        if self.confetti.alive() and "confetti" not in self.skips:
             out = self._timed("confetti", self._confetti, out)
-        out = self._timed("lights", self._lights, out)
+        if quality.LIGHTS in stages and quality.LIGHTS not in self.skips:
+            out = self._timed("lights", self._lights, out)
         out = self._powers(out, dt)
         return self._extras(out, dt, stages)
 
@@ -472,11 +553,24 @@ class PostFx:
             return image
         x, y, age = self.fx.shock
         gpu = config.Gpu
+        punch = self.punch()
         radius = gpu.SHOCK_RADIUS * age
-        amp = gpu.SHOCK_AMP * (1.0 - age / gpu.SHOCK_DURATION)
+        amp = gpu.SHOCK_AMP * punch * (1.0 - age / gpu.SHOCK_DURATION)
+        out = self._timed("shock", self.ops.ripple_ring, image,
+                          x * self.px, y * self.px, radius * self.px,
+                          gpu.SHOCK_WIDTH * punch * self.px, amp)
+        if not self.full_quality():
+            return out
+        return self._shock_echo(out, x, y, radius, amp)
+
+    def _shock_echo(self, image, x, y, radius, amp):
+        """FULL: second ring behind the first one (more drama on a goal)."""
+        gpu = config.Gpu
         return self._timed("shock", self.ops.ripple_ring, image,
-                           x * self.px, y * self.px, radius * self.px,
-                           gpu.SHOCK_WIDTH * self.px, amp)
+                           x * self.px, y * self.px,
+                           radius * gpu.SHOCK_ECHO * self.px,
+                           gpu.SHOCK_WIDTH * self.px,
+                           amp * gpu.SHOCK_ECHO_AMP)
 
     def _fire(self, image):
         """FIRE: hot air around the ball."""
@@ -485,7 +579,7 @@ class PostFx:
         x, y, radius = self.fx.fire
         return self._timed("fire", self.ops.heat_distort, image,
                            x * self.px, y * self.px, radius * self.px,
-                           self.clock, config.Gpu.FIRE_AMP)
+                           self.clock, config.Gpu.FIRE_AMP * self.punch())
 
     def _confusion(self, image):
         """CONFUSION: inverted and slowly turning image."""
@@ -494,7 +588,7 @@ class PostFx:
         out = self._timed("confusion", self.ops.invert, image)
         gpu = config.Gpu
         angle = (math.radians(gpu.CONFUSION_MAX_DEG) * self.fx.confusion
-                 * math.sin(gpu.CONFUSION_SPEED * self.clock))
+                 * self.punch() * math.sin(gpu.CONFUSION_SPEED * self.clock))
         return self._timed("confusion_rot", self.ops.rotate, out, angle)
 
     def _ice(self, image):
@@ -504,15 +598,16 @@ class PostFx:
         gpu = config.Gpu
         out = self._timed("ice_edges", self._ice_edges, image)
         tinted = self.ops.tint(out, gpu.ICE_TINT)
+        amount = gpu.ICE_STRENGTH * self.fx.ice * self.punch()
         return self._timed("ice_tint", self.ops.mix, out, tinted,
-                           gpu.ICE_STRENGTH * self.fx.ice)
+                           min(1.0, amount * self._pulse(gpu.ICE_PULSE)))
 
     def _ice_edges(self, image):
         """Edge glow of the ice (sobel normalised over the whole image)."""
         edges = self.ops.sobel(self.ops.to_gray(image))
         norm = self.ops.sobel_normalize(edges, float(edges.max() or 1.0))
-        return self.ops.edge_glow(image, norm,
-                                  config.Gpu.ICE_EDGES * self.fx.ice)
+        strength = config.Gpu.ICE_EDGES * self.fx.ice * self.punch()
+        return self.ops.edge_glow(image, norm, min(1.0, strength))
 
     def _blackout(self, image):
         """BLACKOUT: only the light around the affected player stays."""
@@ -520,9 +615,10 @@ class PostFx:
             return image
         lights = effects_state.light_array(self.fx.blackout,
                                            config.Gpu.BLACKOUT_RADIUS, 1.0)
+        ambient = config.Gpu.BLACKOUT_AMBIENT * self._pulse(
+            config.Gpu.BLACKOUT_PULSE)
         return self._timed("blackout", self.ops.spotlights, image,
-                           self._scaled_lights(lights),
-                           config.Gpu.BLACKOUT_AMBIENT,
+                           self._scaled_lights(lights), ambient,
                            config.Gpu.BLACKOUT_TINT)
 
     def _night(self, image):
@@ -531,15 +627,31 @@ class PostFx:
             self.exposure.reset()
             return image
         gpu = config.Gpu
-        lights = self._scaled_lights(effects_state.night_lights())
+        lights = self._scaled_lights(self._sweeping(effects_state
+                                                    .night_lights()))
         out = self._timed("night", self.ops.spotlights, image, lights,
                           gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT)
+        return self._expose(out)
+
+    def _expose(self, image):
+        """Auto exposure: the gain found here is used on the next frame."""
         if self.exposure.gain != 1.0:
-            out = self._timed("exposure", self.ops.gain, out,
-                              self.exposure.gain)
-        mean = self.ops.luma_stats(out)[0]
-        self.exposure.update(mean)      # it is applied on the next frame
-        return out
+            image = self._timed("exposure", self.ops.gain, image,
+                                self.exposure.gain)
+        self.exposure.update(self.ops.luma_stats(image)[0])
+        return image
+
+    def _sweeping(self, lights):
+        """FULL: the lamps of the night swing, so the beams move."""
+        if not self.full_quality() or len(lights) == 0:
+            return lights
+        gpu = config.Gpu
+        moved = np.array(lights, np.float32, copy=True)
+        phase = np.arange(len(moved), dtype=np.float32) * gpu.NIGHT_SWEEP_GAP
+        moved[:, 0] += gpu.NIGHT_SWEEP * np.sin(self.clock
+                                                * gpu.NIGHT_SWEEP_HZ + phase)
+        return moved
+
 
     def _extras(self, image, dt, stages):
         """The expensive stages (only in the 'alta' level)."""
@@ -554,7 +666,8 @@ class PostFx:
 
     def _glow(self, image):
         gpu = config.Gpu
-        params = (gpu.EXPOSURE, gpu.GAMMA, gpu.VIGNETTE, gpu.GLOW_STRENGTH)
+        params = (gpu.EXPOSURE, gpu.GAMMA, gpu.VIGNETTE,
+                  gpu.GLOW_STRENGTH * self.punch())
         return self.ops.glow_composite(image, gpu.GLOW_THRESHOLD,
                                        gpu.GLOW_RADIUS, gpu.GLOW_PASSES,
                                        params)
@@ -563,8 +676,8 @@ class PostFx:
         pos, col = self.particles.live()
         if len(pos) == 0:
             return image
-        return self.ops.particles(image, self._scaled_points(pos), col,
-                                  config.Gpu.PARTICLE_GAIN)
+        gain = config.Gpu.PARTICLE_GAIN * self.policy().particles
+        return self.ops.particles(image, self._scaled_points(pos), col, gain)
 
     def _confetti(self, image):
         """Paper bits of the goal celebration (the `confetti` kernel)."""
@@ -576,7 +689,8 @@ class PostFx:
         table = self._scaled_lights(self._light_table())
         if len(table) == 0:
             return image
-        return self.ops.lights(image, table, config.Gpu.LIGHT_GAIN)
+        return self.ops.lights(image, table,
+                               config.Gpu.LIGHT_GAIN * self.punch())
 
     def _heat(self, image):
         gpu = config.Gpu
@@ -628,8 +742,10 @@ class PostFx:
         """Numbers for the overlay and the measurement script."""
         data = self.metrics.summary()
         data["mode"] = self.mode if self.enabled else "off"
-        data["quality"] = self.level
+        data["quality"] = self.stage_level()
         data["quality_level"] = self.quality_label()
+        data["quality_mode"] = self.quality_mode
+        data["quality_name"] = self.quality_mode_name()
         data["active"] = self.active_effects()
         data["other"] = self.other_measurement()
         data["gpu"] = self.device
@@ -640,6 +756,7 @@ def _choices(options):
     """Quality level and whether the numpy version was forced."""
     return (getattr(options, "gpu_quality", None) or config.Gpu.QUALITY,
             bool(getattr(options, "force_cpu", False)))
+
 
 
 def _wanted(options):
@@ -664,7 +781,10 @@ def _make_ops(force_cpu=False):
 
 def to_array(surface):
     """pygame surface -> numpy RGB (h, w, 3)."""
-    return np.transpose(pygame.surfarray.array3d(surface), (1, 0, 2))
+    width, height = surface.get_size()
+    raw = pygame.image.tostring(surface, "RGB")
+    image = np.frombuffer(raw, np.uint8)
+    return image.reshape(height, width, CHANNELS).copy()
 
 
 def to_screen(image, surface):
@@ -672,11 +792,19 @@ def to_screen(image, surface):
     pygame.surfarray.blit_array(surface, np.transpose(image, (1, 0, 2)))
 
 
-def _stretch(image, shape):
-    """Stretches a small RGB image to `shape` (bilinear, through pygame)."""
+def _small_size(size, divisor):
+    """(w, h) of the small image the chain runs on (Q1..Q3)."""
+    width, height = size
+    return (max(1, width // divisor), max(1, height // divisor))
+
+
+def _paint(image, screen, divisor):
+    """Leaves the result on the screen, stretching it if it is small."""
+    if divisor <= 1:
+        to_screen(image, screen)
+        return
     small = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
-    big = pygame.transform.smoothscale(small, (shape[1], shape[0]))
-    return np.transpose(pygame.surfarray.array3d(big), (1, 0, 2))
+    screen.blit(pygame.transform.smoothscale(small, screen.get_size()), (0, 0))
 
 
 def _levels(hist, total, clip=None):
