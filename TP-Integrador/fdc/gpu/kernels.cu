@@ -690,16 +690,22 @@ __global__ void k_heat_distort(const unsigned char *src, unsigned char *dst,
 }
 
 // Onda expansiva del gol: un anillo que crece y deforma lo que atraviesa,
-// con un realce de brillo en el borde del anillo.
+// con un realce de brillo en el borde del anillo. Arriba de 'y_min' (la
+// tribuna y los carteles) el pixel se copia tal cual: nada se mueve ahi.
 #define RIPPLE_PI 3.14159265f   // para el seno del anillo
 #define RIPPLE_GLOW 60.0f       // brillo máximo del anillo (0..255)
 __global__ void k_ripple(const unsigned char *src, unsigned char *dst,
                          int w, int h, float cx, float cy, float radius,
-                         float width, float amp)
+                         float width, float amp, int y_min)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    if (y < y_min) {                       // fuera de la cancha: no se toca
+        dst[i] = src[i]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i + 2];
+        return;
+    }
     float dx = x - cx, dy = y - cy;
     float d = sqrtf(dx * dx + dy * dy);
     float k = (d - radius) / (width > 0.0f ? width : 1.0f);
@@ -712,8 +718,7 @@ __global__ void k_ripple(const unsigned char *src, unsigned char *dst,
         glow = RIPPLE_GLOW * (1.0f - fabsf(k));
     }
     sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);
-    sy = sy < 0 ? 0 : (sy >= h ? h - 1 : sy);
-    int i = (y * w + x) * CH;
+    sy = sy < y_min ? y_min : (sy >= h ? h - 1 : sy);
     int j = (sy * w + sx) * CH;
     for (int c = 0; c < CH; ++c) {
         float v = src[j + c] + glow;

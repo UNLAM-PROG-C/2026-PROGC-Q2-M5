@@ -30,9 +30,13 @@ from fdc.gpu import replay
 MS_PER_S = 1000.0       # seconds to milliseconds
 CHANNELS = 3            # rgb (the images of the chain)
 WHITE = 255             # channel value of the flash
-LIGHT_FIELDS = 7        # x, y, radius, power, r, g, b
+LIGHT_FIELDS = 4        # x, y, radius, power of the ice focus
 CLIP = 0.005            # fraction of pixels left outside the contrast range
-LIGHT_POWER = 0.55      # 0-1: strength of the spotlight of a power
+LIGHT_AMBIENT = 1.0     # 0-1: light far from the focus (the pixel unchanged)
+LIGHT_TINT = (1.0, 1.0, 1.0)   # rgb: the focus brightens, it does not tint
+# The night sky keeps the ambient light of the lamps: with the gain of the
+# auto exposure it would burn to white above the stands.
+NIGHT_SKY = (config.Gpu.NIGHT_AMBIENT,) * CHANNELS
 TOUCH_SPEED = 120.0     # px/s: from this impact a touch makes sparks
 GOAL_SPARKS = 40        # sparks of a goal
 BOMB_SPARKS = 26        # sparks of an explosion
@@ -552,29 +556,19 @@ class PostFx:
         return out
 
     def _shock(self, image):
-        """SHOCK: the ring of a goal grows and warps what it crosses."""
+        """SHOCK: the ring of a goal grows over the pitch and nothing else."""
         if self.fx.shock is None:
             return image
         x, y, age = self.fx.shock
         gpu = config.Gpu
-        punch = self.punch()
-        radius = gpu.SHOCK_RADIUS * age
-        amp = gpu.SHOCK_AMP * punch * (1.0 - age / gpu.SHOCK_DURATION)
-        out = self._timed("shock", self.ops.ripple_ring, image,
-                          x * self.px, y * self.px, radius * self.px,
-                          gpu.SHOCK_WIDTH * punch * self.px, amp)
-        if not self.full_quality():
-            return out
-        return self._shock_echo(out, x, y, radius, amp)
-
-    def _shock_echo(self, image, x, y, radius, amp):
-        """FULL: second ring behind the first one (more drama on a goal)."""
-        gpu = config.Gpu
+        if age >= gpu.SHOCK_DURATION:
+            return image
+        amp = gpu.SHOCK_AMP * self.punch() * (1.0 - age / gpu.SHOCK_DURATION)
         return self._timed("shock", self.ops.ripple_ring, image,
                            x * self.px, y * self.px,
-                           radius * gpu.SHOCK_ECHO * self.px,
-                           gpu.SHOCK_WIDTH * self.px,
-                           amp * gpu.SHOCK_ECHO_AMP)
+                           gpu.SHOCK_RADIUS * age * self.px,
+                           gpu.SHOCK_WIDTH * self.punch() * self.px,
+                           amp, gpu.PITCH_TOP * self.px)
 
     def _fire(self, image):
         """FIRE: hot air around the ball."""
@@ -632,7 +626,13 @@ class PostFx:
                                                     .night_lights()))
         out = self._timed("night", self.ops.spotlights, image, lights,
                           gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT)
-        return self._expose(out)
+        return self._night_sky(self._expose(out))
+
+    def _night_sky(self, image):
+        """NIGHT: the sky keeps the ambient light (exposure burnt it)."""
+        rows = int(config.Gpu.CROWD_TOP * self.px)
+        image[:rows] = self.ops.tint(image[:rows], NIGHT_SKY)
+        return image
 
     def _expose(self, image):
         """Auto exposure: the gain found here is used on the next frame."""
@@ -699,11 +699,23 @@ class PostFx:
                                  config.Gpu.CONFETTI_GAIN)
 
     def _lights(self, image):
-        table = self._scaled_lights(self._light_table())
-        if len(table) == 0:
+        """ICE: soft focus on the frozen player, over the pitch only.
+
+        The focus multiplies the pixel (it never adds white) and the stands
+        above the boards are left out, so no light vein crosses the crowd.
+        """
+        top = min(image.shape[0], self._pitch_row())
+        lamps = self._scaled_lights(self._light_table())
+        if len(lamps) == 0 or top >= image.shape[0]:
             return image
-        return self.ops.lights(image, table,
-                               config.Gpu.LIGHT_GAIN * self.punch())
+        lamps[:, 1] -= top            # measured from the top of the grass
+        image[top:] = self.ops.spotlights(image[top:], lamps,
+                                          LIGHT_AMBIENT, LIGHT_TINT)
+        return image
+
+    def _pitch_row(self):
+        """First row of grass in the image of the chain."""
+        return int(config.Gpu.PITCH_TOP * self.px)
 
     def _heat(self, image):
         """Heat waves: only with the Fuego power (the stands stay still)."""
@@ -726,7 +738,7 @@ class PostFx:
         return self.ops.stretch(image, low, high, config.Gpu.VIGNETTE)
 
     def _light_table(self):
-        """Soft glow of the freeze powers (x, y, radius, power, r, g, b)."""
+        """Lamp of the freeze power: (x, y, radius, power), in screen px."""
         rows = []
         state = self.state or {}
         players = state.get("players") or []
@@ -784,7 +796,7 @@ def _wanted(options):
 
 
 def _no_lights():
-    """Empty table of spotlights (x, y, radius, power, r, g, b)."""
+    """Empty table of lamps (x, y, radius, power)."""
     return np.zeros((0, LIGHT_FIELDS), np.float32)
 
 
@@ -864,13 +876,13 @@ def _last(hist, limit):
 
 
 def _power_light(effect, players):
-    """Soft glow of a freeze power, or None if it is not one."""
+    """Lamp of a freeze power, or None if it is not one."""
     if effect.get("prop") != effects_state.ICE_PROP:
         return None
     for index, player in enumerate(players):
         if _targets_player(effect, index):
             return (player["x"], player["y"], config.Gpu.FREEZE_RADIUS,
-                    LIGHT_POWER, ICE_COLOUR[0], ICE_COLOUR[1], ICE_COLOUR[2])
+                    config.Gpu.FREEZE_GAIN)
     return None
 
 

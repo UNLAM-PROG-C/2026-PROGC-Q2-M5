@@ -127,11 +127,12 @@ class OptimizedTest(unittest.TestCase):
         for stage in HEAVY + (quality.LIGHTS, "crt", "var", "confetti"):
             self.assertIn(stage, policy.skips)
 
-    def test_small_image_and_no_crowd(self):
+    def test_sharp_and_no_crowd(self):
+        """OPTIMIZADO keeps the full resolution: the crowd is not blocky."""
         self.assertEqual(self.fx.level_index(), config.Gpu.OPTIMIZED_LEVEL)
         self.assertFalse(self.fx.policy().crowd)
         self.assertFalse(self.fx.standing_crowd())
-        self.assertGreater(quality.scale(self.fx.level_index()), 1)
+        self.assertEqual(quality.scale(self.fx.level_index()), 1)
 
     def test_weak_powers(self):
         self.assertLess(self.fx.punch(), 1.0)

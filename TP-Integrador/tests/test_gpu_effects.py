@@ -29,6 +29,16 @@ SEED = 3                # fixed random surface
 NIGHT_FRAMES = 12       # frames with the night mode on
 FAST_BALL = {"x": 30.0, "y": 20.0, "vx": 900.0, "vy": 0.0}
 SLOW_BALL = {"x": 30.0, "y": 20.0, "vx": 30.0, "vy": 0.0}
+# Art rules: the effects are checked on the size of the real screen.
+PIXEL_W, PIXEL_H = 1280, 720    # px: the screen the player sees
+FLAT = 130                      # byte of the flat frame of the art tests
+FLAT_GAIN = int(FLAT * config.Gpu.FREEZE_GAIN) + 1   # most the ice may add
+ICE_STATE = {
+    "players": [{"x": 400.0, "y": 640.0}, {"x": 880.0, "y": 640.0}],
+    "ball": SLOW_BALL,
+    "effects": [{"power": "freeze_self", "prop": "frozen", "target": "p0",
+                 "left": 1.8, "dur": 2.0}],
+}
 # Frames needed to save two states (one every REPLAY_STEP s) and to end the
 # replay and the VAR (they last REPLAY_DURATION and VAR_DURATION + VAR_CONFIRM).
 SAVE_FRAMES = int(config.Gpu.REPLAY_STEP / DT) + 2
@@ -423,6 +433,38 @@ class ReplayChainTest(unittest.TestCase):
         self.assertEqual(float(self.fx.heat.grids.sum()), 0.0)
         self.assertEqual(self.fx.heat.recorded, 0)
         self.assertEqual(self.fx.history.saved, [])
+
+
+class ArtRulesTest(unittest.TestCase):
+    """Rules of `guia-visual.md`: no effect touches the stands."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((W, H))
+        self.fx = postfx.PostFx(options(), (PIXEL_W, PIXEL_H))
+        self.fx.ops = cpu_ref.Cpu()
+        self.fx.enabled = True
+        self.fx.state = ICE_STATE
+        self.image = np.full((PIXEL_H, PIXEL_W, 3), FLAT, np.uint8)
+
+    def test_ice_focus_keeps_the_stands(self):
+        out = self.fx._lights(self.image.copy())
+        top = config.Gpu.PITCH_TOP
+        self.assertTrue(np.array_equal(out[:top], self.image[:top]))
+        self.assertLessEqual(int(out.max()), FLAT + FLAT_GAIN)
+        self.assertGreater(int(out[600:680, 380:420].max()), FLAT)
+
+    def test_shock_leaves_the_stands_still(self):
+        self.fx.fx.shock = (640.0, 620.0, 0.05)
+        out = self.fx._shock(self.image.copy())
+        top = config.Gpu.PITCH_TOP
+        self.assertTrue(np.array_equal(out[:top], self.image[:top]))
+
+    def test_night_sky_stays_dark(self):
+        out = self.fx._night_sky(self.image.copy())
+        top = config.Gpu.CROWD_TOP
+        self.assertLess(int(out[:top].max()), FLAT)
+        self.assertTrue(np.array_equal(out[top:], self.image[top:]))
 
 
 class ScreenHelpersTest(unittest.TestCase):

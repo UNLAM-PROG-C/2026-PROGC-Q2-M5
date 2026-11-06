@@ -70,6 +70,15 @@ def _sample(img, sx, sy):
     return img[iy, ix]
 
 
+def _ring_sample(img, grid, centre, d, k, inside, amp, y_min):
+    """Image read by the shock ring: the pixels the ring moves, clipped."""
+    xs, ys = grid
+    off = amp * np.sin(RIPPLE_PI * k)
+    sx = xs + np.trunc(off * (xs - centre[0]) / (d + 1.0))
+    sy = np.maximum(ys + np.trunc(off * (ys - centre[1]) / (d + 1.0)), y_min)
+    return _sample(img, np.where(inside, sx, xs), np.where(inside, sy, ys))
+
+
 def _grid_xy(w, h):
     """Two float32 arrays with the x and the y of every pixel."""
     ys, xs = np.mgrid[0:h, 0:w]
@@ -199,21 +208,20 @@ class Primitives:
         inside = d < rad
         return _sample(img, np.where(inside, sx, xs), np.where(inside, sy, ys))
 
-    def ripple_ring(self, img, cx, cy, radius, width, amp):
-        """Expanding ring of the goal: warp plus a bright edge."""
-        h, w = img.shape[:2]
-        xs, ys = _grid_xy(w, h)
-        dx, dy = xs - cx, ys - cy
-        d = np.sqrt(dx * dx + dy * dy)
+    def ripple_ring(self, img, cx, cy, radius, width, amp, y_min=0.0):
+        """Expanding ring of the goal: warp plus a bright edge.
+
+        Rows above `y_min` (the stands and the boards) come back untouched.
+        """
+        xs, ys = _grid_xy(img.shape[1], img.shape[0])
+        d = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
         k = (d - radius) / (width if width > 0 else 1.0)
         inside = (k > -1.0) & (k < 1.0)
-        off = amp * np.sin(RIPPLE_PI * k)
-        sx = xs + np.trunc(off * dx / (d + 1.0)).astype(np.float32)
-        sy = ys + np.trunc(off * dy / (d + 1.0)).astype(np.float32)
+        v = _ring_sample(img, (xs, ys), (cx, cy), d, k, inside, amp, y_min)
         glow = np.where(inside, RIPPLE_GLOW * (1.0 - np.abs(k)), 0.0)
-        v = _sample(img, np.where(inside, sx, xs),
-                    np.where(inside, sy, ys)).astype(np.float32)
-        return _byte(v + glow[..., None])
+        out = _byte(v + glow[..., None])
+        out[:int(y_min)] = img[:int(y_min)]
+        return out
 
     def trail_blend(self, cur, prev, decay):
         """Pixel-wise maximum of the frame and the decayed previous one."""

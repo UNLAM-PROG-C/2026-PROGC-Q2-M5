@@ -24,6 +24,7 @@ WARP_MEAN = 8.0         # mean difference of a warp (it moves pixels)
 RING_MEAN = 15.0        # the shock ring also adds brightness
 SOFT = 4                # px: the warps are tested on a soft image
 GAIN = 1.0              # light weight
+STAND_ROW = 20          # y of the test frame where the stands end
 
 HAVE_GPU = env.setup() and backend.available()
 REASON = "no CUDA or no toolchain here (see INSTALACION.md)"
@@ -248,6 +249,14 @@ class PowerAndNightTest(unittest.TestCase):
         args = (40.0, 30.0, 12.0, 8.0, 5.0)
         self.assertMean(self.gpu.ripple_ring(self.soft, *args),
                         self.cpu.ripple_ring(self.soft, *args), RING_MEAN)
+
+    def test_shock_ring_keeps_the_stands(self):
+        """Above y_min (the stands and the boards) the pixel is copied."""
+        args = (40.0, 30.0, 12.0, 8.0, 5.0, STAND_ROW)
+        for out in (self.gpu.ripple_ring(self.soft, *args),
+                    self.cpu.ripple_ring(self.soft, *args)):
+            self.assertTrue(np.array_equal(out[:STAND_ROW],
+                                           self.soft[:STAND_ROW]))
 
     def test_trail_blend(self):
         prev = self.img[::-1].copy()

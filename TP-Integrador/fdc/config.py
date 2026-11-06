@@ -406,8 +406,8 @@ class Gpu:
     RIPPLE_AMP = 5.0        # px: depth of the replay ripple
     RIPPLE_PERIOD = 46.0    # px: wavelength of the replay ripple
     TRAIL_ALPHA = 0.35      # s: how much of the previous frame stays
-    FREEZE_LIGHT = (0.45, 0.75, 1.0)   # rgb of the ice spotlight
-    FREEZE_RADIUS = 200.0   # px: radius of the ice spotlight
+    FREEZE_RADIUS = 110.0   # px: radius of the ice spotlight
+    FREEZE_GAIN = 0.22      # 0-1: the ice light multiplies (never adds white)
     BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
     # 80 x 45 cells of 16 px: the grid of the spec (one cell per 16 px).
     HEATMAP_COLS = 80       # cells of the heat map, across
@@ -444,8 +444,8 @@ class Gpu:
     AUTOEXPOSURE_RATE = 0.1       # EMA weight of each frame (0-1)
     SHOCK_DURATION = 1.2      # s of the goal shock wave
     SHOCK_RADIUS = 900.0      # px/s: the ring grows this fast
-    SHOCK_WIDTH = 90.0        # px: thickness of the ring
-    SHOCK_AMP = 14.0          # px: displacement when it starts
+    SHOCK_WIDTH = 50.0        # px: thickness of the ring
+    SHOCK_AMP = 4.5           # px: displacement when it starts (subtle)
     TRAIL_MIN_SPEED = 800.0   # px/s: from here the ball leaves a trail
     TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
     TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
@@ -518,12 +518,15 @@ class Gpu:
     MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0}
     # Gain of the sparks per mode (see `PostFx._sparks`).
     MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0}
-    OPTIMIZED_LEVEL = 3       # index of QUALITY_LEVELS (divisor 4)
+    OPTIMIZED_LEVEL = 0       # index of QUALITY_LEVELS: full resolution; only
+    #                           the cheap stage runs, so OPT stays sharp
     CROWD_MODE = "full"       # only here the stands are animated
     CROWD_PUNCH = 1.6         # extra strength of the crowd on a goal
     # --- F11: crowd of the stands (a kernel per pixel, FULL only) ----------
     CROWD_TOP = 112           # px: top of the stands
     CROWD_BOTTOM = 464        # px: the wall below the last stand
+    PITCH_TOP = 504           # px: first row of grass (below the boards): the
+    #                           effects never warp or light anything above it
     CROWD_SEAT = (22, 22)     # px: one seat of the grid (width, height)
     CROWD_BODY = (15, 11)     # px: shirt of one person (width, height)
     CROWD_HEAD = 5.0          # px: radius of the head (above the shirt)
@@ -563,13 +566,11 @@ class Gpu:
     CROWD_BOOST_BURST = 60    # extra paper bits of the stand on a goal
     # --- F11: extra life of the effects in FULL ---------------------------
     PULSE_HZ = 7.0            # rad/s of the breathing of the powers (FULL)
-    ICE_PULSE = 0.35          # how much the ice breathes (0-1)
+    ICE_PULSE = 0.15          # how much the ice breathes (0-1)
     BLACKOUT_PULSE = 0.45     # flicker of the blackout (0-1)
     NIGHT_SWEEP = 40.0        # px the lamps of the night swing (FULL)
     NIGHT_SWEEP_HZ = 0.9      # rad/s of that swing
     NIGHT_SWEEP_GAP = 1.1     # rad of phase between two lamps
-    SHOCK_ECHO = 0.62         # radius of the second ring of the goal
-    SHOCK_ECHO_AMP = 0.55     # strength of that second ring
 
 
 # ---------------------------------------------------------------------------

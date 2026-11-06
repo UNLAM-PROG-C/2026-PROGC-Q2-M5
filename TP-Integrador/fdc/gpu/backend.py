@@ -529,8 +529,11 @@ class Gpu(primitives.Primitives):
                                    block=BLOCK)
         return self._get(out, shape, np.uint8)
 
-    def ripple_ring(self, img, cx, cy, radius, width, amp):
-        """Expanding ring of the goal: warp plus bright edge."""
+    def ripple_ring(self, img, cx, cy, radius, width, amp, y_min=0.0):
+        """Expanding ring of the goal: warp plus bright edge.
+
+        Rows above `y_min` (the stands and the boards) come back untouched.
+        """
         h, w = img.shape[:2]
         shape = (h, w, CHANNELS)
         src = self._buf("ring_src", shape, np.uint8, img)
@@ -538,8 +541,8 @@ class Gpu(primitives.Primitives):
         self._fn("k_ripple")(src, out, np.int32(w), np.int32(h),
                              np.float32(cx), np.float32(cy),
                              np.float32(radius), np.float32(width),
-                             np.float32(amp), grid=self._grid(w, h),
-                             block=BLOCK)
+                             np.float32(amp), np.int32(int(y_min)),
+                             grid=self._grid(w, h), block=BLOCK)
         return self._get(out, shape, np.uint8)
 
     def trail_blend(self, cur, prev, decay):
