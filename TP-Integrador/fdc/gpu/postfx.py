@@ -103,13 +103,17 @@ class PostFx:
             self.error = str(exc)
             self.enabled = False
         self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
+        self._reset_backend()
+
+    def _reset_backend(self):
+        """Governor, buffers and demo rule for the backend just built."""
         self.governor = quality.QualityGovernor(self.quality_option, self.mode)
         self._forget_device()
+        forced = self.quality_option not in (None, quality.AUTO)
         # The demo is a measurement: it keeps the level the user asked for.
         # Without --quality the CPU may still adapt, so the university demo
         # stays fluid on a notebook without NVIDIA.
-        if getattr(self.options, "demo", False) and self.quality_option not in (
-                None, quality.AUTO):
+        if getattr(self.options, "demo", False) and forced:
             self.governor.enabled = False
 
     def _forget_device(self):
