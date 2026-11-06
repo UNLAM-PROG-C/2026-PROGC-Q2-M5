@@ -6,6 +6,8 @@ no CUDA. Numpy is only imported here (the game works without it).
 """
 import numpy as np
 
+from fdc.gpu import primitives
+
 CHANNELS = 3            # interleaved RGB
 BYTE_MAX = 255.0        # top of the 8 bit range
 HALF = 0.5              # used to build the vignette and the heat ramp
@@ -61,7 +63,7 @@ def _accumulate(img, acc, radius, axis):
             * valid.reshape(shape)
 
 
-class Cpu:
+class Cpu(primitives.Primitives):
     """Numpy version of the effects (same methods and shapes as Gpu)."""
 
     def blur(self, img, radius):

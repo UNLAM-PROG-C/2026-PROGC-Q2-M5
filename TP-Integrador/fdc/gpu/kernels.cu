@@ -352,3 +352,160 @@ __global__ void heat_splat(const float *pos, int n, float *heat, int cols,
     if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
     atomicAdd(&heat[cy * cols + cx], amount);
 }
+
+// ------------------------------------------------- primitivas de imagen (F1)
+// Estas son las operaciones chicas que pide la catedra: un hilo por pixel,
+// indice 2D, chequeo de bordes y solo memoria global.
+
+// Copia el canal gris (luma) a 8 bits: gris, blanco y negro y un solo canal.
+__global__ void k_gray(const unsigned char *src, unsigned char *dst,
+                       int w, int h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    float v = 0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2];
+    unsigned char g = (unsigned char)(v + 0.5f);
+    dst[i] = g; dst[i + 1] = g; dst[i + 2] = g;
+}
+
+// Negativo: 255 - canal.
+__global__ void k_invert(const unsigned char *src, unsigned char *dst,
+                         int w, int h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    dst[i] = 255 - src[i];
+    dst[i + 1] = 255 - src[i + 1];
+    dst[i + 2] = 255 - src[i + 2];
+}
+
+// Brillo y contraste: (v - 0.5) * c + 0.5 + b, en escala 0..1.
+__global__ void k_brightness_contrast(const unsigned char *src,
+                                      unsigned char *dst, int w, int h,
+                                      float brightness, float contrast)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float v = src[i + c] / 255.0f;
+        v = (v - 0.5f) * contrast + 0.5f + brightness;
+        v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+        dst[i + c] = (unsigned char)(v * 255.0f + 0.5f);
+    }
+}
+
+// Ganancia: multiplica (noche, autoexposicion).
+__global__ void k_gain(const unsigned char *src, unsigned char *dst,
+                       int w, int h, float gain)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float v = src[i + c] * gain;
+        v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
+        dst[i + c] = (unsigned char)(v + 0.5f);
+    }
+}
+
+// Tinte: mezcla el canal con un color (0..1 por canal).
+__global__ void k_tint(const unsigned char *src, unsigned char *dst,
+                       int w, int h, float r, float g, float b)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    dst[i] = (unsigned char)(src[i] * r + 0.5f);
+    dst[i + 1] = (unsigned char)(src[i + 1] * g + 0.5f);
+    dst[i + 2] = (unsigned char)(src[i + 2] * b + 0.5f);
+}
+
+// Rotacion alrededor del centro (muestreo al vecino mas cercano, bordes
+// recortados: lo que cae afuera queda negro).
+__global__ void k_rotate(const unsigned char *src, unsigned char *dst,
+                         int w, int h, float angle)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    float cx = (w - 1) * 0.5f, cy = (h - 1) * 0.5f;
+    float c = cosf(angle), s = sinf(angle);
+    float dx = x - cx, dy = y - cy;
+    int sx = (int)(cx + c * dx + s * dy + 0.5f);
+    int sy = (int)(cy - s * dx + c * dy + 0.5f);
+    int o = (y * w + x) * CH;
+    if (sx < 0 || sx >= w || sy < 0 || sy >= h) {
+        dst[o] = 0; dst[o + 1] = 0; dst[o + 2] = 0;
+        return;
+    }
+    int i = (sy * w + sx) * CH;
+    dst[o] = src[i];
+    dst[o + 1] = src[i + 1];
+    dst[o + 2] = src[i + 2];
+}
+
+// Luminancia en float 0..1 (entrada para sobel y el histograma fino).
+__global__ void k_to_gray_f32(const unsigned char *src, float *dst,
+                              int w, int h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    dst[y * w + x] = (0.299f * src[i] + 0.587f * src[i + 1]
+                      + 0.114f * src[i + 2]) / 255.0f;
+}
+
+// Sobel: magnitud del gradiente (bordes). Bordes repetidos (clamp).
+__global__ void k_sobel(const float *gray, float *edges, int w, int h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int x0 = max(0, x - 1), x1 = min(w - 1, x + 1);
+    int y0 = max(0, y - 1), y1 = min(h - 1, y + 1);
+    float a = gray[y0 * w + x0], b = gray[y0 * w + x], c = gray[y0 * w + x1];
+    float d = gray[y * w + x0],  f = gray[y * w + x1];
+    float g = gray[y1 * w + x0], hh = gray[y1 * w + x], k = gray[y1 * w + x1];
+    float gx = (c + 2.0f * f + k) - (a + 2.0f * d + g);
+    float gy = (g + 2.0f * hh + k) - (a + 2.0f * b + c);
+    edges[y * w + x] = sqrtf(gx * gx + gy * gy) * 0.25f;
+}
+
+// Normaliza las magnitudes de sobel a 0..255 sobre la imagen entera.
+__global__ void k_sobel_normalize(const float *edges, unsigned char *dst,
+                                  int w, int h, float max_value)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    float v = edges[y * w + x] / (max_value > 0.0f ? max_value : 1.0f);
+    v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+    int i = (y * w + x) * CH;
+    unsigned char u = (unsigned char)(v * 255.0f + 0.5f);
+    dst[i] = u; dst[i + 1] = u; dst[i + 2] = u;
+}
+
+// Bordes brillantes: suma el sobel normalizado sobre la imagen original.
+__global__ void k_edge_glow(const unsigned char *src,
+                            const unsigned char *edges, unsigned char *dst,
+                            int w, int h, float strength)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w || y >= h) return;
+    int i = (y * w + x) * CH;
+    for (int c = 0; c < CH; ++c) {
+        float v = src[i + c] + edges[i + c] * strength;
+        v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
+        dst[i + c] = (unsigned char)(v + 0.5f);
+    }
+}

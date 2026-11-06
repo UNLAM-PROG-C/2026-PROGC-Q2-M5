@@ -12,6 +12,8 @@ import os
 
 import numpy as np
 
+from fdc.gpu import primitives
+
 CHANNELS = 3                    # interleaved RGB
 BINS = 256                      # luminance levels of the histogram
 BLOCK = (32, 8, 1)              # threads per block (2D: x wide, y tall)
@@ -61,7 +63,7 @@ def _auto_arch(driver):
     return f"sm_{major}{minor}"
 
 
-class Gpu:
+class Gpu(primitives.Primitives):
     """The kernels of `kernels.cu`, wrapped as numpy in / numpy out."""
 
     def __init__(self, arch=None):
@@ -332,4 +334,84 @@ class Gpu:
         self._fn("add_light")(src, acc, out, np.int32(w), np.int32(h),
                               np.float32(gain), grid=self._grid(w, h),
                               block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    # ------------------------------------------------------- primitivas (F1)
+    def _simple(self, kernel, img, *args):
+        """One in, one out image kernel: upload, launch, download."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf(f"{kernel}_src", shape, np.uint8, img)
+        out = self._buf(f"{kernel}_out", shape, np.uint8)
+        self._fn(kernel)(src, out, np.int32(w), np.int32(h),
+                         *[np.float32(a) for a in args],
+                         grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def gray(self, img):
+        """Luma in the three channels."""
+        return self._simple("k_gray", img)
+
+    def invert(self, img):
+        """255 - channel."""
+        return self._simple("k_invert", img)
+
+    def brightness_contrast(self, img, brightness, contrast):
+        """Brightness and contrast around the mid gray."""
+        return self._simple("k_brightness_contrast", img, brightness,
+                            contrast)
+
+    def gain(self, img, gain):
+        """Multiplies every channel (night, auto exposure)."""
+        return self._simple("k_gain", img, gain)
+
+    def tint(self, img, rgb):
+        """Colour filter per channel."""
+        return self._simple("k_tint", img, *rgb)
+
+    def rotate(self, img, angle):
+        """Rotation around the centre (neighbour sample)."""
+        return self._simple("k_rotate", img, angle)
+
+    def to_gray(self, img):
+        """Luma as float 0..1."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("tog_src", shape, np.uint8, img)
+        out = self._buf("tog_out", (h, w), np.float32)
+        self._fn("k_to_gray_f32")(src, out, np.int32(w), np.int32(h),
+                                  grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, (h, w), np.float32)
+
+    def sobel(self, gray):
+        """Gradient magnitude (edges)."""
+        h, w = gray.shape[:2]
+        src = self._buf("sob_src", (h, w), np.float32, gray)
+        out = self._buf("sob_out", (h, w), np.float32)
+        self._fn("k_sobel")(src, out, np.int32(w), np.int32(h),
+                            grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, (h, w), np.float32)
+
+    def sobel_normalize(self, edges, max_value=None):
+        """Edges to 0..255 over the whole image."""
+        h, w = edges.shape[:2]
+        top = max_value if max_value else float(edges.max() or 1.0)
+        shape = (h, w, CHANNELS)
+        src = self._buf("sobn_src", (h, w), np.float32, edges)
+        out = self._buf("sobn_out", shape, np.uint8)
+        self._fn("k_sobel_normalize")(src, out, np.int32(w), np.int32(h),
+                                      np.float32(top), grid=self._grid(w, h),
+                                      block=BLOCK)
+        return self._get(out, shape, np.uint8)
+
+    def edge_glow(self, img, edges, strength):
+        """Adds the bright edges to the original image."""
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("eg_src", shape, np.uint8, img)
+        edg = self._buf("eg_edg", shape, np.uint8, edges)
+        out = self._buf("eg_out", shape, np.uint8)
+        self._fn("k_edge_glow")(src, edg, out, np.int32(w), np.int32(h),
+                                np.float32(strength), grid=self._grid(w, h),
+                                block=BLOCK)
         return self._get(out, shape, np.uint8)

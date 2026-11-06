@@ -132,6 +132,61 @@ class NoGpuTest(unittest.TestCase):
         self.assertEqual(out.shape, img.shape)
         self.assertEqual(out.dtype, np.uint8)
 
+    def test_primitives_work(self):
+        cpu = cpu_ref.Cpu()
+        img = frame()
+        self.assertEqual(cpu.gray(img).shape, img.shape)
+        self.assertTrue(np.all(cpu.invert(cpu.invert(img)) == img))
+        self.assertEqual(cpu.rotate(img, 0.0).shape, img.shape)
+
+
+@unittest.skipUnless(HAVE_GPU, REASON)
+class PrimitiveTest(unittest.TestCase):
+    """The F1 group: gray, invert, gain, sobel and friends."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.gpu = backend.Gpu()
+        cls.cpu = cpu_ref.Cpu()
+        cls.img = frame()
+        cls.gray = cls.cpu.to_gray(cls.img)
+
+    def assertClose(self, ours, ref, limit=LEVELS):
+        self.assertLessEqual(biggest(ours, ref), limit)
+
+    def test_gray_and_invert(self):
+        self.assertClose(self.gpu.gray(self.img), self.cpu.gray(self.img))
+        self.assertClose(self.gpu.invert(self.img),
+                         self.cpu.invert(self.img))
+
+    def test_brightness_gain_tint(self):
+        self.assertClose(self.gpu.brightness_contrast(self.img, 0.1, 1.4),
+                         self.cpu.brightness_contrast(self.img, 0.1, 1.4))
+        self.assertClose(self.gpu.gain(self.img, 0.6),
+                         self.cpu.gain(self.img, 0.6))
+        self.assertClose(self.gpu.tint(self.img, (1.0, 0.8, 0.5)),
+                         self.cpu.tint(self.img, (1.0, 0.8, 0.5)))
+
+    def test_rotate(self):
+        self.assertClose(self.gpu.rotate(self.img, 0.3),
+                         self.cpu.rotate(self.img, 0.3))
+
+    def test_to_gray_and_sobel(self):
+        ours = self.gpu.to_gray(self.img)
+        self.assertLessEqual(np.abs(ours - self.gray).max(), 0.002)
+        top = float(self.cpu.sobel(self.gray).max())
+        self.assertLessEqual(
+            np.abs(self.gpu.sobel(self.gray) - self.cpu.sobel(self.gray)).max(),
+            0.01 * top)
+
+    def test_edges(self):
+        edges = self.cpu.sobel(self.gray)
+        self.assertClose(self.gpu.sobel_normalize(edges, 1.0),
+                         self.cpu.sobel_normalize(edges, 1.0))
+        norm = self.cpu.sobel_normalize(edges)
+        self.assertClose(self.gpu.edge_glow(self.img, norm, 0.8),
+                         self.cpu.edge_glow(self.img, norm, 0.8))
+
 
 if __name__ == "__main__":
     unittest.main()

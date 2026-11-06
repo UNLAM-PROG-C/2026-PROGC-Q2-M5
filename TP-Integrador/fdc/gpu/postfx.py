@@ -39,9 +39,7 @@ class PostFx:
     def __init__(self, options, size):
         self.mode = "cpu"
         self.enabled = _wanted(options)
-        self.level = (getattr(options, "gpu_quality", None)
-                      or config.Gpu.QUALITY)
-        self.force_cpu = bool(getattr(options, "force_cpu", False))
+        self.level, self.force_cpu = _choices(options)
         self.ops = None
         self.error = None
         self.metrics = gpu_metrics.Metrics()
@@ -195,6 +193,12 @@ class PostFx:
         data["quality"] = self.level
         data["gpu"] = backend.device_name() if self.mode == "gpu" else "CPU"
         return data
+
+
+def _choices(options):
+    """Quality level and whether the numpy version was forced."""
+    return (getattr(options, "gpu_quality", None) or config.Gpu.QUALITY,
+            bool(getattr(options, "force_cpu", False)))
 
 
 def _wanted(options):
