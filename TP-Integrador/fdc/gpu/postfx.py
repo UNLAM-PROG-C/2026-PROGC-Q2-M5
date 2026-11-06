@@ -592,22 +592,19 @@ class PostFx:
         return self._timed("confusion_rot", self.ops.rotate, out, angle)
 
     def _ice(self, image):
-        """ICE: bright edges, then a blue tint weighted by the strength."""
+        """ICE: bright edges, then a blue tint weighted by the strength.
+
+        One fused stage (`ops.ice`): the edges, the tint and the mix happen in
+        two device passes, so the ice no longer costs six round trips.
+        """
         if self.fx.ice <= 0:
             return image
         gpu = config.Gpu
-        out = self._timed("ice_edges", self._ice_edges, image)
-        tinted = self.ops.tint(out, gpu.ICE_TINT)
         amount = gpu.ICE_STRENGTH * self.fx.ice * self.punch()
-        return self._timed("ice_tint", self.ops.mix, out, tinted,
+        strength = gpu.ICE_EDGES * self.fx.ice * self.punch()
+        return self._timed("ice", self.ops.ice, image, min(1.0, strength),
+                           gpu.ICE_TINT,
                            min(1.0, amount * self._pulse(gpu.ICE_PULSE)))
-
-    def _ice_edges(self, image):
-        """Edge glow of the ice (sobel normalised over the whole image)."""
-        edges = self.ops.sobel(self.ops.to_gray(image))
-        norm = self.ops.sobel_normalize(edges, float(edges.max() or 1.0))
-        strength = config.Gpu.ICE_EDGES * self.fx.ice * self.punch()
-        return self.ops.edge_glow(image, norm, min(1.0, strength))
 
     def _blackout(self, image):
         """BLACKOUT: only the light around the affected player stays."""

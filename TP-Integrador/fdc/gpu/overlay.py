@@ -137,7 +137,7 @@ def _kernels(data):
     """[(stage, ms)] of the stages that ran this frame (mean > 0)."""
     keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
             "histogram", "shock", "fire", "confusion", "confusion_rot",
-            "ice_edges", "ice_tint", "blackout", "night", "exposure", "crt",
+            "ice", "blackout", "night", "exposure", "crt",
             "var", "tribuna")
     return [(key, float(data.get(key) or 0.0)) for key in keys
             if (data.get(key) or 0.0) > 0.0]

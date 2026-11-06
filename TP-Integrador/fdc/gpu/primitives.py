@@ -163,6 +163,17 @@ class Primitives:
         v = _rgb(img) + _rgb(edges) * strength
         return _to_byte(np.clip(v, 0.0, 1.0))
 
+    def ice(self, img, strength, tint, amount):
+        """Ice power: bright edges, then a blue tint weighted by `amount`.
+
+        It is the same chain the GPU does in two passes, here with numpy.
+        """
+        edges = self.sobel_normalize(self.sobel(self.to_gray(img)))
+        out = self.edge_glow(img, edges, strength)
+        blue = self.tint(out, tint)
+        mixed = _rgb(out) * (1.0 - amount) + _rgb(blue) * amount
+        return _to_byte(np.clip(mixed, 0.0, 1.0))
+
     # ------------------------------------------------ pods and night (F3/F4)
     def spotlights(self, img, lights, ambient, tint):
         """Multiplies the light of every lamp (0..1) and the warm colour."""

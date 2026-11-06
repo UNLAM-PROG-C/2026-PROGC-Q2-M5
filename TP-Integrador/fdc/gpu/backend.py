@@ -25,8 +25,8 @@ MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
 POINT_FIELDS = 2                # x and y of one heat map point
-CROWD_CFG = 11                  # parameters of the crowd kernel
-CROWD_PAL = 18                  # colours of the crowd kernel (6 rgb triplets)
+CROWD_CFG = 24                  # parameters of the crowd kernel
+CROWD_PAL = 48                  # colours of the crowd kernel (16 rgb triplets)
 
 
 def kernel_path():
@@ -241,15 +241,13 @@ class Gpu(primitives.Primitives):
         if len(lights) == 0:
             return img.copy()
         shape = (h, w, CHANNELS)
-        acc = self._buf("light_acc", shape, np.float32,
-                        np.zeros(shape, np.float32))
+        src = self._buf("light_src", shape, np.uint8, img)
         table = self._buf("light_tab", lights.shape, np.float32, lights)
-        count = np.int32(len(lights))
-        self._fn("splat_lights")(table, count, acc, np.int32(w), np.int32(h),
-                                 np.float32(gain),
-                                 grid=((len(lights) + BLOCK[0] - 1)
-                                       // BLOCK[0], 1, 1), block=BLOCK1D)
-        return self._add(img, acc, 1.0)
+        out = self._buf("light_out", shape, np.uint8)
+        self._fn("k_light_pixels")(src, out, table, np.int32(len(lights)),
+                                   np.int32(w), np.int32(h), np.float32(gain),
+                                   grid=self._grid(w, h), block=BLOCK)
+        return self._get(out, shape, np.uint8)
 
     def heat(self, img, phase, amp, period):
         """Heat waves: each pixel reads from a shifted place."""
@@ -466,6 +464,33 @@ class Gpu(primitives.Primitives):
                                 np.float32(strength), grid=self._grid(w, h),
                                 block=BLOCK)
         return self._get(out, shape, np.uint8)
+
+    def ice(self, img, strength, tint, amount):
+        """Ice power: bright edges and blue tint, in two device passes.
+
+        The whole path stays on the board: the edges are normalised with the
+        maximum that `atomicMax` leaves in `ice_top`, so the image travels up
+        and down only once (before it was six round trips).
+        """
+        h, w = img.shape[:2]
+        shape = (h, w, CHANNELS)
+        src = self._buf("ice_src", shape, np.uint8, img)
+        edges = self._buf("ice_edges", (h, w), np.float32)
+        top = self._buf("ice_top", (1,), np.uint32, np.zeros(1, np.uint32))
+        out = self._buf("ice_out", shape, np.uint8)
+        self._fn("k_ice_edges")(src, edges, top, np.int32(w), np.int32(h),
+                                grid=self._grid(w, h), block=BLOCK)
+        self._ice_apply(src, edges, top, out, (w, h), strength, tint, amount)
+        return self._get(out, shape, np.uint8)
+
+    def _ice_apply(self, src, edges, top, out, size, strength, tint, amount):
+        """Second pass of the ice: the edges over the tinted image."""
+        w, h = size
+        red, green, blue = (np.float32(c) for c in tint)
+        self._fn("k_ice_apply")(src, edges, top, out, np.int32(w), np.int32(h),
+                                np.float32(strength), red, green, blue,
+                                np.float32(amount), grid=self._grid(w, h),
+                                block=BLOCK)
 
     # -------------------------------------------------- pods and night (F3/F4)
     def spotlights(self, img, lights, ambient, tint):

@@ -226,7 +226,7 @@ class PowerChainTest(unittest.TestCase):
         self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
         data = self.run_chain(POWER_STATE)
         self.assertGreater(data["shock"], 0.0)
-        self.assertGreater(data["ice_tint"], 0.0)
+        self.assertGreater(data["ice"], 0.0)
         self.assertGreater(data["blackout"], 0.0)
         self.assertGreater(data["confusion"], 0.0)
         self.assertGreater(data["fire"], 0.0)

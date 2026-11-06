@@ -111,6 +111,14 @@ class KernelTest(unittest.TestCase):
         self.assertClose(self.gpu.lights(self.img, lights, GAIN),
                          self.cpu.lights(self.img, lights, GAIN))
 
+    def test_ice(self):
+        """F11: the fused ice pass looks like the chain of the numpy one."""
+        args = (0.8, (0.55, 0.85, 1.0), 0.45)
+        self.assertClose(self.gpu.ice(self.soft, *args),
+                         self.cpu.ice(self.soft, *args))
+        self.assertClose(self.gpu.ice(self.img, *args),
+                         self.cpu.ice(self.img, *args))
+
     def test_warps(self):
         self.assertMean(self.gpu.heat(self.soft, 1.0, 3.0, 20.0),
                         self.cpu.heat(self.soft, 1.0, 3.0, 20.0))
