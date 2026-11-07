@@ -9,6 +9,7 @@ shape h x w x 3) and the intermediate light buffers as float32.
 both and the game falls back to the CPU when there is no CUDA.
 """
 import hashlib
+import re
 import logging
 import os
 
@@ -44,6 +45,22 @@ def kernel_source():
     """The CUDA source as a string (read once per call: it is small)."""
     with open(kernel_path(), encoding="utf-8") as fh:
         return fh.read()
+
+
+def c_linkage_source():
+    """The source inside `extern "C"`, as PyCUDA's SourceModule compiles it.
+
+    nvcc treats a `.cu` as C++ and mangles the kernel names (`_Z9k_tribuna..`)
+    unless they sit in an `extern "C"` block; the driver looks them up by
+    their plain name. The fatbin must be built from this text.
+    """
+    return 'extern "C" {\n' + kernel_source() + '\n}\n'
+
+
+def kernel_names():
+    """Names of the `__global__` kernels declared in `kernels.cu`."""
+    return sorted(set(re.findall(r"__global__\s+void\s+(\w+)",
+                                 kernel_source())))
 
 
 def source_hash():

@@ -155,6 +155,8 @@ def main(argv=None):
     options = parse_args(argv)
     name = output_name(options)
     args = pyinstaller_args(options)
+    if options.mode == "full":
+        _rebuild_kernels()
     print("pyinstaller " + " ".join(args))
     # Imported here: the script still says what it does without the package.
     # pylint: disable-next=import-outside-toplevel
@@ -164,6 +166,17 @@ def main(argv=None):
     _extras(folder, name, MODES[options.mode]["launcher"])
     _report(folder, name, MODES[options.mode]["launcher"])
     return 0
+
+
+def _rebuild_kernels():
+    """Recompiles kernels.fatbin from kernels.cu and checks every name.
+
+    A stale or hand-made fatbin must never reach a GPU zip.
+    """
+    sys.path.insert(0, TOOLS)
+    # pylint: disable-next=import-outside-toplevel,import-error
+    import build_kernels
+    build_kernels.build()
 
 
 def _extras(folder, name, launcher):
