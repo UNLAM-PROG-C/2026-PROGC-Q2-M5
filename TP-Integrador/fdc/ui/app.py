@@ -266,7 +266,8 @@ class App:
         pygame.mixer.pre_init(audio.AUDIO_RATE, audio.AUDIO_BITS,
                               audio.AUDIO_CHANNELS, audio.AUDIO_BUFFER)
         pygame.init()
-        pygame.display.set_caption(config.GAME_NAME)
+        pygame.display.set_caption(
+            f"{config.GAME_NAME} v{config.GAME_VERSION}")
         return pygame.display.set_mode(self._window_size(),
                                        self._display_flags())
 

@@ -1,5 +1,8 @@
 # Futbol De Cabeza
 
+**Versión 1.0.1** (2026-11-06). Los zips de Windows (CPU y GPU) y la `.app` de Mac
+se arman con `tools\build_exe.py`, `packaging/mac/build.sh` y `release\NOTAS-RELEASE.md`.
+
 Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas. Todo eso también está **en el navegador**: entrando a la página del juego se elige el modo igual que en la versión de escritorio.
 
 Es un trabajo práctico de **Programación Concurrente**. La solución usa **dos procesos** (`multiprocessing`, contexto `spawn`) que se comunican con **colas de mensajes** y se sincronizan con **confirmaciones**, **identificadores de partido** y un **`multiprocessing.Event`** de cierre. En el online, un servidor `asyncio` atiende las conexiones y lanza **un proceso de simulación por sala** (el mismo de la versión local). La lógica de la simulación es una sola (`fdc/sim/core.py`) y corre en tres lugares: el proceso de escritorio, los procesos de sala del servidor y, en el navegador (donde no hay procesos), dentro de la misma página.
@@ -61,6 +64,12 @@ en PowerShell) pone `nvcc`, `cl.exe` y las DLL de CUDA en el entorno de esa
 consola: **es obligatorio abrirlo antes de `py main.py` con GPU**, porque
 PyCUDA compila los kernels al arrancar. Si falta el compilador, el juego no
 falla: avisa la razón y sigue en CPU.
+
+El **zip de Windows GPU** ya trae los kernels compilados
+(`fdc/gpu/kernels.fatbin`, sm_75 a sm_120 y PTX): para jugar alcanza con el
+driver NVIDIA, sin `nvcc` ni CUDA Toolkit. El fatbin se regenera con
+`py tools\build_kernels.py` y el juego sólo lo usa si su hash coincide con
+`fdc/gpu/kernels.cu` (`kernels.sha256`).
 
 | Comando | Qué hace |
 |---|---|
@@ -561,8 +570,9 @@ Dos personas probablemente defiendan mejor que esos jugadores automáticos. Si i
 - **Salto aumentado:** con *Salto aumentado* se puede tocar el travesaño saltando desde el piso (es el efecto del poder).
 - **Pruebas de interfaz:** usan el driver `dummy` de SDL, así que verifican el flujo y el dibujo pero **no** reemplazan jugar con un teclado real.
 - **Online, latencia:**
-  - **Demora de la red:** la propia pulsación se ve después de un viaje de ida y vuelta al servidor (entre dos casas, unos 20 a 80 ms). No hay predicción del lado del cliente.
-  - **Suavizado:** dibuja 1/30 s "en el pasado".
+  - **Predicción del jugador propio:** desde la 1.0.1 la pulsación se ve al instante y el servidor la corrige cuando llega su estado (reconciliación suave; si el error es grande salta). Se apaga con `--sin-prediccion` o con el botón del menú Multijugador.
+  - **Demora de la red:** lo que se mueve por la predicción es sólo el jugador propio; el rival y la pelota llegan con el viaje de ida y vuelta al servidor (entre dos casas, unos 20 a 80 ms).
+  - **Suavizado:** los estados del servidor llegan a 60 por segundo; la interfaz sigue dibujando 1/60 s "en el pasado".
 - **Navegador:**
   - **Modos locales sin proceso aparte:** el Mundialito y el multijugador local simulan dentro de la página, porque en el navegador no hay procesos ni hilos. Es el mismo núcleo de simulación y el mismo protocolo (órdenes con ACK, fotos de controles, estados con número), pero en un solo hilo. La demostración de concurrencia es la versión de escritorio y el servidor. Si la página se traba, la simulación se traba con ella; por eso no hace falta watchdog.
   - **Primer arranque:** necesita un clic para empezar (por el audio).
