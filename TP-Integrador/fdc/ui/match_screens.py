@@ -49,6 +49,7 @@ POWER_SOUNDS = {config.CATEGORY_BAD: "power_bad",
                 config.CATEGORY_GLOBAL: "power_global"}
 # Notice of a burnt player (the fire power of 1.0.2): orange, not a glow.
 BURN_NOTICE_COLOR = (255, 170, 60)
+BURN_NOTICE_ICON = "flame"         # flame of the notice (not a power id)
 BURN_NOTICE = "{name} se quemó: {seconds} s sin moverse"
 # Text of the pause box by reason (the others use the default one).
 PAUSE_REASONS = {
@@ -806,7 +807,7 @@ class MatchScreen(screens.Screen):
         self.app.audio.play("power_global")
         self.toast(BURN_NOTICE.format(name=name,
                                      seconds=f"{m['seconds']:.1f}"),
-                   BURN_NOTICE_COLOR, "fire")
+                   BURN_NOTICE_COLOR, BURN_NOTICE_ICON)
         player = self.state["players"][idx] if self.state else None
         if player is not None:
             self.app.fx.burning(self.t, player["x"], player["y"],
@@ -1072,9 +1073,12 @@ class MatchScreen(screens.Screen):
         surf.blit(img, (x, r.centery - img.get_height() // 2))
 
     def _toast_icon(self, surf, power, x, centery):
-        """Draws the power icon; returns where the text starts."""
-        surf.blit(icons.power_icon(power, self.TOAST_ICON),
-                  (x, centery - self.TOAST_ICON // 2))
+        """Draws the notice icon; returns where the text starts."""
+        if power == BURN_NOTICE_ICON:
+            icon = icons.flame()
+        else:
+            icon = icons.power_icon(power, self.TOAST_ICON)
+        surf.blit(icon, (x, centery - icon.get_height() // 2))
         return x + self.TOAST_ICON_ADVANCE
 
     def _draw_test_panel(self, surf):
