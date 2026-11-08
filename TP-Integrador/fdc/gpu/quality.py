@@ -55,6 +55,8 @@ MODES = (FULL, OPTIMIZED, OFF, AUTO)
 DEFAULT_MODE = FULL
 # Other ways of asking for the mode without the effects.
 OFF_ALIASES = ("off", "sin efectos", "sin_efectos", "ninguno", "none")
+# Name the chain uses for the CUDA backend (fdc.gpu.postfx.mode).
+GPU_BACKEND = "gpu"
 # Stages that the optimized mode never runs: the heavy post-processing.
 OPTIMIZED_SKIPS = (GLOW, LIGHTS, HEAT, TRAIL, HISTOGRAM, "crt", "var",
                    "confetti")
@@ -119,6 +121,12 @@ def mode_of(value):
 def name_of(mode):
     """Readable name of a mode (the overlay and the menu): FULL, ..."""
     return config.Gpu.MODE_NAMES[mode_of(mode)]
+
+
+def default_for(backend):
+    """Mode when the player did not choose one: FULL on the GPU and the
+    plain pygame render (no effects) on the CPU, which is the cheapest."""
+    return FULL if backend == GPU_BACKEND else OFF
 
 
 def next_mode(mode):

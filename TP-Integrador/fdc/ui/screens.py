@@ -599,8 +599,8 @@ class OptionsScreen(SubMenuScreen):
     """
     TITLE = "OPCIONES"
     SUBTITLE = ("FULL: todos los efectos (pesado).  OPTIMIZADO: liviano.  "
-                "SIN EFECTOS: pygame pelado.  AUTO: baja la calidad sola "
-                "en CPU.")
+                "SIN EFECTOS: pygame pelado (por defecto en CPU).  AUTO: "
+                "baja la calidad sola en CPU.")
 
     def __init__(self, app):
         super().__init__(app, [("", self.cycle), ("Volver", self.back)])

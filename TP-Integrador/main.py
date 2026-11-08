@@ -56,13 +56,15 @@ COMMAND_LINE = (
                       "choices": ("auto", "0", "1", "2", "3"),
                       "help": "calidad de los efectos: auto (baja el nivel "
                               "sola en CPU) o Q0..Q3 fija"}),
-    (("--calidad",), {"dest": "quality_mode", "default": "full",
+    (("--calidad",), {"dest": "quality_mode", "default": None,
                       "choices": ("full", "optimizado", "sin-efectos", "off",
                                   "auto"),
                       "help": "modo de calidad: full (todo, sin gobernador), "
                               "optimizado (liviano, anda fluido en CPU), "
                               "sin-efectos (render pygame pelado; también "
-                              "'off') o auto (el gobernador decide)"}),
+                              "'off'), auto (el gobernador decide) o nada "
+                              "(por defecto: full con GPU y sin-efectos con "
+                              "CPU)"}),
     (("--backend",), {"dest": "backend", "default": "auto",
                       "choices": ("auto", "gpu", "cpu"),
                       "help": "backend de los efectos (auto|gpu|cpu)"}),
