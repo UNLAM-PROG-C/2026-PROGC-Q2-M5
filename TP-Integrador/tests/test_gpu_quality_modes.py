@@ -266,9 +266,56 @@ class CliTest(unittest.TestCase):
                                               value])
             self.assertEqual(quality.mode_of(options.quality_mode), OFF)
 
-    def test_default_mode_is_full(self):
+    def test_the_default_mode_follows_the_backend(self):
+        """1.0.2: no --calidad means "decide it with the backend"."""
         options = main_module.parse_args(["--no-audio"])
-        self.assertEqual(options.quality_mode, FULL)
+        self.assertIsNone(options.quality_mode)
+
+
+class DefaultByBackendTest(unittest.TestCase):
+    """1.0.2: on the CPU the game starts without effects; on the GPU it keeps
+    starting in FULL. A mode chosen by the player (flag, F10, menu) wins."""
+
+    def chain(self, mode):
+        fx = postfx.PostFx(options(quality_mode=mode), (W, H))
+        fx.start()
+        return fx
+
+    def test_the_cpu_without_a_choice_starts_without_effects(self):
+        fx = self.chain(None)
+        self.assertFalse(fx.chosen_mode)
+        self.assertEqual(fx.mode, quality.CPU)
+        self.assertEqual(fx.quality_mode, OFF)
+        self.assertFalse(fx.enabled)
+        self.assertEqual(fx.quality_mode_name(), "SIN EFECTOS")
+
+    def test_the_gpu_without_a_choice_starts_full(self):
+        self.assertEqual(quality.default_for(quality.GPU_BACKEND), FULL)
+        self.assertEqual(quality.default_for(quality.CPU), OFF)
+        fx = self.chain(None)
+        fx.mode = quality.GPU_BACKEND
+        # pylint: disable-next=protected-access
+        fx._apply_default_mode()
+        self.assertEqual(fx.quality_mode, FULL)
+        self.assertTrue(fx.enabled)
+
+    def test_a_chosen_mode_wins(self):
+        fx = self.chain(FULL)
+        self.assertTrue(fx.chosen_mode)
+        self.assertEqual((fx.quality_mode, fx.enabled), (FULL, True))
+
+    def test_a_chosen_mode_survives_the_backend_fallback(self):
+        """FULL can still be asked for with the numpy backend."""
+        fx = self.chain(FULL)
+        self.assertEqual(fx.mode, quality.CPU)
+        self.assertEqual(fx.quality_mode, FULL)
+
+    def test_f10_and_the_menu_count_as_a_choice(self):
+        """Cycling the mode with F10 marks it as chosen, not as the default."""
+        fx = self.chain(None)
+        fx.cycle_quality_mode()
+        self.assertTrue(fx.chosen_mode)
+        self.assertTrue(fx.enabled)
 
 
 if __name__ == "__main__":

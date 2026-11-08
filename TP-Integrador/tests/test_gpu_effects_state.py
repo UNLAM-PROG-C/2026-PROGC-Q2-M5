@@ -12,6 +12,7 @@ from fdc import config
 from fdc import protocol
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
+from fdc.sim import match
 
 G = config.Gpu
 NOW = 10.0              # clock of the tests (s)
@@ -207,6 +208,28 @@ class NightTest(unittest.TestCase):
         fx = effects_state.derive({}, None, NOW, night=True)
         self.assertTrue(fx.night)
         self.assertEqual(fx, effects_state.derive({}, None, NOW, night=True))
+
+
+class BurnedEffectsTest(unittest.TestCase):
+    """1.0.2: the burnt player of the fire power reaches the chain."""
+
+    def test_the_burnt_player_is_a_point_of_the_pitch(self):
+        fx = effects_state.derive(
+            state([effect("burned", "p0", power="fire")]), None, NOW)
+        self.assertEqual(fx.burned, ((PLAYERS[0]["x"], PLAYERS[0]["y"]),))
+
+    def test_the_match_snapshot_carries_the_property(self):
+        """The chain reads the property of each effect: it travels."""
+        m = match.Match(1, seed=1)
+        m.powers.activate("freeze_self", 0, m, 0, 0, [])
+        effect = m.snapshot(1)["effects"][0]
+        self.assertEqual(effect["prop"], "frozen")
+
+    def test_the_ball_on_fire_is_not_a_burnt_player(self):
+        fx = effects_state.derive(
+            state([effect("fire", "ball", power="fire")]), None, NOW)
+        self.assertEqual(fx.burned, ())
+        self.assertIsNotNone(fx.fire)
 
 
 class ProtocolTest(unittest.TestCase):

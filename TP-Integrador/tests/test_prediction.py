@@ -29,9 +29,9 @@ class Clock:
 
 
 def make_state(x, ack=(0, 0), other_x=None, phase=protocol.PHASE_PLAYING,
-               paused=False, goals=(110.0, 110.0)):
+               paused=False, goals=(110.0, 110.0), burned=False):
     """A state like the compact one the server sends (only what matters)."""
-    players = [_player(x if side == 0 else (other_x or -x), side)
+    players = [_player(x if side == 0 else (other_x or -x), side, burned)
                for side in (0, 1)]
     state = {"type": "state", "match": 1, "seq": 1, "tick": 1,
              "phase": phase, "paused": paused, "players": players,
@@ -41,10 +41,11 @@ def make_state(x, ack=(0, 0), other_x=None, phase=protocol.PHASE_PLAYING,
     return state
 
 
-def _player(x, side):
+def _player(x, side, burned=False):
     return {"x": float(x), "y": FLOOR_Y, "vx": 0.0, "vy": 0.0,
             "facing": 1 if side == 0 else -1, "ground": True, "kick": -1.0,
             "scale": 1.0, "frozen": False, "no_kick": False, "stride": 0.0,
+            "burned": burned, "burned_left": 1.5 if burned else 0.0,
             "knock": False, "celebrate": False, "on_head": None,
             "speed": 1.0, "jump": 1.0}
 
@@ -162,6 +163,40 @@ class ReconcileTest(unittest.TestCase):
         pred.hold(make_state(500.0, paused=True))
         frames(pred, clock, 0.2)
         self.assertEqual(pred.player.x, 500.0)
+
+
+class BurnedPredictionTest(unittest.TestCase):
+    """1.0.2: the own player does not move while the fire power burns it."""
+
+    def burned_prediction(self, x=300.0):
+        """Prediction in sync with a server player that is burning."""
+        clock = Clock()
+        pred = prediction.Prediction(0)
+        pred.clock = clock
+        pred.reconcile(make_state(x, burned=True), clock.now)
+        pred.play()
+        return pred, clock
+
+    def test_the_burned_player_does_not_move(self):
+        pred, clock = self.burned_prediction()
+        pred.push_input(RIGHT)
+        frames(pred, clock, 0.3)
+        self.assertAlmostEqual(pred.player.x, 300.0, delta=1.0)
+
+    def test_it_does_not_jump_or_kick(self):
+        pred, clock = self.burned_prediction()
+        pred.push_input([False, False, 1, 1])
+        frames(pred, clock, 0.3)
+        self.assertEqual(pred.player.vy, 0.0)
+        self.assertLess(pred.player.kick_t, 0.0)
+
+    def test_it_moves_again_when_the_burn_is_over(self):
+        pred, clock = self.burned_prediction()
+        pred.push_input(RIGHT)
+        frames(pred, clock, 0.2)
+        pred.reconcile(make_state(300.0, ack=(1, 0)), clock.now)
+        frames(pred, clock, 0.3)
+        self.assertGreater(pred.player.x, 300.0 + 5.0)
 
 
 if __name__ == "__main__":

@@ -350,6 +350,16 @@ def _get(url):
 
 
 class ServerLobbyTest(unittest.TestCase):
+    def test_another_version_is_refused(self):
+        """1.0.2: an old client gets a clear refusal, not a silent drop."""
+        with ServerThread() as srv:
+            old = Client(srv.url)
+            old.send({"type": wire.HELLO, "username": "Viejo"})
+            error = old.wait(wire.ERROR)
+            self.assertEqual(error["code"], wire.CODE_VERSION)
+            self.assertIn(config.GAME_VERSION, error["message"])
+            old.close()
+
     def test_names_rooms_passwords_and_bad_messages(self):
         with ServerThread() as srv:
             a = Client(srv.url, "Ale", player_id="profile-a")
@@ -361,10 +371,12 @@ class ServerLobbyTest(unittest.TestCase):
     def second_ale(self, srv, a):
         """Another Ale: a bad name fails; the same name is valid."""
         b = Client(srv.url)
-        b.send({"type": wire.HELLO, "username": "x"})
+        b.send({"type": wire.HELLO, "username": "x",
+                "protocol": config.PROTOCOL_VERSION})
         self.assertEqual(b.wait(wire.ERROR)["code"], "invalid_name")
         b.send({"type": wire.HELLO, "username": "Ale",
-                "player_id": "profile-b"})
+                "player_id": "profile-b",
+                "protocol": config.PROTOCOL_VERSION})
         wb = b.wait(wire.WELCOME)
         self.assertEqual(wb["username"], "Ale")
         # The tag tells them apart.
@@ -559,7 +571,8 @@ class ServerMatchTest(unittest.TestCase):
 
     def reconnect(self, srv, a, sa):
         a2 = Client(srv.url)
-        a2.send({"type": wire.HELLO, "username": "Ale", "token": a.token})
+        a2.send({"type": wire.HELLO, "username": "Ale", "token": a.token,
+                 "protocol": config.PROTOCOL_VERSION})
         self.assertTrue(a2.wait(wire.WELCOME)["restored"])
         back = a2.wait(wire.MATCH_START)
         self.assertEqual((back["match"], back["you"]),

@@ -8,6 +8,7 @@ import time
 import helpers  # pylint: disable=unused-import
 from websockets.sync import client as ws_client
 
+from fdc import config
 from fdc.online import server as game_server
 from fdc.online import wire
 
@@ -79,7 +80,8 @@ class Client:
         self.welcome = None
         if name:
             self.send({"type": wire.HELLO, "username": name,
-                       "player_id": player_id or f"test-{name}"})
+                       "player_id": player_id or f"test-{name}",
+                       "protocol": config.PROTOCOL_VERSION})
             self.welcome = self.wait(wire.WELCOME)
             self.token = self.welcome["token"]
 

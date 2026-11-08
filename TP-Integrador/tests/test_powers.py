@@ -1,4 +1,5 @@
 """Powers: activation, receiver, expiration, replacement, pause, cleanup."""
+import random
 import unittest
 
 import helpers
@@ -207,6 +208,55 @@ def positions(m, p, seconds):
         m.step(DT)
         xs.append(p.x)
     return xs
+
+
+class SpawnHeightTest(unittest.TestCase):
+    """1.0.2: half of the pickups on the floor, half between the floor
+    and 180 px, and one every 2.5-3.5 s of play."""
+
+    ROLLS = 4000            # pickups rolled to measure the share
+    SHARE_TOL = 0.05        # the share of the floor must be 0.5 more or less
+
+    def test_half_of_the_pickups_appear_on_the_floor(self):
+        rng = random.Random(20261108)
+        heights = [powers.spawn_height(rng) for _ in range(self.ROLLS)]
+        floor = [y for y in heights if y == RULES.SPAWN_FLOOR_Y]
+        self.assertAlmostEqual(len(floor) / self.ROLLS,
+                               RULES.SPAWN_FLOOR_SHARE, delta=self.SHARE_TOL)
+
+    def test_the_other_half_appears_between_the_floor_and_180_px(self):
+        rng = random.Random(20261108)
+        low, high = ARENA.FLOOR_Y - 180, ARENA.FLOOR_Y - 60
+        air = [powers.spawn_height(rng) for _ in range(self.ROLLS)]
+        air = [y for y in air if y != RULES.SPAWN_FLOOR_Y]
+        self.assertTrue(air)
+        self.assertGreaterEqual(min(air), low - EPSILON)
+        self.assertLessEqual(max(air), high + EPSILON)
+        self.assertAlmostEqual((min(air) + max(air)) / 2, (low + high) / 2,
+                               delta=5.0)
+
+    def test_the_floor_pickup_is_reached_by_the_rolling_ball(self):
+        m = quiet_match()
+        y = RULES.SPAWN_FLOOR_Y
+        m.powers.pickup = powers.Pickup(9, "big_ball", 640.0, y)
+        m.ball.x, m.ball.y = 640.0 - 120.0, ARENA.FLOOR_Y - m.ball.radius
+        m.ball.vx = 400.0
+        ev = run(m, 0.4)
+        self.assertIsNone(m.powers.pickup)
+        self.assertEqual(count(ev, protocol.EV_POWER), 1)
+
+    def test_the_floor_pickup_is_inside_the_pitch(self):
+        self.assertEqual(powers.position_is_free(
+            ARENA.WIDTH / 2, RULES.SPAWN_FLOOR_Y, quiet_match()), True)
+
+    def test_one_pickup_every_two_and_a_half_to_three_and_a_half_s(self):
+        self.assertAlmostEqual(RULES.SPAWN_MIN, 2.5)
+        self.assertAlmostEqual(RULES.SPAWN_MAX, 3.5)
+        rng = random.Random(7)
+        timers = [powers.PowerManager(rng).spawn_timer for _ in range(200)]
+        self.assertGreaterEqual(min(timers), RULES.SPAWN_MIN)
+        self.assertLessEqual(max(timers), RULES.SPAWN_MAX)
+        self.assertLess(abs(sum(timers) / len(timers) - 3.0), 0.2)
 
 
 def hold_right_and_press(m, i):
