@@ -114,8 +114,9 @@ ICE_STREAK_TOP = 10                # px from the top of the block
 ICE_STREAK_COLOR = (255, 255, 255, 180)   # almost opaque white
 # Burnt player (the fire power: the ball burns whoever touches it).
 BURN_TINT = (150, 110, 90)         # rgb multiplier: the body looks charred
-BURN_ICON = 30                     # px: flame by the boots
-BURN_ICON_TOP = 6                  # px above the boots where the flame sits
+BURN_PROP = "burned"               # property of the burn in the effects
+BURN_FLAME_GAP = 6                 # px above the head where the flame sits
+BURN_FLAME_SIDE = 30               # px to the side of the player centre
 BURN_TEXT_GAP = 4                  # px between the flame and the seconds
 # Ball.
 TRAIL_SPEED = 560                  # px/s: faster than this the ball trails
@@ -311,15 +312,31 @@ def _burnt(img):
     return dark
 
 
-def _draw_burn(surf, p):
-    """Flame and seconds left by the boots of a burnt player."""
-    icon = icons.power_icon("fire", BURN_ICON)
-    rect = icon.get_rect(midbottom=(snap(p["x"]), int(p["y"] - BURN_ICON_TOP)))
-    surf.blit(icon, rect)
-    left = max(0.0, p.get("burned_left") or 0.0)
-    text = _label(f"{left:.1f}s")
-    surf.blit(text, text.get_rect(midleft=(rect.right + BURN_TEXT_GAP,
-                                           rect.centery)))
+def burn_badge(p, ball_x, flame_size, text_size):
+    """Boxes of the flame and the seconds of a burnt player: over its head
+    and on the side away from the ball, so the ball never hides them."""
+    side = 1 if ball_x <= p["x"] else -1
+    head_top = p["y"] - (config.PlayerSpec.HEAD_OFFSET_Y
+                         + config.PlayerSpec.HEAD_RADIUS) * p["scale"]
+    flame = pygame.Rect((0, 0), flame_size)
+    flame.midbottom = (snap(p["x"] + side * BURN_FLAME_SIDE),
+                       int(head_top - BURN_FLAME_GAP))
+    text = pygame.Rect((0, 0), text_size)
+    if side > 0:
+        text.midleft = (flame.right + BURN_TEXT_GAP, flame.centery)
+    else:
+        text.midright = (flame.left - BURN_TEXT_GAP, flame.centery)
+    return flame, text
+
+
+def _draw_burn(surf, p, ball_x):
+    """Flame and seconds left over the head of a burnt player."""
+    flame = icons.flame()
+    label = _label(f"{max(0.0, p.get('burned_left') or 0.0):.1f}s")
+    flame_rect, text_rect = burn_badge(p, ball_x, flame.get_size(),
+                                       label.get_size())
+    surf.blit(flame, flame_rect)
+    surf.blit(label, text_rect)
 
 
 def _draw_kick_arc(surf, p, f):
@@ -353,6 +370,20 @@ def _draw_spring(surf, p, col):
     r = pygame.Rect(0, 0, int(SPRING_W * p["scale"]), SPRING_H)
     r.center = (p["x"], stadium.FLOOR + SPRING_DROP)
     pygame.draw.ellipse(surf, col, r, SPRING_LINE)
+
+
+def effect_icon(effect, size):
+    """Icon of an effect: the flame of a burn, the badge of its power."""
+    if effect.get("prop") == BURN_PROP:
+        return icons.flame()
+    return icons.power_icon(effect["power"], size)
+
+
+def effect_color(effect):
+    """Colour of an effect: fire orange for a burn, its category otherwise."""
+    if effect.get("prop") == BURN_PROP:
+        return palette.ORANGE
+    return _power_color(effect["power"])
 
 
 def _draw_mini_effect(surf, e, center):
@@ -542,7 +573,8 @@ class MatchRenderer:
             return _walk_pose(p["stride"])
         return sprites.idle_pose(self.t, i)
 
-    def _player(self, surf, i, p, st):
+    def _player_image(self, i, p, st):
+        """Sprite of the player, charred if it is burnt."""
         f = 1 if p["facing"] >= 0 else -1
         ang, bob = self.pose(i, p, st["phase"])
         img, (fx, fy) = self.sprites.player(
@@ -550,12 +582,18 @@ class MatchRenderer:
             p["scale"])
         if p.get("burned"):
             img = _burnt(img)
+        return img, (fx, fy), f
+
+    def _player(self, surf, i, p, st):
+        img, (fx, fy), f = self._player_image(i, p, st)
         surf.blit(img, (round(p["x"] - fx), round(p["y"] - fy)))
         mine = [e for e in st.get("effects", []) if e["target"] == f"p{i}"]
         self._player_effects(surf, p, f, mine)
         if KICK_ARC_FROM <= p["kick"] <= KICK_ARC_TO:
             _draw_kick_arc(surf, p, f)
         self._over_head(surf, i, p, mine, st.get("last_touch") == i)
+        if p.get("burned"):
+            _draw_burn(surf, p, st["ball"]["x"])
 
     def _over_head(self, surf, i, p, mine, last):
         """Arrow of the player and its active effects over the head."""
@@ -563,17 +601,16 @@ class MatchRenderer:
         top = (p["y"] - (spec.HEAD_OFFSET_Y + spec.HEAD_RADIUS) * p["scale"]
                - INDICATOR_GAP)
         self._indicator(surf, p["x"], top, i, last)
-        for k, e in enumerate(mine):
-            cx = p["x"] + (k - (len(mine) - 1) / 2) * MINI_EFFECT_STEP
+        marks = [e for e in mine if e.get("prop") != BURN_PROP]
+        for k, e in enumerate(marks):
+            cx = p["x"] + (k - (len(marks) - 1) / 2) * MINI_EFFECT_STEP
             _draw_mini_effect(surf, e, (cx, top - MINI_EFFECT_RAISE))
 
     def _player_effects(self, surf, p, f, mine):
-        """Ice, burn, no kick sign, speed lines and spring of a player."""
+        """Ice, no kick sign, speed lines and spring of a player."""
         props = {config.POWERS_BY_ID[e["power"]].prop: e for e in mine}
         if p["frozen"]:
             _draw_ice(surf, p)
-        if p.get("burned"):
-            _draw_burn(surf, p)
         if "no_kick" in props:
             _draw_no_kick(surf, snap(p["x"] - f * NO_KICK_BEHIND),
                           int(p["y"] - NO_KICK_HEIGHT))
@@ -753,13 +790,14 @@ class MatchRenderer:
     def _hud_effect(self, surf, e, topleft):
         inner = retro.bevel_box(surf, pygame.Rect(topleft, HUD_EFFECT),
                                 palette.CREAM)
-        surf.blit(icons.power_icon(e["power"], HUD_ICON),
-                  (inner.left + HUD_ICON_INSET, inner.top + HUD_ICON_INSET))
+        icon = effect_icon(e, HUD_ICON)
+        surf.blit(icon, (inner.left + HUD_ICON_INSET,
+                         inner.top + HUD_ICON_INSET))
         assets.draw_text(surf, self._target_label(e["target"]),
                          layout.FONT_SMALL,
                          (inner.left + HUD_TEXT_X, inner.top + HUD_TEXT_Y),
                          palette.INK, anchor="topleft", outline=None)
-        _draw_time_left(surf, inner, e, _power_color(e["power"]))
+        _draw_time_left(surf, inner, e, effect_color(e))
 
     def _target_label(self, target):
         if target == "ball":

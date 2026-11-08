@@ -16,6 +16,7 @@ import pygame
 from fdc import config
 from fdc.ui import art
 from fdc.ui import assets
+from fdc.ui import palette
 from fdc.ui import retro
 
 WHITE = (255, 255, 255)            # pictograms
@@ -42,6 +43,27 @@ PULSE_ADD = 45                     # white added to the icon (0-255)
 PULSE_RING = 4                     # px of the bright ring
 PULSE_RING_AT = 1.02               # ring radius (share of the badge radius)
 WHITE_ALPHA = 255                  # opaque white of the ring
+# --- flame of the fire power (crisp pixels, without glow)
+# Bitmap of the flame, one character per art pixel: o = body, y = heart,
+# w = bright centre, . = transparent. It is outlined and scaled xPX.
+FLAME_ART = (
+    ".....o....",
+    "....oo....",
+    "....ooo...",
+    "...oooo...",
+    "...ooooo..",
+    "..oooooo..",
+    "..oooyoo..",
+    ".ooyyyyoo.",
+    ".ooywwyoo.",
+    "..oyyyyo..",
+    "..oooooo..",
+    "...oooo...",
+    "....oo....",
+)
+FLAME_COLORS = {"o": palette.ORANGE, "y": palette.GOLD,
+                "w": palette.CREAM}
+FLAME_OUTLINE_PX = 1               # px of dark outline around the flame
 
 # Target of the powers that affect the rival (bottom right).
 TARGET_AT = 0.62                   # offset from the centre (share of radius)
@@ -538,4 +560,26 @@ def _pulsed(icon, amount):
                        int(side * BADGE_R * PULSE_RING_AT), PULSE_RING)
     out.blit(ring, (0, 0))
     return out
+
+
+def flame():
+    """Pixel art flame of the fire power: orange with a yellow heart and a
+    dark outline, without glow. Drawn once and cached."""
+    if "flame" not in _cache:
+        bits = _flame_bits()
+        _cache["flame"] = retro.scale_px(
+            retro.outline_native(bits, palette.INK, FLAME_OUTLINE_PX),
+            retro.PX)
+    return _cache["flame"]
+
+
+def _flame_bits():
+    """The flame at native resolution (one pixel per art pixel)."""
+    width, height = len(FLAME_ART[0]), len(FLAME_ART)
+    surf = art.canvas(width, height)
+    for y, row in enumerate(FLAME_ART):
+        for x, char in enumerate(row):
+            if char in FLAME_COLORS:
+                surf.set_at((x, y), (*FLAME_COLORS[char], palette.OPAQUE))
+    return surf
 
