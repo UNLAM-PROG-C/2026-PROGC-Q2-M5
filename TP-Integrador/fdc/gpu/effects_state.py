@@ -20,6 +20,7 @@ NO_TIME = 0.0           # start of the clock in the tests
 SHOCK_KIND = "shock"    # EventFx kind of the goal shock wave
 SHOCK_EVENT = protocol.EV_GOAL
 ICE_PROP = "frozen"     # the property of both freeze powers
+BURN_PROP = "burned"    # the property of a player burnt by the fire power
 BLACKOUT_PROP = "blackout"
 CONFUSION_PROP = "confusion"
 FIRE_PROP = "fire"
@@ -30,13 +31,14 @@ class FxParams:
     """Everything the chain needs to know of one frame (see spec §5)."""
 
     __slots__ = ("ice", "blackout", "confusion", "fire", "night", "shock",
-                 "trail", "crt", "var", "heat_channel")
+                 "trail", "crt", "var", "heat_channel", "burned")
 
     def __init__(self, night=False):
         self.ice = 0.0            # 0-1: ice tint and bright edges
         self.blackout = ()        # points (x, y) that keep their light
         self.confusion = 0.0      # 0-1: inverted and rotated image
         self.fire = None          # (x, y, radius) of the hot air
+        self.burned: tuple = ()   # points (x, y) of the burnt players
         self.night = night        # the local night mode is on
         self.shock = None         # (x, y, age) of the goal wave
         self.trail = 0.0          # 0-1: the ball leaves a trail
@@ -153,6 +155,9 @@ def _set_power(params, prop, strength, players, index, viewer):
         params.blackout = _blackout_points(players, index, viewer)
     elif prop == CONFUSION_PROP and _seen_by(viewer, index):
         params.confusion = strength
+    elif prop == BURN_PROP:
+        # Both players see the embers: the burnt player is on the pitch.
+        params.burned = params.burned + (_feet(_player(players, index)),)
 
 
 def _set_ice(params, strength):
@@ -227,6 +232,11 @@ def _head(player):
     """Centre of the head: a bit above the feet."""
     return (float(player.get("x") or 0.0),
             float(player.get("y") or 0.0) - G.HEAD_ABOVE)
+
+
+def _feet(player):
+    """(x, y) of the feet of a player (where its burn starts)."""
+    return (float(player.get("x") or 0.0), float(player.get("y") or 0.0))
 
 
 def night_lights():

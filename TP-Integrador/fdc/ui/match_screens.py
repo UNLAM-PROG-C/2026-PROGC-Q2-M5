@@ -47,6 +47,9 @@ TARGET_NAMES = {"goal0": "arco de {0}", "goal1": "arco de {1}",
 # Sound of a power by category (the good ones use "power_good").
 POWER_SOUNDS = {config.CATEGORY_BAD: "power_bad",
                 config.CATEGORY_GLOBAL: "power_global"}
+# Notice of a burnt player (the fire power of 1.0.2): orange, not a glow.
+BURN_NOTICE_COLOR = (255, 170, 60)
+BURN_NOTICE = "{name} se quemó: {seconds} s sin moverse"
 # Text of the pause box by reason (the others use the default one).
 PAUSE_REASONS = {
     protocol.PAUSE_REASON_FOCUS:
@@ -91,6 +94,7 @@ EVENT_HANDLERS = {
     protocol.EV_PAUSED: "_paused",
     protocol.EV_POWER: "_power",
     protocol.EV_POWER_SPAWN: "_power_spawn",
+    protocol.EV_BURN: "_burn",
     protocol.EV_PICKUP_EXPIRED: "_pickup_expired",
     protocol.EV_BOMB_ARMED: "_bomb_armed",
     protocol.EV_BOMB_EXPLODE: "_explosion",
@@ -795,6 +799,19 @@ class MatchScreen(screens.Screen):
         return f"{who}: {pdef.name}" + (f"  (sobre {targets})"
                                         if targets else "")
 
+    def _burn(self, m):
+        """A player got burnt by the fire ball: notice and first embers."""
+        idx = m["player"]
+        name = self.renderer.who(idx)
+        self.app.audio.play("power_global")
+        self.toast(BURN_NOTICE.format(name=name,
+                                     seconds=f"{m['seconds']:.1f}"),
+                   BURN_NOTICE_COLOR, "fire")
+        player = self.state["players"][idx] if self.state else None
+        if player is not None:
+            self.app.fx.burning(self.t, player["x"], player["y"],
+                                player["scale"])
+
     def _pickup_expired(self, m):
         self.app.fx.vanish(m["x"], m["y"])
 
@@ -886,8 +903,14 @@ class MatchScreen(screens.Screen):
         self.toasts = [t for t in self.toasts if t[2] > 0]
 
     def match_sounds_and_snow(self):
-        """Countdown beeps and snow over frozen players."""
+        """Countdown beeps, snow of the frozen players and embers."""
         st = self.state
+        self._countdown_beep(st)
+        for p in (st["players"] if st else ()):
+            self._player_fx(p)
+
+    def _countdown_beep(self, st):
+        """One beep per second of the countdown."""
         if st and st["phase"] == protocol.PHASE_COUNTDOWN and not st["paused"]:
             n = math.ceil(st["phase_left"])
             if n != self.last_count:
@@ -895,10 +918,13 @@ class MatchScreen(screens.Screen):
                 self.app.audio.play("beep")
         else:
             self.last_count = None
-        if st:
-            for p in st["players"]:
-                if p["frozen"]:
-                    self.app.fx.frozen(self.t, p["x"], p["y"], p["scale"])
+
+    def _player_fx(self, p):
+        """Snow over a frozen player and embers over a burnt one."""
+        if p["frozen"]:
+            self.app.fx.frozen(self.t, p["x"], p["y"], p["scale"])
+        if p.get("burned"):
+            self.app.fx.burning(self.t, p["x"], p["y"], p["scale"])
 
     # ------------------------------------------------------------ drawing
     def draw(self, surf):

@@ -112,6 +112,11 @@ ICE_STREAK_STEP = 0.25             # ...and the others every 25 %
 ICE_STREAK_STEPS = 6               # steps of each reflection
 ICE_STREAK_TOP = 10                # px from the top of the block
 ICE_STREAK_COLOR = (255, 255, 255, 180)   # almost opaque white
+# Burnt player (the fire power: the ball burns whoever touches it).
+BURN_TINT = (150, 110, 90)         # rgb multiplier: the body looks charred
+BURN_ICON = 30                     # px: flame by the boots
+BURN_ICON_TOP = 6                  # px above the boots where the flame sits
+BURN_TEXT_GAP = 4                  # px between the flame and the seconds
 # Ball.
 TRAIL_SPEED = 560                  # px/s: faster than this the ball trails
 TRAIL_MIN_SHARE = 0.4              # the oldest trail is 40 % of the radius...
@@ -297,6 +302,24 @@ def _draw_ice(surf, p):
             ice.fill(ICE_STREAK_COLOR, (x - j * PX, ICE_STREAK_TOP + j * 2 * PX,
                                         PX, 2 * PX))
     surf.blit(ice, r)
+
+
+def _burnt(img):
+    """Copy of the sprite of a burnt player: charred, without glow."""
+    dark = img.copy()
+    dark.fill(BURN_TINT, special_flags=pygame.BLEND_RGB_MULT)
+    return dark
+
+
+def _draw_burn(surf, p):
+    """Flame and seconds left by the boots of a burnt player."""
+    icon = icons.power_icon("fire", BURN_ICON)
+    rect = icon.get_rect(midbottom=(snap(p["x"]), int(p["y"] - BURN_ICON_TOP)))
+    surf.blit(icon, rect)
+    left = max(0.0, p.get("burned_left") or 0.0)
+    text = _label(f"{left:.1f}s")
+    surf.blit(text, text.get_rect(midleft=(rect.right + BURN_TEXT_GAP,
+                                           rect.centery)))
 
 
 def _draw_kick_arc(surf, p, f):
@@ -525,6 +548,8 @@ class MatchRenderer:
         img, (fx, fy) = self.sprites.player(
             self.chars[i], f, ang, bob, config.PLAYER_COLORS[i], p["frozen"],
             p["scale"])
+        if p.get("burned"):
+            img = _burnt(img)
         surf.blit(img, (round(p["x"] - fx), round(p["y"] - fy)))
         mine = [e for e in st.get("effects", []) if e["target"] == f"p{i}"]
         self._player_effects(surf, p, f, mine)
@@ -543,10 +568,12 @@ class MatchRenderer:
             _draw_mini_effect(surf, e, (cx, top - MINI_EFFECT_RAISE))
 
     def _player_effects(self, surf, p, f, mine):
-        """Ice, no kick sign, speed lines and spring of a player."""
+        """Ice, burn, no kick sign, speed lines and spring of a player."""
         props = {config.POWERS_BY_ID[e["power"]].prop: e for e in mine}
         if p["frozen"]:
             _draw_ice(surf, p)
+        if p.get("burned"):
+            _draw_burn(surf, p)
         if "no_kick" in props:
             _draw_no_kick(surf, snap(p["x"] - f * NO_KICK_BEHIND),
                           int(p["y"] - NO_KICK_HEIGHT))

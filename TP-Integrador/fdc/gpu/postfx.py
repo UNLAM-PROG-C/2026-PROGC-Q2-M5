@@ -45,10 +45,17 @@ TOUCH_SPARKS = 10       # sparks of a kick or a bounce
 COORD_COLUMNS = 3                   # x, y and radius of a light
 SPARK_COLOUR = (1.0, 0.85, 0.55)     # rgb of the sparks
 FIRE_COLOUR = (1.0, 0.45, 0.15)      # rgb of the fire power
+# Embers of a burnt player (the fire power of 1.0.2): small and few, so the
+# glow stage never saturates.
+EMBER_EVERY = 0.07       # s between two batches over the same player
+EMBER_COUNT = 3          # embers of each batch
+EMBER_COLOUR = (1.0, 0.30, 0.06)     # rgb of the embers (deep orange)
+EMBER_RAISE = 55         # px above the feet where the embers are born
 ICE_COLOUR = (0.55, 0.85, 1.0)       # rgb of the ice power
 # Readable name of each effect for the overlay (line 4).
 _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión",
                  "fire": "fuego", "night": "noche", "shock": "onda",
+                 "burned": "quemado",
                  "trail": "estela", "crt": "repetición", "var": "VAR"}
 _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
 # Glow with a goal or a power, and its vineta: the histogram applies it at the
@@ -90,10 +97,7 @@ class PostFx:
         """F7 state: adaptive quality, demo forcing and the overlay."""
         self.options = options
         self.quality_option = getattr(options, "quality", None)
-        self.quality_mode = quality.mode_of(
-            getattr(options, "quality_mode", None) or config.Gpu.QUALITY_MODE)
-        # "sin-efectos": the chain stays off (plain pygame render).
-        self.enabled = self.allowed and self.quality_mode != quality.OFF
+        self._init_mode(options)
         self.governor = quality.QualityGovernor(self.quality_option, "cpu")
         if self.quality_mode != quality.AUTO:
             self.governor.enabled = False    # FULL and OPTIMIZADO never adapt
@@ -101,6 +105,16 @@ class PostFx:
         self.skips = ()             # stages the CPU level leaves out
         self.forced = {}            # FxParams forced by the demo director
         self.last_ms = {}           # last fx ms of each backend (overlay)
+
+    def _init_mode(self, options):
+        """Mode chosen by the player, or the default of the backend."""
+        # Without a choice the mode follows the backend (see start()): the
+        # chain starts as FULL and then takes the default of the backend.
+        chosen = getattr(options, "quality_mode", None)
+        self.chosen_mode = chosen is not None
+        self.quality_mode = quality.mode_of(chosen or config.Gpu.QUALITY_MODE)
+        # "sin-efectos": the chain stays off (plain pygame render).
+        self.enabled = self.allowed and self.quality_mode != quality.OFF
 
     def _init_effects(self):
         """State of the effects (viewer, night, clock, trail, replay, heat)."""
@@ -124,6 +138,7 @@ class PostFx:
         self.confetti = celebration.ConfettiField()
         self.pending = None         # goal waiting for the replay
         self.white = None           # image of the flash (built once)
+        self.ember_acc = 0.0        # s to the next batch of embers (FULL)
 
     # ------------------------------------------------------------- lifecycle
     def start(self):
@@ -138,7 +153,18 @@ class PostFx:
             self.enabled = False
         self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
         backend.log_backend(self.mode, self.device)
+        self._apply_default_mode()
         self._reset_backend()
+
+    def _apply_default_mode(self):
+        """Without a mode chosen by the player: FULL on the GPU, none on
+        the CPU.
+
+        It is decided here, when the backend is already known, so a GPU that
+        falls back to the CPU ends up with the plain pygame render.
+        """
+        if not self.chosen_mode:
+            self.set_quality_mode(quality.default_for(self.mode))
 
     def _reset_backend(self):
         """Governor, buffers and demo rule for the backend just built."""
@@ -199,6 +225,7 @@ class PostFx:
 
     def cycle_quality_mode(self):
         """Next quality mode: full -> optimizado -> "sin-efectos" -> auto."""
+        self.chosen_mode = True     # F10 and the menu are a choice
         return self.set_quality_mode(quality.next_mode(self.quality_mode))
 
     def punch(self):
@@ -413,6 +440,7 @@ class PostFx:
         if self._advance_player():
             return self._screened(image)      # replay or VAR: only its look
         self.fx = self._derive()
+        self._spawn_embers(dt)
         self.phase += config.Gpu.HEAT_SPEED * dt
         return self._flash(self._night(self._stages(image, dt)))
 
@@ -451,6 +479,17 @@ class PostFx:
         self.heat.feed(self.state)
         if self.ops is not None and self.heat.due():
             self.heat.flush(self.ops)
+
+    def _spawn_embers(self, dt):
+        """FULL: a small batch of embers over each burnt player."""
+        if not self.fx.burned or not self.full_quality():
+            return
+        self.ember_acc += dt
+        if self.ember_acc < EMBER_EVERY:
+            return
+        self.ember_acc = 0.0
+        for x, y in self.fx.burned:
+            self.particles.spawn(x, y - EMBER_RAISE, EMBER_COLOUR, EMBER_COUNT)
 
     def _screened(self, image):
         """Replay or VAR: the chain ends with the look of the screen."""
@@ -549,8 +588,8 @@ class PostFx:
     def active_effects(self):
         """Readable list of the effects on this frame (overlay line 4)."""
         names = []
-        for name in ("ice", "blackout", "confusion", "fire", "night",
-                     "shock", "trail", "crt", "var"):
+        for name in ("ice", "blackout", "confusion", "fire", "burned",
+                     "night", "shock", "trail", "crt", "var"):
             value = getattr(self.fx, name, None)
             if value not in (None, (), 0, 0.0, False):
                 names.append(_EFFECT_NAMES.get(name, name))

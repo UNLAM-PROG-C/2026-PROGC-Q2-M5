@@ -125,6 +125,19 @@ SNOW_EVERY = 3              # ...and a batch falls every 3 ticks
 SNOW_SWEEP = 97
 SNOW_SPREAD = 60            # px: width of the zone where flakes fall
 SNOW_HEIGHT = 120           # px above the feet (at scale 1) they fall from
+# --- embers and smoke of a burnt player (the fire power of 1.0.2)
+BURN_TICK_HZ = 20           # the burn clock ticks 20 times per second...
+BURN_EVERY = 2              # ...and a batch of embers leaves every 2 ticks
+BURN_EMBER_COUNT = 2        # embers per batch
+BURN_SMOKE_COUNT = 1        # puffs of smoke per batch
+BURN_HEIGHT = 45            # px above the feet where the embers start
+BURN_SPREAD = 26            # px of width where they start
+BURN_SWEEP = 53             # px/s with which the batch sweeps that width
+BURN_SPEED = (60, 170)      # px/s of the embers
+BURN_LIFE = (0.25, 0.5)     # s of each ember
+BURN_SIZE = (2, 4)          # px: small, so the fire never floods the screen
+BURN_GRAVITY = -240         # px/s^2: negative, the embers go up
+BURN_SMOKE_GRAVITY = -80    # px/s^2: the smoke rises slowly
 # --- drawing
 SHAKE_PX = 22               # px of shake per second of shake left
 RING_BLINK_HZ = 10          # in its second half the ring blinks (per second)
@@ -320,6 +333,20 @@ class Effects:
         if int(t * SNOW_TICK_HZ) % SNOW_EVERY == 0:
             self.snow(x + (t * SNOW_SWEEP % SNOW_SPREAD) - SNOW_SPREAD / 2,
                       y - SNOW_HEIGHT * scale)
+
+    def burning(self, t, x, y, scale):
+        """Embers and a puff of smoke over a burnt player (called every
+        frame; a batch leaves now and then)."""
+        if int(t * BURN_TICK_HZ) % BURN_EVERY:
+            return
+        px = x + (t * BURN_SWEEP % BURN_SPREAD) - BURN_SPREAD / 2
+        top = y - BURN_HEIGHT * scale
+        self.burst(px, top, BURN_EMBER_COUNT, _rng.choice(FIRE_COLORS),
+                   speed=BURN_SPEED, life=BURN_LIFE, size=BURN_SIZE,
+                   g=BURN_GRAVITY)
+        self.burst(px, top, BURN_SMOKE_COUNT, SMOKE_COLOR, speed=SMOKE_SPEED,
+                   life=SMOKE_LIFE, size=SMOKE_SIZE, g=BURN_SMOKE_GRAVITY,
+                   kind="puff")
 
     # ------------------------------------------------------------ cycle
     def update(self, dt):
