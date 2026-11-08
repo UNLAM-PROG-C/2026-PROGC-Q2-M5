@@ -318,5 +318,40 @@ class DefaultByBackendTest(unittest.TestCase):
         self.assertTrue(fx.enabled)
 
 
+class EmberTest(unittest.TestCase):
+    """1.0.2: FULL throws a few embers over the burnt player, and the other
+    modes leave them out (there the pygame render shows the burn)."""
+
+    def chain(self, mode):
+        fx = postfx.PostFx(options(quality_mode=mode), (W, H))
+        fx.start()
+        return fx
+
+    def live(self, fx):
+        """Sparks alive in the pool of the chain."""
+        return int((fx.particles.life > 0.0).sum())
+
+    def test_full_spawns_embers_over_the_burnt_player(self):
+        fx = self.chain(FULL)
+        fx.fx.burned = ((10.0, 20.0),)
+        for _ in range(3):
+            # pylint: disable-next=protected-access
+            fx._spawn_embers(postfx.EMBER_EVERY)
+        self.assertEqual(self.live(fx), 3 * postfx.EMBER_COUNT)
+
+    def test_without_a_burnt_player_there_are_no_embers(self):
+        fx = self.chain(FULL)
+        # pylint: disable-next=protected-access
+        fx._spawn_embers(postfx.EMBER_EVERY * 3)
+        self.assertEqual(self.live(fx), 0)
+
+    def test_optimizado_leaves_the_embers_out(self):
+        fx = self.chain(OPTIMIZED)
+        fx.fx.burned = ((10.0, 20.0),)
+        # pylint: disable-next=protected-access
+        fx._spawn_embers(postfx.EMBER_EVERY)
+        self.assertEqual(self.live(fx), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
