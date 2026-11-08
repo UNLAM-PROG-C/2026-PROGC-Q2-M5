@@ -1,6 +1,6 @@
 # Futbol De Cabeza
 
-**Versión 1.0.1** (2026-11-06). Los zips de Windows (CPU y GPU) y la `.app` de Mac
+**Versión 1.0.2** (2026-11-08). Los zips de Windows (CPU y GPU) y la `.app` de Mac
 se arman con `tools\build_exe.py`, `packaging/mac/build.sh` y `release\NOTAS-RELEASE.md`.
 
 Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas. Todo eso también está **en el navegador**: entrando a la página del juego se elige el modo igual que en la versión de escritorio.
@@ -89,7 +89,11 @@ full|optimizado|sin-efectos|auto` (también vale `off`; en el juego, **F10**
 recorre FULL → OPTIMIZADO → SIN EFECTOS → AUTO y F2 dice si va por GPU o
 CPU). FULL muestra todos los efectos (también sin CUDA, con numpy, más
 lento), OPTIMIZADO es la versión liviana y **SIN EFECTOS** juega el render de
-pygame pelado, sin postproceso (lo más liviano en CPU y en la Mac).
+pygame pelado, sin postproceso (lo más liviano en CPU y en la Mac). **Por
+defecto, sin elegir nada:** FULL cuando el juego corre en la GPU y SIN
+EFECTOS cuando cae a CPU (el zip de CPU y la app de Mac). Lo que elija el
+jugador —`--calidad`, F10, el menú de opciones o una preferencia guardada—
+manda sobre ese valor.
 
 Opciones útiles:
 
@@ -182,7 +186,7 @@ Controles / Poderes / Salir
 - **Patada:** una por pulsación, con 0,32 s de recuperación, y sale hacia donde mira el personaje (la dirección del último movimiento). Si en `PlayerSpec` se pone `FACE_MOVEMENT = False`, el personaje mira siempre al arco rival.
 - **Salto:** sólo desde el suelo, sin doble salto. Hay un pequeño margen (*coyote time*) y la pulsación se recuerda 0,1 s antes de aterrizar.
 - **Cabezazo:** es el contacto físico de la cabeza con la pelota. Si la cabeza va hacia la pelota, suma un empuje extra.
-- **Pelota:** es "flotante": la patada sale alta (unos 205 px, a la altura de los poderes), cae despacio y frena en el aire. Por eso no cruza toda la cancha de un solo golpe (pica a unos 440 px). Durante 0,12 s después de patear, la pelota no choca con quien la pateó, para que no se la frene con su propia cabeza.
+- **Pelota:** es "flotante": la patada sale alta (unos 205 px, a la altura de los poderes altos), cae despacio y frena en el aire. Por eso no cruza toda la cancha de un solo golpe (pica a unos 440 px). Durante 0,12 s después de patear, la pelota no choca con quien la pateó, para que no se la frene con su propia cabeza.
 - **Cancha:** los travesaños son sólidos, con la punta redondeada (la esquina entre poste y travesaño). La pared del fondo hace de poste trasero, y techo y paredes mantienen la pelota en juego. Una pelota quieta sobre el travesaño rueda de a poco hacia la cancha para no quedar inalcanzable.
 - **Pérdida de foco:** se liberan todas las teclas y se pide pausa.
 
@@ -204,8 +208,8 @@ El detalle está en [docs/ONLINE.md](docs/ONLINE.md).
 
 ## 4. Poderes
 
-- **Aparición:** un objeto flotante cada **7 a 10 s de juego efectivo**, nunca más de uno a la vez. Aparece en una posición alcanzable, fuera de los arcos y sin tocar travesaños ni jugadores.
-- **Duración del objeto:** si nadie lo recoge, desaparece a los **6 s**.
+- **Aparición:** un objeto flotante cada **2,5 a 3,5 s de juego efectivo**, nunca más de uno a la vez. Aparece en una posición alcanzable, fuera de los arcos y sin tocar travesaños ni jugadores. **La mitad aparece al ras del piso** (a la altura del centro de la pelota rodando) y la otra mitad entre el piso y unos 180 px.
+- **Duración del objeto:** si nadie lo recoge, desaparece a los **8 s**.
 - **Activación:** sólo cuando lo toca **la pelota**. Cada objeto se consume una única vez.
 - **Receptor:** el último jugador que tocó la pelota (con cabeza, cuerpo o patada). Si todavía no hubo un toque válido, los poderes personales **no se consumen** (la pelota lo atraviesa) y los globales sí.
 - **Colores:** **verde** beneficia al receptor, **rojo** lo perjudica y **violeta** modifica el partido.
@@ -229,8 +233,11 @@ El detalle está en [docs/ONLINE.md](docs/ONLINE.md).
 | Pelota grande | Violeta | Radio de la pelota ×1,35 | 6 s |
 | Pelota con mucho rebote | Violeta | Restitución ×1,30, con tope de 0,93 y respetando la velocidad máxima | 6 s |
 | Pelota pequeña | Violeta | Radio de la pelota ×0,70 | 6 s |
+| Pelota de fuego | Violeta | La pelota arde y el aire tiembla; el primero que la toca, de cualquier equipo, queda quemado: no camina, no salta ni patea. Al quemarlo, la pelota se apaga | 2 s de quemadura (la pelota se apaga a los 6 s si nadie la toca) |
+| Apagón | Verde | Se apagan las luces: sólo se ve alrededor del rival | 6 s |
+| Confusión | Verde | El rival ve la cancha al revés y torcida | 5 s |
 
-Todos los valores se configuran en `POWERS` y `PowerRules` (`fdc/config.py`).
+Todos los valores se configuran en `POWERS` y `PowerRules` (`fdc/config.py`). Las tres últimas filas son los efectos que se sortean igual que el resto y, desde la 1.0.2, **Pelota de fuego** además quema en la simulación (no es sólo imagen).
 
 **Cómo se combinan los efectos.** Se guardan en un diccionario con clave `(objetivo, propiedad)`:
 
@@ -363,7 +370,8 @@ Son 108 pruebas y tardan unos 100 s. Usan `unittest`; las del online necesitan a
 |---|---|
 | `test_protocol.py` | Contadores de pulsaciones (compactación sin pérdidas), filtro de partido y `seq`, deduplicación de eventos |
 | `test_match.py` | Gol válido y un solo gol por ingreso, gol con un jugador escondido dentro del arco, pararse sobre la cabeza del rival y caerse si se corre, subirse al travesaño desde una cabeza, salto desde el piso sin tocar el travesaño, cruce parcial, pelota sobre el travesaño, pelota que se achica sobre la línea, sin atravesar travesaños ni cabezas a velocidad máxima, velocidad máxima, choques entre jugadores, último toque (incluye contactos simultáneos), una patada por pulsación, recuperación, sin doble salto, reloj congelado en pausa, cuentas regresivas y celebración, final con empate o victoria, y un partido completo con entradas aleatorias que verifica invariantes en cada paso |
-| `test_powers.py` | Los 17 poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, aparición de 7 a 10 s y vencimiento a 6 s, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
+| `test_powers.py` | Los 17 poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, aparición cada 2,5 a 3,5 s con la mitad al ras del piso y vencimiento a 8 s, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
+| `test_fire.py` | El poder de fuego en la simulación: el primer toque quema 2 s (no camina, no salta, no patea), apaga la pelota, el segundo toque no hace nada, a los 6 s se apaga sola y la quemadura viaja en el estado |
 | `test_process.py` | **Procesos reales:** READY desde otro pid y sin pygame, iniciar, pausar (reloj congelado en los latidos), continuar, reiniciar (sólo se aceptan estados del partido nuevo, sin efectos), eventos de partidos anteriores, watchdog, cierre ordenado (`bye`, código 0), fallo informado, proceso muerto detectado, sin huérfanos si la interfaz muere, órdenes de prueba rechazadas sin `--test` |
 | `test_lobby.py` | Salas del online (lógica pura, sin red): nombres repetidos con etiquetas distintas (y la misma etiqueta para el mismo perfil), sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
 | `test_online.py` | **Servidor real con conexiones WebSocket reales:** nombres repetidos, salas con contraseña, mensajes inválidos, archivos de la página sin salir de su carpeta. Partido completo con estados y final, revancha, abandono (gana el que se quedó y la sala sigue abierta), corte de red con pausa y vuelta con el token, y derrota por no volver en el plazo. También prueba la lógica de la sala sin procesos (pausa pedida que espera el gol, "listo" de los dos, 30 s, desconexión durante la pausa), la pausa tras el gol en la simulación, la interpolación y la validación de mensajes |

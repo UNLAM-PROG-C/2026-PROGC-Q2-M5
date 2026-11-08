@@ -27,6 +27,7 @@ Regla: 2 colores de equipo + neutros fríos oscuros + césped. Nada más saturad
 - Bordes nítidos: sin blur global. Solo halo chico alrededor de fuentes de luz reales (pelota con poder, chispas).
 - **Ningún efecto toca la tribuna ni los carteles**: los focos, el anillo del gol y el calor viven abajo de `PITCH_TOP` (504 px, primera fila de césped). La tribuna se queda quieta y nítida.
 - Hielo: tinte parejo, pero el foco **multiplica** (nunca suma blanco) y la pelota y el rival siempre con contraste pleno.
+- Jugador quemado (1.0.2): se oscurece un poco (tinte `#966E5A` por multiplicación, nunca glow) y lleva el ícono de llama con los segundos que le quedan. En FULL, además, salen **pocas brasas chicas** (2 px a 4 px) desde los pies: nada que sature ni tape al jugador.
 - Cielo blanco quemado = prohibido (distrae y rompe el contraste del HUD). De noche el cielo conserva el ambiente: no toma la ganancia de la autoexposición.
 - OPTIMIZADO se ve tan nítido como FULL: corre a resolución completa y sólo se saltea las etapas caras. Prohibido volver a estirar una imagen chica (bloques de 2 px).
 

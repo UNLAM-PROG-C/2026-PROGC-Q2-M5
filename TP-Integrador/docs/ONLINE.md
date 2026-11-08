@@ -77,7 +77,7 @@ Por la red va **JSON**, **nunca `pickle`**, porque `pickle` permite ejecutar có
 
 | Cliente → servidor | Respuesta o efecto |
 |---|---|
-| `hello {username, token?}` | `welcome {username, token, restored}` + `rooms`, o `error` (`invalid_name`, `already_named`). Con el `token` se **recupera la sesión** (sala y partido) tras un corte. |
+| `hello {username, player_id?, token?, protocol?}` | `welcome {username, token, restored}` + `rooms`, o `error` (`invalid_name`, `already_named`, `version`). Con el `token` se **recupera la sesión** (sala y partido) tras un corte. |
 | `list_rooms`, `create_room {name, password?}`, `join_room {room, password?}`, `leave_room` | `rooms` (lista) o `room` (detalle de la sala). Errores: `room_full`, `wrong_password`, `no_such_room`, `too_many_rooms`. |
 | `choose_character {character}`, `ready {ready}` | `room` a los dos. Con ambos listos: `match_start {match, players, you}` a cada uno. |
 | `input {p: [izq, der, saltos, patadas]}` | Foto de controles **reemplazable**. Saltos y patadas viajan como **contadores acumulados**, así que no se pierde ninguna pulsación aunque se pierdan fotos. Se manda sólo cuando cambia, más un latido cada 0,25 s. |
@@ -91,6 +91,8 @@ Del servidor también llegan:
 - `ev {e}`: un evento del partido (gol, poder, rebote...), con `eid` para no procesarlo dos veces;
 - `opponent {connected, left}`: si el rival perdió la conexión y cuánto le queda para volver;
 - `match_over {reason: "tiempo" | "abandono" | "error"}`: el final del partido.
+
+**Versión del protocolo.** El `hello` lleva `protocol` (hoy, **2**) y el servidor lo compara con `config.PROTOCOL_VERSION`: si no coincide, responde `error {code: "version"}` con un mensaje para el jugador y cierra con el código 1008, así un cliente viejo recibe un rechazo claro en vez de quedar esperando. En el `state`, cada efecto viaja con su propiedad (`prop`) y cada jugador con `burned` y `burned_left`, la quemadura del poder de fuego.
 
 ### Latencia
 
