@@ -301,11 +301,19 @@ class NetClient:
         self.player_id = player_id
         self.fatal = None
         if self.status == OPEN:
-            self.send({"type": wire.HELLO, "username": username,
-                       "player_id": player_id})
+            self.send(self._hello())
         elif self.status not in (CONNECTING, RECONNECTING):
             self.status = CONNECTING
             self._open()
+
+    def _hello(self):
+        """Hello message: the name, the tag and the protocol it speaks."""
+        hello = {"type": wire.HELLO, "username": self.wanted_name,
+                 "player_id": self.player_id,
+                 "protocol": config.PROTOCOL_VERSION}
+        if self.token:
+            hello["token"] = self.token          # recover the session
+        return hello
 
     def _open(self):
         self.transport = self.transport_cls(self.url)
@@ -386,11 +394,7 @@ class NetClient:
 
     def _on_open(self):
         self.status = OPEN
-        hello = {"type": wire.HELLO, "username": self.wanted_name,
-                 "player_id": self.player_id}
-        if self.token:
-            hello["token"] = self.token          # recover the session
-        self.send(hello)
+        self.send(self._hello())
 
     def _decode(self, data):
         try:
@@ -409,6 +413,8 @@ class NetClient:
             self._open()
 
     def _on_closed(self, info, now):
+        if self.fatal:                  # it already gave up (version refused)
+            return
         if self.transport is not None:
             self.transport.close()
         self.transport = None
@@ -502,6 +508,9 @@ class NetClient:
 
     def _on_error(self, msg, now):
         self.last_error = dict(msg, at=now)
+        if msg.get("code") == wire.CODE_VERSION:
+            # Another version of the game: there is nothing to retry.
+            self._give_up(msg.get("message") or "Versión incompatible.")
 
     def _on_pong(self, msg, now):
         if isinstance(msg.get("t"), (int, float)):

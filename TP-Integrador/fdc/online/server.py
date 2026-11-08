@@ -307,6 +307,9 @@ class GameServer:
                           "message": "Primero hay que elegir un nombre "
                                      "de usuario."})
             return None
+        if msg.get("protocol") != config.PROTOCOL_VERSION:
+            _refuse_version(pending)
+            return None
         return self._hello(pending, ws, msg)
 
     def _after_connection(self, session, pending, ws):
@@ -614,6 +617,16 @@ def _too_many(stamps, now):
     while stamps and now - stamps[0] > ONLINE.RATE_WINDOW:
         stamps.popleft()
     return len(stamps) > ONLINE.MAX_MESSAGES_PER_SEC
+
+
+def _refuse_version(session):
+    """A client of another version cannot play: it is told why and closed."""
+    session.send({"type": wire.ERROR, "code": wire.CODE_VERSION,
+                  "message": f"Tu versión del juego no coincide con el "
+                             f"servidor: actualizá a la {config.GAME_VERSION} "
+                             f"para jugar online."})
+    asyncio.ensure_future(session.ws.close(wire.CLOSE_POLICY,
+                                           "game version"))
 
 
 def _invalid_message(session, exc):

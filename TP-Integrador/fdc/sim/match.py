@@ -238,7 +238,17 @@ class Match:
         physics.step_ball(self.ball, self.players, self.goals, dt, contacts,
                           touches)
         self._resolve_last_touch(contacts)
+        self._burn(contacts)
         self._sound_events(contacts, touches)
+
+    def _burn(self, contacts):
+        """The fire power of the ball burns the player who touches it."""
+        if not contacts:
+            return
+        user = self.last_touch
+        if user is None:
+            user = contacts[0][0]
+        self.powers.check_burn(self, user, self._events)
 
     def _move_players(self, dt, controls):
         self._control_players(dt, controls)
@@ -427,6 +437,7 @@ def _player_snapshot(player):
         "facing": player.facing, "ground": player.on_ground,
         "kick": player.kick_progress(), "scale": player.scale,
         "frozen": player.frozen, "no_kick": player.no_kick,
+        "burned": player.burned, "burned_left": player.burned_left,
         "stride": player.stride, "knock": player.knockback > 0,
         "celebrate": player.celebrating, "on_head": player.on_head,
         # Power modifiers: the client needs them to predict with the same

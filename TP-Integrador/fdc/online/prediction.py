@@ -267,6 +267,7 @@ class Prediction:
         player.speed_mult = float(own.get("speed", 1.0))
         player.jump_mult = float(own.get("jump", 1.0))
         player.frozen = bool(own.get("frozen"))
+        player.burned = bool(own.get("burned"))
         player.no_kick = bool(own.get("no_kick"))
         player.knockback = 1.0 if own.get("knock") else 0.0
 
@@ -281,19 +282,26 @@ class Prediction:
 
     @staticmethod
     def _load_motion(target, source):
-        """Speed, facing, size, power modifiers and state of the body."""
+        """Speed, facing, size and state of the body."""
         target.vx = float(source.get("vx", 0.0))
         target.vy = float(source.get("vy", 0.0))
         target.facing = int(source.get("facing", 1)) or 1
         target.on_ground = bool(source.get("ground"))
         target.scale = target.target_scale = float(source.get("scale", 1.0))
+        target.on_head = source.get("on_head")
+        target.celebrating = bool(source.get("celebrate"))
+        Prediction._load_powers(target, source)
+
+    @staticmethod
+    def _load_powers(target, source):
+        """Power modifiers: speed, jump, freeze, burn and no kick."""
         target.speed_mult = float(source.get("speed", 1.0))
         target.jump_mult = float(source.get("jump", 1.0))
         target.frozen = bool(source.get("frozen"))
+        target.burned = bool(source.get("burned"))
+        target.burned_left = float(source.get("burned_left") or 0.0)
         target.no_kick = bool(source.get("no_kick"))
         target.knockback = 1.0 if source.get("knock") else 0.0
-        target.on_head = source.get("on_head")
-        target.celebrating = bool(source.get("celebrate"))
 
     def _load_timers(self, target, source):
         """Kick and press timers: only the kick progress comes in the state."""

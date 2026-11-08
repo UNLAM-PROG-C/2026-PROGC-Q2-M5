@@ -254,6 +254,8 @@ class Player:
         self.speed_mult = 1.0
         self.jump_mult = 1.0
         self.frozen = False
+        self.burned = False         # the fire power: no action, no walk
+        self.burned_left = 0.0      # s left of the burn (for the screens)
         self.no_kick = False
         self.target_scale = 1.0
 
@@ -303,9 +305,9 @@ class Player:
 def control_player(p, dt, move_dir, jump_pressed, kick_pressed, out_events):
     """Applies the player's intention. out_events gets (kind, idx) tuples."""
     _buffer_presses(p, jump_pressed, kick_pressed)
-    can_act = not p.frozen
+    can_act = not p.frozen and not p.burned
     if not can_act:
-        # Frozen: no voluntary actions (gravity and collisions go on).
+        # Frozen or burnt: no voluntary actions (gravity and collisions go on).
         move_dir = 0
         p.jump_buffer = 0.0
         if p.kick_t >= 0:

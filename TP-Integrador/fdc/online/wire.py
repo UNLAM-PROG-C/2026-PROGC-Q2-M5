@@ -9,10 +9,13 @@ Used by the server (fdc/online/server.py) and the client
 pygame nor network libraries.
 
 Client -> server
-    hello {username, player_id, token?}
+    hello {username, player_id, protocol?, token?}
                                 introduce itself with the profile name (or
                                 come back with the received token);
-                                player_id gives the tag
+                                player_id gives the tag; protocol is the
+                                version of its protocol (the server refuses
+                                another one with an "error" of code
+                                "version" and closes the connection)
     list_rooms / create_room / join_room / leave_room / choose_character /
     ready                       rooms (see fdc/online/lobby.py)
     input {p: [left, right, jumps, kicks], seq}
@@ -80,6 +83,9 @@ PONG = "pong"
 CLOSE_POLICY = 1008     # broke the rules: too many messages or not reading
 CLOSE_TRY_AGAIN = 1013  # server full: better try later
 CLOSE_REPLACED = 4000   # its session was opened in another window
+
+# Codes of the "error" message the server sends to the client.
+CODE_VERSION = "version"    # the game version does not match the server's
 
 # States of the online pause (pause_info.status).
 PAUSE_PENDING = "pending"   # someone asked: it starts after the next goal

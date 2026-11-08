@@ -1,8 +1,9 @@
 """Powers: pickups, timed effects and bombs.
 
 Implemented rules (see also README):
-* At most one pickup at a time; it appears every 7-10 s of effective play
-  and disappears after 6 s if the ball does not touch it.
+* At most one pickup at a time; it appears every 5-7 s of effective play
+  (2.5-3.5 s with SPAWN_RATE) and disappears after 8 s if the ball does not
+  touch it. Half of them appear on the floor, half at lob height.
 * Receiver = last player who touched the ball. Without a last touch,
   personal powers are NOT consumed (the ball goes through); global ones are.
 * Effects are stored in a dictionary keyed by (target, property):
@@ -13,6 +14,8 @@ Implemented rules (see also README):
   errors remain when an effect expires.
 * Everything counts down only during effective play: pauses, countdowns and
   celebrations freeze timers and fuses.
+* The fire power of the ball burns the first player who touches it: the
+  ball goes out and that player stays BURN_DURATION s without moving.
 """
 import math
 
@@ -22,6 +25,11 @@ from fdc.sim import physics
 
 RULES = config.PowerRules
 ARENA = config.Arena
+FIRE_PROP = "fire"          # property of the burning ball
+BURN_PROP = "burned"        # property of the player who touched the fire
+# Effect properties that multiply a value of the player, and its attribute.
+MULTIPLIERS = (("speed", "speed_mult"), ("jump", "jump_mult"),
+               ("size", "target_scale"))
 # px of free space between a new pickup and a player's body.
 PLAYER_CLEARANCE = 10
 GOAL_CLEARANCE = 20         # px of free space between a pickup and a goal
@@ -114,6 +122,7 @@ class PowerManager:
     def update(self, dt, match, events):
         """Called only during effective play."""
         self._expire_effects(dt, events)
+        self._refresh_burns(match)
         self._age_pickup(dt, events)
         self.spawn_timer -= dt
         if self.spawn_timer <= 0 and self.pickup is None:
@@ -132,6 +141,13 @@ class PowerManager:
                 events.append((protocol.EV_POWER_EXPIRED,
                                {"power": effect.power,
                                 "target": effect.target}))
+
+    def _refresh_burns(self, match):
+        """Seconds left of each burn, for the screens (the state has it)."""
+        for player in match.players:
+            effect = self.effects.get((f"p{player.idx}", BURN_PROP))
+            if effect is not None:
+                player.burned_left = effect.left
 
     def _age_pickup(self, dt, events):
         if self.pickup is None:
@@ -162,7 +178,7 @@ class PowerManager:
         ball = match.ball
         for _ in range(RULES.SPAWN_TRIES):
             x = self.rng.uniform(*RULES.SPAWN_X)
-            y = self.rng.uniform(*RULES.SPAWN_Y)
+            y = spawn_height(self.rng)
             if math.hypot(x - ball.x, y - ball.y) < RULES.SPAWN_MIN_BALL_DIST:
                 continue
             if position_is_free(x, y, match) and _clear_of_players(x, y,
@@ -211,6 +227,24 @@ class PowerManager:
         events.append((protocol.EV_BOMB_ARMED,
                        {"bomb": bomb.id, "x": bomb.x, "y": bomb.y}))
 
+    def check_burn(self, match, user, events):
+        """The fire ball burns the first player who touches it."""
+        effect = self.effects.pop(("ball", FIRE_PROP), None)
+        if effect is None:
+            return
+        self._fire_out(effect, events)
+        key = f"p{user}"
+        self.effects[(key, BURN_PROP)] = Effect(
+            effect.power, key, BURN_PROP, None, RULES.BURN_DURATION)
+        events.append((protocol.EV_BURN, {"player": user,
+                                          "seconds": RULES.BURN_DURATION}))
+        self.apply_modifiers(match)
+
+    def _fire_out(self, effect, events):
+        """The ball stops burning (it was touched or its time is over)."""
+        events.append((protocol.EV_POWER_EXPIRED,
+                       {"power": effect.power, "target": effect.target}))
+
     def apply_modifiers(self, match):
         """Recomputes everything from the base values."""
         for player in match.players:
@@ -224,18 +258,25 @@ class PowerManager:
         match.ball.bounce_mult = effect.value if effect else 1.0
 
     def _modify_player(self, player):
+        """Base values plus the effects the match keeps on the player."""
         effects = self.effects
-        player.clear_modifiers()
         key = f"p{player.idx}"
-        if (key, "speed") in effects:
-            player.speed_mult = effects[(key, "speed")].value
-        if (key, "jump") in effects:
-            player.jump_mult = effects[(key, "jump")].value
-        if (key, "size") in effects:
-            player.target_scale = effects[(key, "size")].value
+        player.clear_modifiers()
+        for prop, attr in MULTIPLIERS:
+            effect = effects.get((key, prop))
+            if effect is not None:
+                setattr(player, attr, effect.value)
         player.frozen = (key, "frozen") in effects
         player.no_kick = (key, "no_kick") in effects
-        if player.frozen and player.kick_t >= 0:
+        self._set_burn(player, effects.get((key, BURN_PROP)))
+
+    @staticmethod
+    def _set_burn(player, effect):
+        """The burn of the fire power: no walk, no jump and no kick."""
+        player.burned = effect is not None
+        if effect is not None:
+            player.burned_left = effect.left
+        if (player.frozen or player.burned) and player.kick_t >= 0:
             player.kick_t = -1.0
 
     # -------------------------------------------------------------- bombs
@@ -264,11 +305,18 @@ class PowerManager:
                 "ttl_max": RULES.PICKUP_TTL},
             "bombs": [{"id": b.id, "x": b.x, "y": b.y, "fuse": b.fuse,
                        "fuse_max": RULES.BOMB_WARNING} for b in self.bombs],
-            "effects": [{"power": e.power, "target": e.target,
+            "effects": [{"power": e.power, "prop": e.prop, "target": e.target,
                          "left": e.left, "dur": e.duration}
                         for e in sorted(self.effects.values(),
                                         key=lambda e: (e.target, e.prop))],
         }
+
+
+def spawn_height(rng):
+    """Height of a new pickup: half on the floor, half in the air."""
+    if rng.random() < RULES.SPAWN_FLOOR_SHARE:
+        return RULES.SPAWN_FLOOR_Y
+    return rng.uniform(*RULES.SPAWN_Y)
 
 
 def position_is_free(x, y, match):

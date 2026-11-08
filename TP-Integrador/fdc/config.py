@@ -16,10 +16,11 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identity
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_VERSION = "1.0.1"      # shown in the window title and the release notes
+GAME_VERSION = "1.0.2"      # shown in the window title and the release notes
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
-# Version of the UI <-> simulation protocol (reported in READY).
-PROTOCOL_VERSION = 1
+# Version of the UI <-> simulation protocol (reported in READY and checked by
+# the online server, which refuses a client of another version).
+PROTOCOL_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Screen (logical reference resolution; the window scales with SCALED,
@@ -186,8 +187,8 @@ class MatchRules:
 class PowerRules:
     """When and where the powers appear, and how strong they are."""
     # Powers appear more often than in v1 (they were barely seen in a match):
-    # the two times below are divided by SPAWN_RATE, so 3.5 s - 5 s in v2.
-    SPAWN_BASE = (7.0, 10.0)   # s between pickups at SPAWN_RATE = 1
+    # the two times below are divided by SPAWN_RATE, so 2.5 s - 3.5 s.
+    SPAWN_BASE = (5.0, 7.0)    # s between pickups at SPAWN_RATE = 1
     SPAWN_RATE = 2.0           # how many times more often than the base
     SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
     SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
@@ -197,11 +198,20 @@ class PowerRules:
     PICKUP_RADIUS = 26      # px: pickup radius (touched with the ball)
     # px: horizontal band where pickups appear (away from the goals)
     SPAWN_X = (Arena.GOAL_DEPTH + 110, Arena.WIDTH - Arena.GOAL_DEPTH - 110)
-    # px: from near the floor up to a lob height
-    SPAWN_Y = (Arena.FLOOR_Y - 260, Arena.FLOOR_Y - 70)
+    # px: share of the pickups that appear on the floor (the ball touches
+    # them rolling: they are the cheap half).
+    SPAWN_FLOOR_SHARE = 0.5
+    # px: free space between a pickup of the floor and the floor line.
+    SPAWN_FLOOR_CLEARANCE = 10
+    # px: centre of a pickup of the floor (it reaches a rolling ball).
+    SPAWN_FLOOR_Y = (Arena.FLOOR_Y - PICKUP_RADIUS - SPAWN_FLOOR_CLEARANCE)
+    # px: band of the other half, from a low lob up to a high one.
+    SPAWN_Y = (Arena.FLOOR_Y - 180, Arena.FLOOR_Y - 60)
     SPAWN_MIN_BALL_DIST = 140   # px: they never appear next to the ball
     # Attempts to find a free spot before waiting for the next turn.
     SPAWN_TRIES = 40
+    # s: a burnt player cannot walk, jump or kick (the fire power).
+    BURN_DURATION = 2.0
     SIZE_TRANSITION = 0.30  # s to complete a size change
     GOAL_TRANSITION = 0.45  # s to complete a goal size change
     BOMB_WARNING = 1.0      # s of warning before a bomb explodes
@@ -284,8 +294,9 @@ POWERS = (
     PowerDef("small_ball", "Pelota pequeña", "PELOTA -", CATEGORY_GLOBAL,
              "ball", "radius", 0.70, 6.0,
              "El radio de la pelota se reduce (×0,70)."),
-    # Cosmetic powers (F3): they only last a while and change what is drawn;
-    # the simulation ignores their property ("blackout", "confusion", "fire").
+    # Cosmetic powers (F3): they only last a while and change what is drawn.
+    # "fire" also burns in the simulation: the first player who touches the
+    # ball stays 2 s without walking, jumping or kicking.
     PowerDef("blackout", "Apagón", "APAGÓN", CATEGORY_GOOD, "rival",
              "blackout", None, 6.0,
              "Se apagan las luces: sólo se ve alrededor del rival."),
@@ -294,7 +305,8 @@ POWERS = (
              "El rival ve la cancha al revés y torcida."),
     PowerDef("fire", "Pelota de fuego", "FUEGO", CATEGORY_GLOBAL, "ball",
              "fire", None, 6.0,
-             "La pelota arde y el aire tiembla a su alrededor."),
+             "La pelota arde: el primero que la toca queda quemado y no se "
+             "mueve 2 s. Si nadie la toca, se apaga a los 6 s."),
 )
 POWER_IDS = tuple(p.id for p in POWERS)
 POWERS_BY_ID = {p.id: p for p in POWERS}

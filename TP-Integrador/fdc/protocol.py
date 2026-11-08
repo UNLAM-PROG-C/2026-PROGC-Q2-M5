@@ -54,6 +54,8 @@ EV_PAUSED = "paused"             # pause decided by the simulation (watchdog)
 EV_POWER_SPAWN = "power_spawn"
 EV_POWER = "power"               # a power was activated
 EV_POWER_EXPIRED = "power_expired"
+# The fire power burned a player: the ball went out on that touch.
+EV_BURN = "burn"
 EV_PICKUP_EXPIRED = "pickup_expired"
 EV_BOMB_ARMED = "bomb_armed"
 EV_BOMB_EXPLODE = "bomb_explode"
