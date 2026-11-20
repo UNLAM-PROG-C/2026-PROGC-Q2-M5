@@ -23,7 +23,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+  sys.path.insert(0, ROOT)
 from fdc.gpu import backend  # noqa: E402  pylint: disable=wrong-import-position
 from fdc.gpu import env      # noqa: E402  pylint: disable=wrong-import-position
 
@@ -34,59 +34,59 @@ TIMEOUT = 600               # s for nvcc
 
 
 def nvcc_command(source, output):
-    """The nvcc command line: one -gencode per architecture."""
-    command = ["nvcc", "--fatbin", *backend.COMPILER_OPTIONS]
-    for arch in SASS_ARCHS:
-        command += ["-gencode", f"arch=compute_{arch},code=sm_{arch}"]
-    command += ["-gencode", f"arch=compute_{PTX_ARCH},code=compute_{PTX_ARCH}"]
-    return command + ["-o", output, source]
+  """The nvcc command line: one -gencode per architecture."""
+  command = ["nvcc", "--fatbin", *backend.COMPILER_OPTIONS]
+  for arch in SASS_ARCHS:
+    command += ["-gencode", f"arch=compute_{arch},code=sm_{arch}"]
+  command += ["-gencode", f"arch=compute_{PTX_ARCH},code=compute_{PTX_ARCH}"]
+  return command + ["-o", output, source]
 
 
 def compile_c_linkage(output):
-    """nvcc on the source wrapped in extern "C" (plain kernel names)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        source = os.path.join(tmp, backend.KERNEL_FILE)
-        with open(source, "w", encoding="utf-8") as fh:
-            fh.write(backend.c_linkage_source())
-        subprocess.run(nvcc_command(source, output), check=True,
-                       timeout=TIMEOUT)
+  """nvcc on the source wrapped in extern "C" (plain kernel names)."""
+  with tempfile.TemporaryDirectory() as tmp:
+    source = os.path.join(tmp, backend.KERNEL_FILE)
+    with open(source, "w", encoding="utf-8") as fh:
+      fh.write(backend.c_linkage_source())
+    subprocess.run(nvcc_command(source, output), check=True,
+                   timeout=TIMEOUT)
 
 
 def verify(path):
-    """Loads the fatbin and asks the driver for every kernel by name."""
-    # pylint: disable=import-outside-toplevel,unused-import
-    import pycuda.autoinit  # noqa: F401
-    import pycuda.driver as drv
-    module = drv.module_from_file(path)
-    missing = []
-    for name in backend.kernel_names():
-        try:
-            module.get_function(name)
-        except drv.LogicError:
-            missing.append(name)
-    if missing:
-        raise SystemExit(f"kernels missing in {path}: {missing}")
+  """Loads the fatbin and asks the driver for every kernel by name."""
+  # pylint: disable=import-outside-toplevel,unused-import
+  import pycuda.autoinit  # noqa: F401
+  import pycuda.driver as drv
+  module = drv.module_from_file(path)
+  missing = []
+  for name in backend.kernel_names():
+    try:
+      module.get_function(name)
+    except drv.LogicError:
+      missing.append(name)
+  if missing:
+    raise SystemExit(f"kernels missing in {path}: {missing}")
 
 
 def build():
-    """Compiles the kernels and saves the hash of the source; returns paths."""
-    if not env.setup():
-        raise SystemExit("nvcc / cl.exe not found (see INSTALACION.md)")
-    folder = os.path.dirname(backend.kernel_path())
-    output = os.path.join(folder, backend.FATBIN_FILE)
-    compile_c_linkage(output)
-    verify(output)
-    with open(os.path.join(folder, backend.HASH_FILE), "w",
-              encoding="ascii") as fh:
-        fh.write(backend.source_hash() + "\n")
-    return output
+  """Compiles the kernels and saves the hash of the source; returns paths."""
+  if not env.setup():
+    raise SystemExit("nvcc / cl.exe not found (see INSTALACION.md)")
+  folder = os.path.dirname(backend.kernel_path())
+  output = os.path.join(folder, backend.FATBIN_FILE)
+  compile_c_linkage(output)
+  verify(output)
+  with open(os.path.join(folder, backend.HASH_FILE), "w",
+            encoding="ascii") as fh:
+    fh.write(backend.source_hash() + "\n")
+  return output
 
 
 def main():
-    """Entry point."""
-    output = build()
-    print(f"{output}: {os.path.getsize(output)} bytes")
+  """Entry point."""
+  output = build()
+  print(f"{output}: {os.path.getsize(output)} bytes")
 
 
 if __name__ == "__main__":
-    main()
+  main()

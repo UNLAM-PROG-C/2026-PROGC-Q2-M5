@@ -13,13 +13,13 @@ import sys
 
 
 def main(argv=None):
-    """Runs the server (fdc/online/server.py) until it is stopped."""
-    # pylint: disable-next=import-outside-toplevel
-    from fdc.online import server  # Here: "spawn" imports this file again.
-    return server.main(argv)
+  """Runs the server (fdc/online/server.py) until it is stopped."""
+  # pylint: disable-next=import-outside-toplevel
+  from fdc.online import server  # Here: "spawn" imports this file again.
+  return server.main(argv)
 
 
 if __name__ == "__main__":
-    # Windows: every room launches its simulation process with "spawn".
-    multiprocessing.freeze_support()
-    sys.exit(main())
+  # Windows: every room launches its simulation process with "spawn".
+  multiprocessing.freeze_support()
+  sys.exit(main())

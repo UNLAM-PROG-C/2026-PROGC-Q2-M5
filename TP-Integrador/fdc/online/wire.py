@@ -108,80 +108,80 @@ _STATE_SKIP = ("dropped_states", "dropped_cosmetic")
 
 
 class WireError(ValueError):
-    """Malformed message: it is dropped (and counted)."""
+  """Malformed message: it is dropped (and counted)."""
 
 
 def encode(msg):
-    """Compact JSON text of a message."""
-    return json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
+  """Compact JSON text of a message."""
+  return json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
 
 
 def decode(raw, allowed=None):
-    """JSON text -> dictionary with "type". Raises WireError if unusable."""
-    if not isinstance(raw, str):
-        raise WireError("text expected")
-    try:
-        msg = json.loads(raw)
-    except ValueError as exc:
-        raise WireError(f"invalid JSON: {exc}") from None
-    if not isinstance(msg, dict) or not isinstance(msg.get("type"), str):
-        raise WireError("missing message type")
-    if allowed is not None and msg["type"] not in allowed:
-        raise WireError(f"unknown type: {msg['type']!r}")
-    return msg
+  """JSON text -> dictionary with "type". Raises WireError if unusable."""
+  if not isinstance(raw, str):
+    raise WireError("text expected")
+  try:
+    msg = json.loads(raw)
+  except ValueError as exc:
+    raise WireError(f"invalid JSON: {exc}") from None
+  if not isinstance(msg, dict) or not isinstance(msg.get("type"), str):
+    raise WireError("missing message type")
+  if allowed is not None and msg["type"] not in allowed:
+    raise WireError(f"unknown type: {msg['type']!r}")
+  return msg
 
 
 def clean_input(p):
-    """Checks a controls snapshot: [bool, bool, int >= 0, int >= 0]."""
-    if not isinstance(p, (list, tuple)) or len(p) != INPUT_FIELDS:
-        raise WireError("malformed controls")
-    left, right, jumps, kicks = p
-    for counter in (jumps, kicks):
-        if (isinstance(counter, bool) or not isinstance(counter, int)
-                or not 0 <= counter <= MAX_COUNTER):
-            raise WireError("invalid counter")
-    return [bool(left), bool(right), jumps, kicks]
+  """Checks a controls snapshot: [bool, bool, int >= 0, int >= 0]."""
+  if not isinstance(p, (list, tuple)) or len(p) != INPUT_FIELDS:
+    raise WireError("malformed controls")
+  left, right, jumps, kicks = p
+  for counter in (jumps, kicks):
+    if (isinstance(counter, bool) or not isinstance(counter, int)
+            or not 0 <= counter <= MAX_COUNTER):
+      raise WireError("invalid counter")
+  return [bool(left), bool(right), jumps, kicks]
 
 
 def clean_seq(seq):
-    """Client sequence number of a controls snapshot (0 if it came without
+  """Client sequence number of a controls snapshot (0 if it came without
     one: an older client)."""
-    if seq is None:
-        return 0
-    valid = (not isinstance(seq, bool) and isinstance(seq, int)
-             and 0 <= seq <= MAX_COUNTER)
-    if not valid:
-        raise WireError("invalid sequence number")
-    return seq
+  if seq is None:
+    return 0
+  valid = (not isinstance(seq, bool) and isinstance(seq, int)
+           and 0 <= seq <= MAX_COUNTER)
+  if not valid:
+    raise WireError("invalid sequence number")
+  return seq
 
 
 def clean_controls(msg):
-    """(controls snapshot, sequence number) of an input message."""
-    return clean_input(msg.get("p")), clean_seq(msg.get("seq"))
+  """(controls snapshot, sequence number) of an input message."""
+  return clean_input(msg.get("p")), clean_seq(msg.get("seq"))
 
 
 def _round(obj):
-    if isinstance(obj, float):
-        return round(obj, POSITION_DECIMALS)
-    if isinstance(obj, dict):
-        return {k: _round(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_round(v) for v in obj]
-    return obj
+  if isinstance(obj, float):
+    return round(obj, POSITION_DECIMALS)
+  if isinstance(obj, dict):
+    return {k: _round(v) for k, v in obj.items()}
+  if isinstance(obj, list):
+    return [_round(v) for v in obj]
+  return obj
 
 
 def compact_state(state):
-    """Simulation state ready for the network: without internal data and
+  """Simulation state ready for the network: without internal data and
     with fewer decimals (≈40 % fewer bytes per second)."""
-    out = {k: v for k, v in state.items() if k not in _STATE_SKIP}
-    out = _round(out)
-    out["type"] = STATE
-    # The ball angle and the kick progress need more precision.
-    out["ball"]["angle"] = round(state["ball"]["angle"] % FULL_TURN,
-                                 POSITION_DECIMALS)
-    for player, source in zip(out["players"], state["players"]):
-        player["kick"] = round(source["kick"], FINE_DECIMALS)
-        player["scale"] = round(source["scale"], FINE_DECIMALS)
-        player["speed"] = round(source["speed"], FINE_DECIMALS)
-        player["jump"] = round(source["jump"], FINE_DECIMALS)
-    return out
+  out = {k: v for k, v in state.items() if k not in _STATE_SKIP}
+  out = _round(out)
+  out["type"] = STATE
+  # The ball angle and the kick progress need more precision.
+  out["ball"]["angle"] = round(state["ball"]["angle"] % FULL_TURN,
+                               POSITION_DECIMALS)
+  for player, source in zip(out["players"], state["players"]):
+    player["kick"] = round(source["kick"], FINE_DECIMALS)
+    player["scale"] = round(source["scale"], FINE_DECIMALS)
+    player["speed"] = round(source["speed"], FINE_DECIMALS)
+    player["jump"] = round(source["jump"], FINE_DECIMALS)
+  return out

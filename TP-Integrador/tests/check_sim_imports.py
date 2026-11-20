@@ -11,7 +11,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+  sys.path.insert(0, ROOT)
 
 FORBIDDEN = ("numpy", "pygame", "pycuda", "fdc.gpu")
 MODULES = ("fdc.protocol", "fdc.ipc", "fdc.sim.core", "fdc.sim.match",
@@ -21,15 +21,15 @@ MODULES = ("fdc.protocol", "fdc.ipc", "fdc.sim.core", "fdc.sim.match",
 
 
 def main():
-    """Imports the modules and prints the forbidden ones that came along."""
-    for name in MODULES:
-        importlib.import_module(name)
-    loaded = sorted(name for name in sys.modules
-                    if name.split(".")[0] in FORBIDDEN
-                    or name.startswith("fdc.gpu"))
-    print(json.dumps({"loaded": loaded, "imported": list(MODULES)}))
-    return 0
+  """Imports the modules and prints the forbidden ones that came along."""
+  for name in MODULES:
+    importlib.import_module(name)
+  loaded = sorted(name for name in sys.modules
+                  if name.split(".")[0] in FORBIDDEN
+                  or name.startswith("fdc.gpu"))
+  print(json.dumps({"loaded": loaded, "imported": list(MODULES)}))
+  return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+  sys.exit(main())

@@ -11,23 +11,23 @@ MIN_MEAN = 1.0          # below this the frame is black: keep the gain
 
 
 class AutoExposure:
-    """Gain of the night: EMA towards a target mean luma."""
+  """Gain of the night: EMA towards a target mean luma."""
 
-    def __init__(self, gain=1.0):
-        self.gain = gain
+  def __init__(self, gain=1.0):
+    self.gain = gain
 
-    def target(self, mean):
-        """Gain the frame asks for (clamped)."""
-        if mean <= MIN_MEAN:
-            return self.gain
-        wanted = G.AUTOEXPOSURE_TARGET / mean
-        return min(G.AUTOEXPOSURE_MAX, max(G.AUTOEXPOSURE_MIN, wanted))
+  def target(self, mean):
+    """Gain the frame asks for (clamped)."""
+    if mean <= MIN_MEAN:
+      return self.gain
+    wanted = G.AUTOEXPOSURE_TARGET / mean
+    return min(G.AUTOEXPOSURE_MAX, max(G.AUTOEXPOSURE_MIN, wanted))
 
-    def update(self, mean):
-        """Moves the gain one step towards the target; returns it."""
-        self.gain += G.AUTOEXPOSURE_RATE * (self.target(mean) - self.gain)
-        return self.gain
+  def update(self, mean):
+    """Moves the gain one step towards the target; returns it."""
+    self.gain += G.AUTOEXPOSURE_RATE * (self.target(mean) - self.gain)
+    return self.gain
 
-    def reset(self):
-        """Back to 1.0 (new match or night off)."""
-        self.gain = 1.0
+  def reset(self):
+    """Back to 1.0 (new match or night off)."""
+    self.gain = 1.0

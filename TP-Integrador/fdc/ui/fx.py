@@ -149,82 +149,82 @@ _rng = random.Random(SEED)
 
 
 class Particle:
-    """A moving dot, spark, star, puff or piece of confetti."""
-    __slots__ = ("x", "y", "vx", "vy", "life", "max_life", "size", "color",
-                 "kind", "g", "spin", "angle")
+  """A moving dot, spark, star, puff or piece of confetti."""
+  __slots__ = ("x", "y", "vx", "vy", "life", "max_life", "size", "color",
+               "kind", "g", "spin", "angle")
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def __init__(self, x, y, vx, vy, life, size, color, kind="dot", g=0.0):
-        self.x, self.y, self.vx, self.vy = x, y, vx, vy
-        self.life = self.max_life = life
-        self.size, self.color, self.kind, self.g = size, color, kind, g
-        self.spin = _rng.uniform(-SPIN_RANGE, SPIN_RANGE)
-        self.angle = _rng.uniform(0, START_ANGLE_MAX)
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def __init__(self, x, y, vx, vy, life, size, color, kind="dot", g=0.0):
+    self.x, self.y, self.vx, self.vy = x, y, vx, vy
+    self.life = self.max_life = life
+    self.size, self.color, self.kind, self.g = size, color, kind, g
+    self.spin = _rng.uniform(-SPIN_RANGE, SPIN_RANGE)
+    self.angle = _rng.uniform(0, START_ANGLE_MAX)
 
-    def move(self, dt):
-        """Advances dt seconds; False when the particle is dead."""
-        self.life -= dt
-        if self.life <= 0:
-            return False
-        self.vy += self.g * dt
-        if self.kind == "confetti":
-            self.vx *= math.exp(-CONFETTI_DRAG * dt)
-            self.vy = min(self.vy, CONFETTI_MAX_FALL)
-        self.x += self.vx * dt
-        self.y += self.vy * dt
-        self.angle += self.spin * dt
-        return True
+  def move(self, dt):
+    """Advances dt seconds; False when the particle is dead."""
+    self.life -= dt
+    if self.life <= 0:
+      return False
+    self.vy += self.g * dt
+    if self.kind == "confetti":
+      self.vx *= math.exp(-CONFETTI_DRAG * dt)
+      self.vy = min(self.vy, CONFETTI_MAX_FALL)
+    self.x += self.vx * dt
+    self.y += self.vy * dt
+    self.angle += self.spin * dt
+    return True
 
 
 class Ring:
-    """A ring that grows from r0 to r1 px."""
-    __slots__ = ("x", "y", "r0", "r1", "life", "max_life", "color", "width")
+  """A ring that grows from r0 to r1 px."""
+  __slots__ = ("x", "y", "r0", "r1", "life", "max_life", "color", "width")
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def __init__(self, x, y, r0, r1, life, color, width=RING_WIDTH):
-        self.x, self.y, self.r0, self.r1 = x, y, r0, r1
-        self.life = self.max_life = life
-        self.color, self.width = color, width
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def __init__(self, x, y, r0, r1, life, color, width=RING_WIDTH):
+    self.x, self.y, self.r0, self.r1 = x, y, r0, r1
+    self.life = self.max_life = life
+    self.color, self.width = color, width
 
-    def tick(self, dt):
-        """Advances dt seconds; False when the ring is gone."""
-        self.life -= dt
-        return self.life > 0
+  def tick(self, dt):
+    """Advances dt seconds; False when the ring is gone."""
+    self.life -= dt
+    return self.life > 0
 
 
 # ---------------------------------------------------------------------------
 # How each kind of particle is drawn (fill rects of PX x PX art pixels)
 # ---------------------------------------------------------------------------
 def _draw_puff(surf, p, x, y, t, color):
-    sz = int(p.size * (PUFF_GROWTH - t)) // PX * PX + PX
-    checker = (int(p.x) // DITHER_CELL + int(p.y) // DITHER_CELL) % 2 == 0
-    if checker or t > 0.5:
-        surf.fill(color, (x - sz // 2, y - sz // 2, sz, sz))
+  sz = int(p.size * (PUFF_GROWTH - t)) // PX * PX + PX
+  checker = (int(p.x) // DITHER_CELL + int(p.y) // DITHER_CELL) % 2 == 0
+  if checker or t > 0.5:
+    surf.fill(color, (x - sz // 2, y - sz // 2, sz, sz))
 
 
 def _draw_confetti(surf, p, x, y, t, color):
-    del t  # Unused.
-    # A piece of paper seen from the front or from the side.
-    w = 2 * PX if abs(math.cos(p.angle)) > 0.5 else PX
-    surf.fill(color, (x, y, w, 2 * PX))
+  del t  # Unused.
+  # A piece of paper seen from the front or from the side.
+  w = 2 * PX if abs(math.cos(p.angle)) > 0.5 else PX
+  surf.fill(color, (x, y, w, 2 * PX))
 
 
 def _draw_star(surf, p, x, y, t, color):
-    del p  # Unused.
-    sz = PX if t < 0.5 else 2 * PX
-    surf.fill(color, (x - sz, y, sz * 2 + PX, PX))
-    surf.fill(color, (x, y - sz, PX, sz * 2 + PX))
+  del p  # Unused.
+  sz = PX if t < 0.5 else 2 * PX
+  surf.fill(color, (x - sz, y, sz * 2 + PX, PX))
+  surf.fill(color, (x, y - sz, PX, sz * 2 + PX))
 
 
 def _draw_spark(surf, p, x, y, t, color):
-    del p  # Unused.
-    sz = 2 * PX if t > 0.5 else PX
-    surf.fill(color, (x, y, sz, sz))
+  del p  # Unused.
+  sz = 2 * PX if t > 0.5 else PX
+  surf.fill(color, (x, y, sz, sz))
 
 
 def _draw_dot(surf, p, x, y, t, color):
-    sz = 2 * PX if p.size * t > PX else PX
-    surf.fill(color, (x, y, sz, sz))
+  sz = 2 * PX if p.size * t > PX else PX
+  surf.fill(color, (x, y, sz, sz))
 
 
 DRAWERS = {"puff": _draw_puff, "confetti": _draw_confetti,
@@ -232,166 +232,166 @@ DRAWERS = {"puff": _draw_puff, "confetti": _draw_confetti,
 
 
 class Effects:
-    """All live particles and rings, plus the flash and the shake."""
-    MAX = MAX_PARTICLES
+  """All live particles and rings, plus the flash and the shake."""
+  MAX = MAX_PARTICLES
 
-    def __init__(self):
-        self.parts = []
-        self.rings = []
-        self.flash = 0.0
-        self.shake = 0.0
+  def __init__(self):
+    self.parts = []
+    self.rings = []
+    self.flash = 0.0
+    self.shake = 0.0
 
-    def clear(self):
-        self.parts.clear()
-        self.rings.clear()
-        self.flash = self.shake = 0.0
+  def clear(self):
+    self.parts.clear()
+    self.rings.clear()
+    self.flash = self.shake = 0.0
 
-    # ------------------------------------------------------------ emitters
-    # pylint: disable-next=too-many-arguments
-    def burst(self, x, y, n, color, speed=BURST_SPEED, life=BURST_LIFE,
-              size=BURST_SIZE, g=BURST_GRAVITY, kind="dot", spread=math.tau,
-              direction=0.0):
-        """n particles from (x, y); color may be a function (one each)."""
-        for _ in range(n):
-            if len(self.parts) >= self.MAX:
-                break
-            a = direction + _rng.uniform(-spread / 2, spread / 2)
-            sp = _rng.uniform(*speed)
-            col = color if not callable(color) else color()
-            self.parts.append(Particle(
-                x, y, math.cos(a) * sp, math.sin(a) * sp,
-                _rng.uniform(*life), _rng.uniform(*size), col, kind, g))
+  # ------------------------------------------------------------ emitters
+  # pylint: disable-next=too-many-arguments
+  def burst(self, x, y, n, color, speed=BURST_SPEED, life=BURST_LIFE,
+            size=BURST_SIZE, g=BURST_GRAVITY, kind="dot", spread=math.tau,
+            direction=0.0):
+    """n particles from (x, y); color may be a function (one each)."""
+    for _ in range(n):
+      if len(self.parts) >= self.MAX:
+        break
+      a = direction + _rng.uniform(-spread / 2, spread / 2)
+      sp = _rng.uniform(*speed)
+      col = color if not callable(color) else color()
+      self.parts.append(Particle(
+          x, y, math.cos(a) * sp, math.sin(a) * sp,
+          _rng.uniform(*life), _rng.uniform(*size), col, kind, g))
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def ring(self, x, y, r0, r1, life, color, width=RING_WIDTH):
-        self.rings.append(Ring(x, y, r0, r1, life, color, width))
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def ring(self, x, y, r0, r1, life, color, width=RING_WIDTH):
+    self.rings.append(Ring(x, y, r0, r1, life, color, width))
 
-    def impact(self, x, y, strength=1.0, color=palette.WHITE):
-        """Hit on the ball: sparks and a ring that grow with strength."""
-        self.burst(x, y, int(IMPACT_SPARKS + IMPACT_SPARKS_EXTRA * strength),
-                   color, speed=(IMPACT_SPEED_MIN, IMPACT_SPEED_MAX
-                                 + IMPACT_SPEED_EXTRA * strength),
-                   life=IMPACT_LIFE, size=IMPACT_SIZE, g=0, kind="spark")
-        self.ring(x, y, IMPACT_RING_START,
-                  IMPACT_RING_END + IMPACT_RING_EXTRA * strength,
-                  IMPACT_RING_LIFE, color, IMPACT_RING_WIDTH)
+  def impact(self, x, y, strength=1.0, color=palette.WHITE):
+    """Hit on the ball: sparks and a ring that grow with strength."""
+    self.burst(x, y, int(IMPACT_SPARKS + IMPACT_SPARKS_EXTRA * strength),
+               color, speed=(IMPACT_SPEED_MIN, IMPACT_SPEED_MAX
+                             + IMPACT_SPEED_EXTRA * strength),
+               life=IMPACT_LIFE, size=IMPACT_SIZE, g=0, kind="spark")
+    self.ring(x, y, IMPACT_RING_START,
+              IMPACT_RING_END + IMPACT_RING_EXTRA * strength,
+              IMPACT_RING_LIFE, color, IMPACT_RING_WIDTH)
 
-    def kick_impact(self, x, y):
-        self.impact(x, y, 1.0, KICK_SPARK)
+  def kick_impact(self, x, y):
+    self.impact(x, y, 1.0, KICK_SPARK)
 
-    def dust(self, x, y, strength=1.0):
-        self.burst(x, y, int(DUST_PARTICLES + DUST_PARTICLES_EXTRA * strength),
-                   DUST_COLOR, speed=DUST_SPEED, life=DUST_LIFE,
-                   size=DUST_SIZE, g=DUST_GRAVITY, kind="puff",
-                   spread=math.pi, direction=UP)
+  def dust(self, x, y, strength=1.0):
+    self.burst(x, y, int(DUST_PARTICLES + DUST_PARTICLES_EXTRA * strength),
+               DUST_COLOR, speed=DUST_SPEED, life=DUST_LIFE,
+               size=DUST_SIZE, g=DUST_GRAVITY, kind="puff",
+               spread=math.pi, direction=UP)
 
-    def confetti(self, x, y, colors):
-        self.burst(x, y, CONFETTI_COUNT, lambda: _rng.choice(colors),
-                   speed=CONFETTI_SPEED, life=CONFETTI_LIFE,
-                   size=CONFETTI_SIZE, g=CONFETTI_GRAVITY, kind="confetti",
-                   spread=CONFETTI_SPREAD, direction=UP)
+  def confetti(self, x, y, colors):
+    self.burst(x, y, CONFETTI_COUNT, lambda: _rng.choice(colors),
+               speed=CONFETTI_SPEED, life=CONFETTI_LIFE,
+               size=CONFETTI_SIZE, g=CONFETTI_GRAVITY, kind="confetti",
+               spread=CONFETTI_SPREAD, direction=UP)
 
-    def explosion(self, x, y, radius):
-        self.flash = EXPLOSION_FLASH
-        self.shake = EXPLOSION_SHAKE
-        self.ring(x, y, BLAST_RING_START, radius, BLAST_RING_LIFE,
-                  BLAST_RING_COLOR, BLAST_RING_WIDTH)
-        self.ring(x, y, CORE_RING_START, radius * CORE_RING_SHARE,
-                  CORE_RING_LIFE, palette.WHITE, CORE_RING_WIDTH)
-        self.burst(x, y, FIRE_COUNT, lambda: _rng.choice(FIRE_COLORS),
-                   speed=FIRE_SPEED, life=FIRE_LIFE, size=FIRE_SIZE,
-                   g=FIRE_GRAVITY, kind="spark")
-        self.burst(x, y, SMOKE_COUNT, SMOKE_COLOR, speed=SMOKE_SPEED,
-                   life=SMOKE_LIFE, size=SMOKE_SIZE, g=SMOKE_GRAVITY,
-                   kind="puff")
+  def explosion(self, x, y, radius):
+    self.flash = EXPLOSION_FLASH
+    self.shake = EXPLOSION_SHAKE
+    self.ring(x, y, BLAST_RING_START, radius, BLAST_RING_LIFE,
+              BLAST_RING_COLOR, BLAST_RING_WIDTH)
+    self.ring(x, y, CORE_RING_START, radius * CORE_RING_SHARE,
+              CORE_RING_LIFE, palette.WHITE, CORE_RING_WIDTH)
+    self.burst(x, y, FIRE_COUNT, lambda: _rng.choice(FIRE_COLORS),
+               speed=FIRE_SPEED, life=FIRE_LIFE, size=FIRE_SIZE,
+               g=FIRE_GRAVITY, kind="spark")
+    self.burst(x, y, SMOKE_COUNT, SMOKE_COLOR, speed=SMOKE_SPEED,
+               life=SMOKE_LIFE, size=SMOKE_SIZE, g=SMOKE_GRAVITY,
+               kind="puff")
 
-    def sparkle(self, x, y, color):
-        self.ring(x, y, SPARKLE_RING_START, SPARKLE_RING_END,
-                  SPARKLE_RING_LIFE, color, SPARKLE_RING_WIDTH)
-        self.burst(x, y, SPARKLE_COUNT, color, speed=SPARKLE_SPEED,
-                   life=SPARKLE_LIFE, size=BURST_SIZE, g=0, kind="star")
+  def sparkle(self, x, y, color):
+    self.ring(x, y, SPARKLE_RING_START, SPARKLE_RING_END,
+              SPARKLE_RING_LIFE, color, SPARKLE_RING_WIDTH)
+    self.burst(x, y, SPARKLE_COUNT, color, speed=SPARKLE_SPEED,
+               life=SPARKLE_LIFE, size=BURST_SIZE, g=0, kind="star")
 
-    def power_spawn(self, x, y, color):
-        self.ring(x, y, SPAWN_RING_START, SPAWN_RING_END, SPAWN_RING_LIFE,
-                  color)
+  def power_spawn(self, x, y, color):
+    self.ring(x, y, SPAWN_RING_START, SPAWN_RING_END, SPAWN_RING_LIFE,
+              color)
 
-    def vanish(self, x, y):
-        self.burst(x, y, VANISH_COUNT, VANISH_COLOR, speed=VANISH_SPEED, g=0,
-                   kind="puff", size=VANISH_SIZE)
+  def vanish(self, x, y):
+    self.burst(x, y, VANISH_COUNT, VANISH_COLOR, speed=VANISH_SPEED, g=0,
+               kind="puff", size=VANISH_SIZE)
 
-    def kick_blocked(self, x, y, facing):
-        self.burst(x + BLOCKED_AHEAD * facing, y - BLOCKED_HEIGHT,
-                   BLOCKED_COUNT, BLOCKED_COLOR, speed=BLOCKED_SPEED, g=0)
+  def kick_blocked(self, x, y, facing):
+    self.burst(x + BLOCKED_AHEAD * facing, y - BLOCKED_HEIGHT,
+               BLOCKED_COUNT, BLOCKED_COLOR, speed=BLOCKED_SPEED, g=0)
 
-    def snow(self, x, y):
-        self.burst(x, y, SNOW_COUNT, SNOW_COLOR, speed=SNOW_SPEED,
-                   life=SNOW_LIFE, size=SNOW_SIZE, g=SNOW_GRAVITY, kind="dot")
+  def snow(self, x, y):
+    self.burst(x, y, SNOW_COUNT, SNOW_COLOR, speed=SNOW_SPEED,
+               life=SNOW_LIFE, size=SNOW_SIZE, g=SNOW_GRAVITY, kind="dot")
 
-    def frozen(self, t, x, y, scale):
-        """Flakes over a frozen player (called every frame; a batch falls
+  def frozen(self, t, x, y, scale):
+    """Flakes over a frozen player (called every frame; a batch falls
         now and then)."""
-        if int(t * SNOW_TICK_HZ) % SNOW_EVERY == 0:
-            self.snow(x + (t * SNOW_SWEEP % SNOW_SPREAD) - SNOW_SPREAD / 2,
-                      y - SNOW_HEIGHT * scale)
+    if int(t * SNOW_TICK_HZ) % SNOW_EVERY == 0:
+      self.snow(x + (t * SNOW_SWEEP % SNOW_SPREAD) - SNOW_SPREAD / 2,
+                y - SNOW_HEIGHT * scale)
 
-    def burning(self, t, x, y, scale):
-        """Embers and a puff of smoke over a burnt player (called every
+  def burning(self, t, x, y, scale):
+    """Embers and a puff of smoke over a burnt player (called every
         frame; a batch leaves now and then)."""
-        if int(t * BURN_TICK_HZ) % BURN_EVERY:
-            return
-        px = x + (t * BURN_SWEEP % BURN_SPREAD) - BURN_SPREAD / 2
-        top = y - BURN_HEIGHT * scale
-        self.burst(px, top, BURN_EMBER_COUNT, _rng.choice(FIRE_COLORS),
-                   speed=BURN_SPEED, life=BURN_LIFE, size=BURN_SIZE,
-                   g=BURN_GRAVITY)
-        self.burst(px, top, BURN_SMOKE_COUNT, SMOKE_COLOR, speed=SMOKE_SPEED,
-                   life=SMOKE_LIFE, size=SMOKE_SIZE, g=BURN_SMOKE_GRAVITY,
-                   kind="puff")
+    if int(t * BURN_TICK_HZ) % BURN_EVERY:
+      return
+    px = x + (t * BURN_SWEEP % BURN_SPREAD) - BURN_SPREAD / 2
+    top = y - BURN_HEIGHT * scale
+    self.burst(px, top, BURN_EMBER_COUNT, _rng.choice(FIRE_COLORS),
+               speed=BURN_SPEED, life=BURN_LIFE, size=BURN_SIZE,
+               g=BURN_GRAVITY)
+    self.burst(px, top, BURN_SMOKE_COUNT, SMOKE_COLOR, speed=SMOKE_SPEED,
+               life=SMOKE_LIFE, size=SMOKE_SIZE, g=BURN_SMOKE_GRAVITY,
+               kind="puff")
 
-    # ------------------------------------------------------------ cycle
-    def update(self, dt):
-        self.parts = [p for p in self.parts if p.move(dt)]
-        self.rings = [r for r in self.rings if r.tick(dt)]
-        self.flash = max(0.0, self.flash - dt)
-        self.shake = max(0.0, self.shake - dt)
+  # ------------------------------------------------------------ cycle
+  def update(self, dt):
+    self.parts = [p for p in self.parts if p.move(dt)]
+    self.rings = [r for r in self.rings if r.tick(dt)]
+    self.flash = max(0.0, self.flash - dt)
+    self.shake = max(0.0, self.shake - dt)
 
-    def shake_offset(self):
-        """Random camera offset (px) while the shake lasts."""
-        if self.shake <= 0:
-            return 0, 0
-        k = self.shake * SHAKE_PX
-        return _rng.uniform(-k, k), _rng.uniform(-k, k)
+  def shake_offset(self):
+    """Random camera offset (px) while the shake lasts."""
+    if self.shake <= 0:
+      return 0, 0
+    k = self.shake * SHAKE_PX
+    return _rng.uniform(-k, k), _rng.uniform(-k, k)
 
-    def draw(self, surf, offset=(0, 0)):
-        """Everything in art pixels of PX x PX (retro style)."""
-        for r in self.rings:
-            self._draw_ring(surf, r, offset)
-        ox, oy = offset
-        rgb = palette.RGB_CHANNELS
-        for p in self.parts:
-            x = int(p.x + ox) // PX * PX
-            y = int(p.y + oy) // PX * PX
-            draw = DRAWERS.get(p.kind, _draw_dot)
-            draw(surf, p, x, y, p.life / p.max_life, p.color[:rgb])
-        if self.flash > 0:
-            self._draw_flash(surf)
+  def draw(self, surf, offset=(0, 0)):
+    """Everything in art pixels of PX x PX (retro style)."""
+    for r in self.rings:
+      self._draw_ring(surf, r, offset)
+    ox, oy = offset
+    rgb = palette.RGB_CHANNELS
+    for p in self.parts:
+      x = int(p.x + ox) // PX * PX
+      y = int(p.y + oy) // PX * PX
+      draw = DRAWERS.get(p.kind, _draw_dot)
+      draw(surf, p, x, y, p.life / p.max_life, p.color[:rgb])
+    if self.flash > 0:
+      self._draw_flash(surf)
 
-    def _draw_ring(self, surf, r, offset):
-        t = 1 - r.life / r.max_life
-        rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - t) ** 2)
-        w = PX if r.width < THICK_RING else 2 * PX
-        if int(t * RING_BLINK_HZ) % 2 == 0 or t < 0.5:
-            pygame.draw.circle(surf, r.color[:palette.RGB_CHANNELS],
-                               (int(r.x + offset[0]), int(r.y + offset[1])),
-                               int(rad), w)
+  def _draw_ring(self, surf, r, offset):
+    t = 1 - r.life / r.max_life
+    rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - t) ** 2)
+    w = PX if r.width < THICK_RING else 2 * PX
+    if int(t * RING_BLINK_HZ) % 2 == 0 or t < 0.5:
+      pygame.draw.circle(surf, r.color[:palette.RGB_CHANNELS],
+                         (int(r.x + offset[0]), int(r.y + offset[1])),
+                         int(rad), w)
 
-    def _draw_flash(self, surf):
-        fl = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        fl.fill((*FLASH_COLOR,
-                 int(FLASH_ALPHA * self.flash / EXPLOSION_FLASH)))
-        surf.blit(fl, (0, 0))
+  def _draw_flash(self, surf):
+    fl = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+    fl.fill((*FLASH_COLOR,
+             int(FLASH_ALPHA * self.flash / EXPLOSION_FLASH)))
+    surf.blit(fl, (0, 0))
 
 
 def glow_dot(radius, color):
-    """Soft glow circle used behind power objects."""
-    return art.radial_glow(radius, color, GLOW_DOT_STRENGTH)
+  """Soft glow circle used behind power objects."""
+  return art.radial_glow(radius, color, GLOW_DOT_STRENGTH)

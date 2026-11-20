@@ -85,121 +85,121 @@ PAUSE_REASON_DISCONNECT = "disconnect"
 # Builders (UI)
 # ---------------------------------------------------------------------------
 def make_command(ctype, cid, **payload):
-    """Returns a command message; raises ValueError for unknown types."""
-    if ctype not in COMMANDS:
-        raise ValueError(f"unknown command: {ctype}")
-    msg = {"type": ctype, "cid": cid}
-    msg.update(payload)
-    return msg
+  """Returns a command message; raises ValueError for unknown types."""
+  if ctype not in COMMANDS:
+    raise ValueError(f"unknown command: {ctype}")
+  msg = {"type": ctype, "cid": cid}
+  msg.update(payload)
+  return msg
 
 
 def make_input(iseq, players, seqs=None):
-    """players: [[left, right, jump_counter, kick_counter], [...]].
+  """players: [[left, right, jump_counter, kick_counter], [...]].
 
     `seqs` are the client sequence numbers of those snapshots (online mode,
     so the state can tell the client which input it applied)."""
-    msg = {"type": MSG_INPUT, "iseq": iseq, "p": [list(p) for p in players]}
-    if seqs is not None:
-        msg["seqs"] = list(seqs)
-    return msg
+  msg = {"type": MSG_INPUT, "iseq": iseq, "p": [list(p) for p in players]}
+  if seqs is not None:
+    msg["seqs"] = list(seqs)
+  return msg
 
 
 # ---------------------------------------------------------------------------
 # Builders (SIM)
 # ---------------------------------------------------------------------------
 def make_ack(cid, cmd, ok=True, match=None, detail=""):
-    """Acknowledgement of the command with id `cid`."""
-    return {"type": EV_ACK, "cid": cid, "cmd": cmd, "ok": ok,
-            "match": match, "detail": detail}
+  """Acknowledgement of the command with id `cid`."""
+  return {"type": EV_ACK, "cid": cid, "cmd": cmd, "ok": ok,
+          "match": match, "detail": detail}
 
 
 def make_event(etype, eid, match=None, **payload):
-    """Event message with a unique, increasing id."""
-    msg = {"type": etype, "eid": eid, "match": match}
-    msg.update(payload)
-    return msg
+  """Event message with a unique, increasing id."""
+  msg = {"type": etype, "eid": eid, "match": match}
+  msg.update(payload)
+  return msg
 
 
 def is_cosmetic(msg):
-    """True for events that may be dropped when the queue is full."""
-    return msg.get("type") in COSMETIC_EVENTS
+  """True for events that may be dropped when the queue is full."""
+  return msg.get("type") in COSMETIC_EVENTS
 
 
 # ---------------------------------------------------------------------------
 # Pure receiving logic (used by the UI and tested without processes)
 # ---------------------------------------------------------------------------
 class PressCounter:
-    """Turns cumulative press counters into new presses.
+  """Turns cumulative press counters into new presses.
 
     The UI increments a counter on each jump or kick KEYDOWN. Even if the SIM
     only reads the latest controls snapshot (compaction), the difference
     between counters tells how many presses happened since the previous one.
     """
 
-    def __init__(self):
-        self.last = None
+  def __init__(self):
+    self.last = None
 
-    def update(self, count):
-        """Returns how many presses happened since the previous snapshot."""
-        if self.last is None or count < self.last:
-            # First snapshot (or the UI restarted its counters): new baseline.
-            self.last = count
-            return 0
-        new = count - self.last
-        self.last = count
-        return new
+  def update(self, count):
+    """Returns how many presses happened since the previous snapshot."""
+    if self.last is None or count < self.last:
+      # First snapshot (or the UI restarted its counters): new baseline.
+      self.last = count
+      return 0
+    new = count - self.last
+    self.last = count
+    return new
 
 
 class StateFilter:
-    """Accepts only states of the current match, newer than the last one."""
+  """Accepts only states of the current match, newer than the last one."""
 
-    def __init__(self):
-        self.match = None
-        self.last_seq = -1
-        self.accepted = 0
-        self.rejected_old_match = 0
-        self.rejected_stale = 0
+  def __init__(self):
+    self.match = None
+    self.last_seq = -1
+    self.accepted = 0
+    self.rejected_old_match = 0
+    self.rejected_stale = 0
 
-    def expect(self, match_id):
-        """From now on only this match is valid (start, rematch or restart)."""
-        self.match = match_id
-        self.last_seq = -1
+  def expect(self, match_id):
+    """From now on only this match is valid (start, rematch or restart)."""
+    self.match = match_id
+    self.last_seq = -1
 
-    def accept(self, state):
-        """True if `state` belongs to the expected match and is newer."""
-        if self.match is None or state.get("match") != self.match:
-            self.rejected_old_match += 1
-            return False
-        seq = state.get("seq", -1)
-        if seq <= self.last_seq:
-            self.rejected_stale += 1
-            return False
-        self.last_seq = seq
-        self.accepted += 1
-        return True
+  def accept(self, state):
+    """True if `state` belongs to the expected match and is newer."""
+    if self.match is None or state.get("match") != self.match:
+      self.rejected_old_match += 1
+      return False
+    seq = state.get("seq", -1)
+    if seq <= self.last_seq:
+      self.rejected_stale += 1
+      return False
+    self.last_seq = seq
+    self.accepted += 1
+    return True
 
 
 class EventDeduper:
-    """Guarantees that each event is handled only once.
+  """Guarantees that each event is handled only once.
 
     The eids grow inside one simulation process (a single producer and a FIFO
     queue), so remembering the last one is enough.
     """
 
-    def __init__(self):
-        self.last_eid = -1
-        self.duplicates = 0
+  def __init__(self):
+    self.last_eid = -1
+    self.duplicates = 0
 
-    def reset(self):
-        self.last_eid = -1
+  def reset(self):
+    self.last_eid = -1
 
-    def fresh(self, msg):
-        """True the first time an event is seen; False for repeats."""
-        eid = msg.get("eid")
-        if eid is None:
-            return True
-        if eid <= self.last_eid:
-            self.duplicates += 1
-            return False
-        self.last_eid = eid
-        return True
+  def fresh(self, msg):
+    """True the first time an event is seen; False for repeats."""
+    eid = msg.get("eid")
+    if eid is None:
+      return True
+    if eid <= self.last_eid:
+      self.duplicates += 1
+      return False
+    self.last_eid = eid
+    return True

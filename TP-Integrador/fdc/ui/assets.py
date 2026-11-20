@@ -28,68 +28,68 @@ TITLE_SHADOW_DARKEN = 90    # how much darker than a title its shadow is
 
 
 def clear_caches():
-    """Called when pygame closes: cached surfaces are no longer valid."""
-    _texts.clear()
-    pixelfont.clear_cache()
+  """Called when pygame closes: cached surfaces are no longer valid."""
+  _texts.clear()
+  pixelfont.clear_cache()
 
 
 def scale_for(size):
-    """Turns the historical "size" in points into the pixel font scale."""
-    return max(1, int(round(size / POINTS_PER_SCALE)))
+  """Turns the historical "size" in points into the pixel font scale."""
+  return max(1, int(round(size / POINTS_PER_SCALE)))
 
 
 def text(txt, size, color=palette.WHITE, outline=palette.INK, kind="ui",
          shadow=False):
-    """Text in the own pixel art font (sharp, retro style)."""
-    shadow_color = None
-    if shadow:
-        shadow_color = (tuple(max(0, c - TITLE_SHADOW_DARKEN) for c in color)
-                        if kind == "title" else palette.INK)
-    return pixelfont.render(txt, scale_for(size), color, outline=outline,
-                            shadow=shadow_color)
+  """Text in the own pixel art font (sharp, retro style)."""
+  shadow_color = None
+  if shadow:
+    shadow_color = (tuple(max(0, c - TITLE_SHADOW_DARKEN) for c in color)
+                    if kind == "title" else palette.INK)
+  return pixelfont.render(txt, scale_for(size), color, outline=outline,
+                          shadow=shadow_color)
 
 
 def draw_text(surf, txt, size, pos, color=palette.WHITE, anchor="center",
               **kw):
-    """Draws a text with its `anchor` point at `pos`; returns its rect."""
-    img = text(txt, size, color, **kw)
-    rect = img.get_rect()
-    setattr(rect, anchor, (round(pos[0]), round(pos[1])))
-    surf.blit(img, rect)
-    return rect
+  """Draws a text with its `anchor` point at `pos`; returns its rect."""
+  img = text(txt, size, color, **kw)
+  rect = img.get_rect()
+  setattr(rect, anchor, (round(pos[0]), round(pos[1])))
+  surf.blit(img, rect)
+  return rect
 
 
 def text_width(txt, size):
-    return pixelfont.text_width(txt, scale_for(size))
+  return pixelfont.text_width(txt, scale_for(size))
 
 
 def wrap(txt, size, width):
-    """Splits a text into lines that fit in `width` pixels."""
-    lines, current = [], ""
-    for word in txt.split():
-        candidate = (current + " " + word).strip()
-        if text_width(candidate, size) <= width or not current:
-            current = candidate
-        else:
-            lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    return lines
+  """Splits a text into lines that fit in `width` pixels."""
+  lines, current = [], ""
+  for word in txt.split():
+    candidate = (current + " " + word).strip()
+    if text_width(candidate, size) <= width or not current:
+      current = candidate
+    else:
+      lines.append(current)
+      current = word
+  if current:
+    lines.append(current)
+  return lines
 
 
 def override_path(*parts):
-    path = os.path.join(OVERRIDE_ROOT, *parts)
-    return path if os.path.isfile(path) else None
+  path = os.path.join(OVERRIDE_ROOT, *parts)
+  return path if os.path.isfile(path) else None
 
 
 def load_override_image(*parts):
-    """Own image that replaces the generated one, if it exists."""
-    path = override_path(*parts)
-    if not path:
-        return None
-    try:
-        return pygame.image.load(path).convert_alpha()
-    except pygame.error as exc:
-        log.warning("could not load %s: %s", path, exc)
-        return None
+  """Own image that replaces the generated one, if it exists."""
+  path = override_path(*parts)
+  if not path:
+    return None
+  try:
+    return pygame.image.load(path).convert_alpha()
+  except pygame.error as exc:
+    log.warning("could not load %s: %s", path, exc)
+    return None

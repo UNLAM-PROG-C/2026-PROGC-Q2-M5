@@ -28,9 +28,9 @@ CHARACTERS = [
 CHARACTERS_BY_ID = {c["id"]: c for c in CHARACTERS}
 CHARACTER_IDS = [c["id"] for c in CHARACTERS]
 if tuple(CHARACTER_IDS) != config.CHARACTER_IDS:
-    raise ValueError("the character list must match fdc/config.py")
+  raise ValueError("the character list must match fdc/config.py")
 
 
 def short_name(character):
-    """Name shown on screen (a short one if the character has it)."""
-    return character.get("short", character["name"])
+  """Name shown on screen (a short one if the character has it)."""
+  return character.get("short", character["name"])

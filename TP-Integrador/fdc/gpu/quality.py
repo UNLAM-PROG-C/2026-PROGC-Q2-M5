@@ -68,100 +68,100 @@ Mode = collections.namedtuple(
 
 
 def stages(level=None):
-    """Stages of a level ('media' if unknown or missing)."""
-    return LEVELS.get(level or config.Gpu.QUALITY, LEVELS["media"])
+  """Stages of a level ('media' if unknown or missing)."""
+  return LEVELS.get(level or config.Gpu.QUALITY, LEVELS["media"])
 
 
 def known(level):
-    """True if the level exists."""
-    return level in LEVELS
+  """True if the level exists."""
+  return level in LEVELS
 
 
 def downgrade(level):
-    """The next cheaper level (the same one if it is already the lowest)."""
-    order = config.Gpu.QUALITIES
-    index = order.index(level) if level in order else 1
-    return order[max(index - 1, 0)]
+  """The next cheaper level (the same one if it is already the lowest)."""
+  order = config.Gpu.QUALITIES
+  index = order.index(level) if level in order else 1
+  return order[max(index - 1, 0)]
 
 
 def level_of(value, default=MIN_LEVEL):
-    """Level index (0..3) of a command line value; 'auto' -> `default`."""
-    if value is None or str(value) == AUTO:
-        return default
-    try:
-        index = int(value)
-    except (TypeError, ValueError):
-        return default
-    return max(MIN_LEVEL, min(index, len(config.Gpu.QUALITY_LEVELS) - 1))
+  """Level index (0..3) of a command line value; 'auto' -> `default`."""
+  if value is None or str(value) == AUTO:
+    return default
+  try:
+    index = int(value)
+  except (TypeError, ValueError):
+    return default
+  return max(MIN_LEVEL, min(index, len(config.Gpu.QUALITY_LEVELS) - 1))
 
 
 def label(index):
-    """Name of a level: 'Q0', 'Q1', 'Q2' or 'Q3'."""
-    return config.Gpu.QUALITY_LEVELS[index]
+  """Name of a level: 'Q0', 'Q1', 'Q2' or 'Q3'."""
+  return config.Gpu.QUALITY_LEVELS[index]
 
 
 def scale(index):
-    """Image divisor of a level (1 = full resolution)."""
-    return config.Gpu.QUALITY_SCALES[index]
+  """Image divisor of a level (1 = full resolution)."""
+  return config.Gpu.QUALITY_SCALES[index]
 
 
 def skipped(index):
-    """Stages this level leaves out."""
-    return SKIPPED.get(index, ())
+  """Stages this level leaves out."""
+  return SKIPPED.get(index, ())
 
 
 # --- F11: quality modes ------------------------------------------------
 def mode_of(value):
-    """Quality mode of a value; 'full' if it is missing or unknown."""
-    if isinstance(value, str) and value.strip().lower() in OFF_ALIASES:
-        return OFF
-    return value if value in MODES else DEFAULT_MODE
+  """Quality mode of a value; 'full' if it is missing or unknown."""
+  if isinstance(value, str) and value.strip().lower() in OFF_ALIASES:
+    return OFF
+  return value if value in MODES else DEFAULT_MODE
 
 
 def name_of(mode):
-    """Readable name of a mode (the overlay and the menu): FULL, ..."""
-    return config.Gpu.MODE_NAMES[mode_of(mode)]
+  """Readable name of a mode (the overlay and the menu): FULL, ..."""
+  return config.Gpu.MODE_NAMES[mode_of(mode)]
 
 
 def default_for(backend):
-    """Mode when the player did not choose one: FULL on the GPU and the
+  """Mode when the player did not choose one: FULL on the GPU and the
     plain pygame render (no effects) on the CPU, which is the cheapest."""
-    return FULL if backend == GPU_BACKEND else OFF
+  return FULL if backend == GPU_BACKEND else OFF
 
 
 def next_mode(mode):
-    """The mode that follows in the cycle: full -> optimizado ->
+  """The mode that follows in the cycle: full -> optimizado ->
     "sin-efectos" -> auto (F10)."""
-    mode = mode_of(mode)
-    return MODES[(MODES.index(mode) + 1) % len(MODES)]
+  mode = mode_of(mode)
+  return MODES[(MODES.index(mode) + 1) % len(MODES)]
 
 
 def policy(mode=None, level=MIN_LEVEL):
-    """What the mode draws; `level` is the governor level (auto only)."""
-    mode = mode_of(mode)
-    gpu = config.Gpu
-    if mode == OFF:
-        return Mode(mode, None, MIN_LEVEL, False, False, gpu.MODE_PUNCH[OFF],
-                    gpu.MODE_PARTICLES[OFF], tuple(SKIPPED[max(SKIPPED)]))
-    if mode == OPTIMIZED:
-        return _optimized(mode)
-    if mode == FULL:
-        return Mode(mode, gpu.MODE_STAGE[FULL], MIN_LEVEL, False, True,
-                    gpu.MODE_PUNCH[FULL], gpu.MODE_PARTICLES[FULL], ())
-    return Mode(mode, None, level, True, False, gpu.MODE_PUNCH[AUTO],
-                gpu.MODE_PARTICLES[AUTO], skipped(level))
+  """What the mode draws; `level` is the governor level (auto only)."""
+  mode = mode_of(mode)
+  gpu = config.Gpu
+  if mode == OFF:
+    return Mode(mode, None, MIN_LEVEL, False, False, gpu.MODE_PUNCH[OFF],
+                gpu.MODE_PARTICLES[OFF], tuple(SKIPPED[max(SKIPPED)]))
+  if mode == OPTIMIZED:
+    return _optimized(mode)
+  if mode == FULL:
+    return Mode(mode, gpu.MODE_STAGE[FULL], MIN_LEVEL, False, True,
+                gpu.MODE_PUNCH[FULL], gpu.MODE_PARTICLES[FULL], ())
+  return Mode(mode, None, level, True, False, gpu.MODE_PUNCH[AUTO],
+              gpu.MODE_PARTICLES[AUTO], skipped(level))
 
 
 def _optimized(mode):
-    """The cheap mode: one stage, full resolution, no crowd, no governor."""
-    gpu = config.Gpu
-    return Mode(mode, gpu.MODE_STAGE[OPTIMIZED], gpu.OPTIMIZED_LEVEL,
-                False, False, gpu.MODE_PUNCH[OPTIMIZED],
-                gpu.MODE_PARTICLES[OPTIMIZED], OPTIMIZED_SKIPS)
+  """The cheap mode: one stage, full resolution, no crowd, no governor."""
+  gpu = config.Gpu
+  return Mode(mode, gpu.MODE_STAGE[OPTIMIZED], gpu.OPTIMIZED_LEVEL,
+              False, False, gpu.MODE_PUNCH[OPTIMIZED],
+              gpu.MODE_PARTICLES[OPTIMIZED], OPTIMIZED_SKIPS)
 
 
 class QualityGovernor:
-    """Moves the CPU quality level with the frame time (a pure state machine).
+  """Moves the CPU quality level with the frame time (a pure state machine).
 
     `frame_ms` is the time of the effects chain (the expensive part of the
     frame). The mean of the last QUALITY_AVG_FRAMES decides: above
@@ -170,55 +170,55 @@ class QualityGovernor:
     QUALITY_MIN_SECONDS apart.
     """
 
-    def __init__(self, quality=AUTO, backend=CPU, level=MIN_LEVEL):
-        self.quality = AUTO if quality is None else str(quality)
-        self.enabled = (self.quality == AUTO and backend == CPU)
-        self.level = level_of(self.quality, level)
-        self.samples = collections.deque(
-            maxlen=config.Gpu.QUALITY_AVG_FRAMES)
-        self.fast = 0                 # frames below QUALITY_UP_MS in a row
-        self.wait = NEVER             # s left before another change
-        self.changes = 0
+  def __init__(self, quality=AUTO, backend=CPU, level=MIN_LEVEL):
+    self.quality = AUTO if quality is None else str(quality)
+    self.enabled = (self.quality == AUTO and backend == CPU)
+    self.level = level_of(self.quality, level)
+    self.samples = collections.deque(
+        maxlen=config.Gpu.QUALITY_AVG_FRAMES)
+    self.fast = 0                 # frames below QUALITY_UP_MS in a row
+    self.wait = NEVER             # s left before another change
+    self.changes = 0
 
-    def frame(self, frame_ms, dt):
-        """One frame; returns the level that has to be used from now on."""
-        self.wait = max(NEVER, self.wait - dt)
-        if not self.enabled:
-            return self.level
-        self.samples.append(frame_ms)
-        return self._decide()
+  def frame(self, frame_ms, dt):
+    """One frame; returns the level that has to be used from now on."""
+    self.wait = max(NEVER, self.wait - dt)
+    if not self.enabled:
+      return self.level
+    self.samples.append(frame_ms)
+    return self._decide()
 
-    def _decide(self):
-        """Applies the hysteresis; a change is what `changes` counts."""
-        if self.wait > NEVER or len(self.samples) < self.samples.maxlen:
-            return self.level
-        mean = sum(self.samples) / len(self.samples)
-        if mean > config.Gpu.QUALITY_DOWN_MS:
-            return self._move(ONE)
-        if mean < config.Gpu.QUALITY_UP_MS:
-            self.fast += ONE
-            if self.fast >= config.Gpu.QUALITY_UP_FRAMES:
-                return self._move(-ONE)
-        else:
-            self.fast = 0
-        return self.level
+  def _decide(self):
+    """Applies the hysteresis; a change is what `changes` counts."""
+    if self.wait > NEVER or len(self.samples) < self.samples.maxlen:
+      return self.level
+    mean = sum(self.samples) / len(self.samples)
+    if mean > config.Gpu.QUALITY_DOWN_MS:
+      return self._move(ONE)
+    if mean < config.Gpu.QUALITY_UP_MS:
+      self.fast += ONE
+      if self.fast >= config.Gpu.QUALITY_UP_FRAMES:
+        return self._move(-ONE)
+    else:
+      self.fast = 0
+    return self.level
 
-    def _move(self, delta):
-        """Changes the level by `delta`, respecting the range and the wait."""
-        last = len(config.Gpu.QUALITY_LEVELS) - 1
-        new = max(MIN_LEVEL, min(last, self.level + delta))
-        self.fast = 0
-        if new == self.level:
-            return self.level
-        self.level = new
-        self.wait = config.Gpu.QUALITY_MIN_SECONDS
-        self.changes += ONE
-        self.samples.clear()
-        return self.level
+  def _move(self, delta):
+    """Changes the level by `delta`, respecting the range and the wait."""
+    last = len(config.Gpu.QUALITY_LEVELS) - 1
+    new = max(MIN_LEVEL, min(last, self.level + delta))
+    self.fast = 0
+    if new == self.level:
+      return self.level
+    self.level = new
+    self.wait = config.Gpu.QUALITY_MIN_SECONDS
+    self.changes += ONE
+    self.samples.clear()
+    return self.level
 
-    def reset(self):
-        """Forgets the samples (new match, backend change)."""
-        self.samples.clear()
-        self.fast = 0
-        self.wait = NEVER
+  def reset(self):
+    """Forgets the samples (new match, backend change)."""
+    self.samples.clear()
+    self.fast = 0
+    self.wait = NEVER
 

@@ -187,296 +187,296 @@ SHADOW_DROP = 2                    # px below the floor
 
 
 def _dither_band(s, y0, y1, c_top, c_bot):
-    """Two colour gradient with an ordered dither (16-bit look)."""
-    for y in range(y0, y1):
-        t = (y - y0) / max(1, y1 - y0 - 1)
-        for x in range(NW):
-            thr = (BAYER[y % BAYER_SIZE][x % BAYER_SIZE] + 0.5) / BAYER_LEVELS
-            s.set_at((x, y), c_bot if t > thr else c_top)
+  """Two colour gradient with an ordered dither (16-bit look)."""
+  for y in range(y0, y1):
+    t = (y - y0) / max(1, y1 - y0 - 1)
+    for x in range(NW):
+      thr = (BAYER[y % BAYER_SIZE][x % BAYER_SIZE] + 0.5) / BAYER_LEVELS
+      s.set_at((x, y), c_bot if t > thr else c_top)
 
 
 def _cloud(s, x, y, w):
-    for col, dy0 in ((palette.CLOUD_SHADE, CLOUD_SHADE_DROP),
-                     (palette.CLOUD, 0)):
-        for dx, dy, r in CLOUD_PUFFS:
-            pygame.draw.circle(s, col, (x + int(dx * w / CLOUD_W),
-                                        y + dy + dy0), int(r * w / CLOUD_W))
+  for col, dy0 in ((palette.CLOUD_SHADE, CLOUD_SHADE_DROP),
+                   (palette.CLOUD, 0)):
+    for dx, dy, r in CLOUD_PUFFS:
+      pygame.draw.circle(s, col, (x + int(dx * w / CLOUD_W),
+                                  y + dy + dy0), int(r * w / CLOUD_W))
 
 
 def _at(x, y, rect):
-    """Rectangle (dx, dy, width, height) relative to the point (x, y)."""
-    dx, dy, w, h = rect
-    return x + dx, y + dy, w, h
+  """Rectangle (dx, dy, width, height) relative to the point (x, y)."""
+  dx, dy, w, h = rect
+  return x + dx, y + dy, w, h
 
 
 def _hline(s, color, y):
-    pygame.draw.line(s, color, (0, y), (NW, y))
+  pygame.draw.line(s, color, (0, y), (NW, y))
 
 
 def _roof(s):
-    """Roof with a truss, columns and floodlights."""
-    y0, y1 = ROOF_TOP, ROOF_BOTTOM
-    pygame.draw.rect(s, palette.ROOF, (0, y0, NW, y1 - y0))
-    pygame.draw.rect(s, palette.STRUCT_SHADE,
-                     (0, y1 - ROOF_EDGE, NW, ROOF_EDGE))
-    _hline(s, palette.STRUCT_DARK, y0)
-    _hline(s, palette.STRUCT_DARK, y1 - ROOF_EDGE - 1)
-    _truss(s, y0, y1)
-    _under_roof(s, y1)
-    for x in FLOODLIGHTS:
-        _floodlight(s, x, y0)
+  """Roof with a truss, columns and floodlights."""
+  y0, y1 = ROOF_TOP, ROOF_BOTTOM
+  pygame.draw.rect(s, palette.ROOF, (0, y0, NW, y1 - y0))
+  pygame.draw.rect(s, palette.STRUCT_SHADE,
+                   (0, y1 - ROOF_EDGE, NW, ROOF_EDGE))
+  _hline(s, palette.STRUCT_DARK, y0)
+  _hline(s, palette.STRUCT_DARK, y1 - ROOF_EDGE - 1)
+  _truss(s, y0, y1)
+  _under_roof(s, y1)
+  for x in FLOODLIGHTS:
+    _floodlight(s, x, y0)
 
 
 def _under_roof(s, y1):
-    """Shadow below the roof, with the columns."""
-    pygame.draw.rect(s, palette.STRUCT_SHADE, (0, y1, NW, ROOF_SHADOW))
-    _hline(s, palette.STRUCT_DARK, y1 + ROOF_SHADOW - 1)
-    for x in range(COLUMN_X0, NW, COLUMN_EVERY):
-        pygame.draw.rect(s, palette.STRUCT_DARK,
-                         (x, y1, COLUMN_W, ROOF_SHADOW))
-        pygame.draw.rect(s, palette.STRUCT, (x + 1, y1, 1, ROOF_SHADOW))
+  """Shadow below the roof, with the columns."""
+  pygame.draw.rect(s, palette.STRUCT_SHADE, (0, y1, NW, ROOF_SHADOW))
+  _hline(s, palette.STRUCT_DARK, y1 + ROOF_SHADOW - 1)
+  for x in range(COLUMN_X0, NW, COLUMN_EVERY):
+    pygame.draw.rect(s, palette.STRUCT_DARK,
+                     (x, y1, COLUMN_W, ROOF_SHADOW))
+    pygame.draw.rect(s, palette.STRUCT, (x + 1, y1, 1, ROOF_SHADOW))
 
 
 def _truss(s, y0, y1):
-    half = ROOF_TRUSS // 2
-    top, bottom = y0 + ROOF_TRUSS_TOP, y1 - ROOF_TRUSS_BOTTOM
-    for x in range(0, NW + ROOF_TRUSS, ROOF_TRUSS):
-        pygame.draw.line(s, palette.STRUCT_SHADE, (x, top), (x + half, bottom))
-        pygame.draw.line(s, palette.STRUCT_SHADE, (x + ROOF_TRUSS, top),
-                         (x + half, bottom))
+  half = ROOF_TRUSS // 2
+  top, bottom = y0 + ROOF_TRUSS_TOP, y1 - ROOF_TRUSS_BOTTOM
+  for x in range(0, NW + ROOF_TRUSS, ROOF_TRUSS):
+    pygame.draw.line(s, palette.STRUCT_SHADE, (x, top), (x + half, bottom))
+    pygame.draw.line(s, palette.STRUCT_SHADE, (x + ROOF_TRUSS, top),
+                     (x + half, bottom))
 
 
 def _floodlight(s, x, y0):
-    fw, fh = FLOODLIGHT
-    pygame.draw.rect(s, palette.STRUCT_DARK, (x - fw // 2, y0 - fh, fw, fh))
-    for k in range(LAMPS):
-        pygame.draw.rect(s, LAMP_COLOR, (x + LAMP_FIRST_X + k * LAMP_STEP,
-                                         y0 + LAMP_Y, LAMP_SIZE, LAMP_SIZE))
+  fw, fh = FLOODLIGHT
+  pygame.draw.rect(s, palette.STRUCT_DARK, (x - fw // 2, y0 - fh, fw, fh))
+  for k in range(LAMPS):
+    pygame.draw.rect(s, LAMP_COLOR, (x + LAMP_FIRST_X + k * LAMP_STEP,
+                                     y0 + LAMP_Y, LAMP_SIZE, LAMP_SIZE))
 
 
 def _stands(s, rng):
-    """Three stands with seats, a random crowd and stairs."""
-    for y0, y1 in TIERS:
-        pygame.draw.rect(s, palette.SEAT_DEEP, (0, y0 - TIER_RAIL, NW,
-                                                TIER_RAIL))
-        _hline(s, palette.SEAT_EDGE, y0 - TIER_RAIL)
-        for row_y in range(y0, y1, SEAT_ROW):
-            _seat_row(s, row_y)
-            _crowd_row(s, rng, row_y)
-        for x in range(STAIRS_X0, NW, STAIRS_EVERY):
-            _stairs(s, x, y0, y1)
+  """Three stands with seats, a random crowd and stairs."""
+  for y0, y1 in TIERS:
+    pygame.draw.rect(s, palette.SEAT_DEEP, (0, y0 - TIER_RAIL, NW,
+                                            TIER_RAIL))
+    _hline(s, palette.SEAT_EDGE, y0 - TIER_RAIL)
+    for row_y in range(y0, y1, SEAT_ROW):
+      _seat_row(s, row_y)
+      _crowd_row(s, rng, row_y)
+    for x in range(STAIRS_X0, NW, STAIRS_EVERY):
+      _stairs(s, x, y0, y1)
 
 
 def _seat_row(s, row_y):
-    seat = (palette.SEAT_DARK if (row_y // SEAT_ROW) % 2 == 0
-            else palette.SEAT_DEEP)
-    pygame.draw.rect(s, seat, (0, row_y, NW, SEAT_ROW))
-    _hline(s, palette.SEAT_DEEP, row_y + SEAT_ROW - 1)
+  seat = (palette.SEAT_DARK if (row_y // SEAT_ROW) % 2 == 0
+          else palette.SEAT_DEEP)
+  pygame.draw.rect(s, seat, (0, row_y, NW, SEAT_ROW))
+  _hline(s, palette.SEAT_DEEP, row_y + SEAT_ROW - 1)
 
 
 def _crowd_row(s, rng, row_y):
-    x = rng.randint(0, CROWD_START_MAX)
-    while x < NW:
-        if rng.random() < CROWD_FILL:
-            _person(s, rng, x, row_y)
-        x += rng.randint(*CROWD_GAP)
+  x = rng.randint(0, CROWD_START_MAX)
+  while x < NW:
+    if rng.random() < CROWD_FILL:
+      _person(s, rng, x, row_y)
+    x += rng.randint(*CROWD_GAP)
 
 
 def _person(s, rng, x, row_y):
-    shirt = CROWD_COLORS[0] if x < NW // 2 else CROWD_COLORS[1]
-    s.fill(shirt, _at(x, row_y, BODY))
-    skin = rng.choice(SKIN_TONES)
-    s.fill(skin, _at(x, row_y, HEAD))
-    if rng.random() < ARMS_UP:
-        for arm in ARMS:
-            s.fill(skin, _at(x, row_y, arm))
+  shirt = CROWD_COLORS[0] if x < NW // 2 else CROWD_COLORS[1]
+  s.fill(shirt, _at(x, row_y, BODY))
+  skin = rng.choice(SKIN_TONES)
+  s.fill(skin, _at(x, row_y, HEAD))
+  if rng.random() < ARMS_UP:
+    for arm in ARMS:
+      s.fill(skin, _at(x, row_y, arm))
 
 
 def _stairs(s, x, y0, y1):
-    pygame.draw.rect(s, palette.SEAT_DEEP, (x, y0, STAIRS_W, y1 - y0))
-    for yy in range(y0, y1, STEP_H):
-        pygame.draw.line(s, palette.SEAT_DARK, (x, yy),
-                         (x + STAIRS_W - 1, yy))
+  pygame.draw.rect(s, palette.SEAT_DEEP, (x, y0, STAIRS_W, y1 - y0))
+  for yy in range(y0, y1, STEP_H):
+    pygame.draw.line(s, palette.SEAT_DARK, (x, yy),
+                     (x + STAIRS_W - 1, yy))
 
 
 def _boards(s):
-    """Wall and advertising boards."""
-    pygame.draw.rect(s, palette.STRUCT_SHADE, (0, WALL_Y, NW, WALL_H))
-    bw = NW // len(BOARDS)
-    for i, (label, color_name) in enumerate(BOARDS):
-        _board(s, pygame.Rect(i * bw, BOARD_Y, bw, BOARD_H), label,
-               getattr(palette, color_name))
+  """Wall and advertising boards."""
+  pygame.draw.rect(s, palette.STRUCT_SHADE, (0, WALL_Y, NW, WALL_H))
+  bw = NW // len(BOARDS)
+  for i, (label, color_name) in enumerate(BOARDS):
+    _board(s, pygame.Rect(i * bw, BOARD_Y, bw, BOARD_H), label,
+           getattr(palette, color_name))
 
 
 def _board(s, r, label, col):
-    pygame.draw.rect(s, palette.WHITE, r)
-    pygame.draw.rect(s, col, (r.x, r.y, r.w, BOARD_TOP_STRIPE))
-    pygame.draw.rect(s, col, (r.x, r.bottom - BOARD_BOTTOM_STRIPE, r.w,
-                              BOARD_BOTTOM_STRIPE))
-    pygame.draw.line(s, palette.STRUCT_DARK, (r.x, r.y), (r.x, r.bottom))
-    img = pixelfont.render(label, 1, col)
-    s.blit(img, img.get_rect(center=(r.centerx,
-                                     r.centery + BOARD_TEXT_DROP)))
+  pygame.draw.rect(s, palette.WHITE, r)
+  pygame.draw.rect(s, col, (r.x, r.y, r.w, BOARD_TOP_STRIPE))
+  pygame.draw.rect(s, col, (r.x, r.bottom - BOARD_BOTTOM_STRIPE, r.w,
+                            BOARD_BOTTOM_STRIPE))
+  pygame.draw.line(s, palette.STRUCT_DARK, (r.x, r.y), (r.x, r.bottom))
+  img = pixelfont.render(label, 1, col)
+  s.blit(img, img.get_rect(center=(r.centerx,
+                                   r.centery + BOARD_TEXT_DROP)))
 
 
 def _pitch(s, rng):
-    """Grass with stripes that open to the front, and chalk lines."""
-    _grass(s)
-    for _ in range(GRASS_BLADES):
-        s.set_at((rng.randrange(NW),
-                  rng.randrange(GRASS_TOP + BLADES_BELOW, NH)),
-                 palette.GRASS_DARK)
-    far, near = GRASS_TOP + FAR_LINE, NH - NEAR_LINE
-    _chalk_lines(s, far, near)
-    for side in (0, 1):
-        _penalty_area(s, side, far + AREA_TOP, near - AREA_BOTTOM)
+  """Grass with stripes that open to the front, and chalk lines."""
+  _grass(s)
+  for _ in range(GRASS_BLADES):
+    s.set_at((rng.randrange(NW),
+              rng.randrange(GRASS_TOP + BLADES_BELOW, NH)),
+             palette.GRASS_DARK)
+  far, near = GRASS_TOP + FAR_LINE, NH - NEAR_LINE
+  _chalk_lines(s, far, near)
+  for side in (0, 1):
+    _penalty_area(s, side, far + AREA_TOP, near - AREA_BOTTOM)
 
 
 def _chalk_lines(s, far, near):
-    _hline(s, palette.LINE, far)
-    _hline(s, palette.LINE, near)
-    pygame.draw.line(s, palette.LINE, (NW // 2, far), (NW // 2, near))
-    left, y, w, h = CENTER_CIRCLE
-    pygame.draw.ellipse(s, palette.LINE, (NW // 2 - left, y, w, h), 1)
-    left, y, w, h = CENTER_SPOT
-    s.fill(palette.LINE, (NW // 2 - left, y, w, h))
+  _hline(s, palette.LINE, far)
+  _hline(s, palette.LINE, near)
+  pygame.draw.line(s, palette.LINE, (NW // 2, far), (NW // 2, near))
+  left, y, w, h = CENTER_CIRCLE
+  pygame.draw.ellipse(s, palette.LINE, (NW // 2 - left, y, w, h), 1)
+  left, y, w, h = CENTER_SPOT
+  s.fill(palette.LINE, (NW // 2 - left, y, w, h))
 
 
 def _grass(s):
-    for y in range(GRASS_TOP, NH):
-        t = (y - GRASS_TOP) / (NH - GRASS_TOP)
-        stripe_w = STRIPE_FAR + STRIPE_GROWTH * t
-        for x in range(NW):
-            k = int((x - NW / 2) / stripe_w + STRIPE_OFFSET)
-            s.set_at((x, y), palette.GRASS_A if k % 2 == 0
-                     else palette.GRASS_B)
+  for y in range(GRASS_TOP, NH):
+    t = (y - GRASS_TOP) / (NH - GRASS_TOP)
+    stripe_w = STRIPE_FAR + STRIPE_GROWTH * t
+    for x in range(NW):
+      k = int((x - NW / 2) / stripe_w + STRIPE_OFFSET)
+      s.set_at((x, y), palette.GRASS_A if k % 2 == 0
+               else palette.GRASS_B)
 
 
 def _penalty_area(s, side, top, bottom):
-    def edge(x):
-        return x if side == 0 else NW - x
-    box = [(edge(0), top), (edge(AREA_FAR_W), top),
-           (edge(AREA_NEAR_W), bottom), (edge(0), bottom)]
-    pygame.draw.lines(s, palette.LINE, False, box, 1)
+  def edge(x):
+    return x if side == 0 else NW - x
+  box = [(edge(0), top), (edge(AREA_FAR_W), top),
+         (edge(AREA_NEAR_W), bottom), (edge(0), bottom)]
+  pygame.draw.lines(s, palette.LINE, False, box, 1)
 
 
 def build_background():
-    """The whole stadium (or assets/backgrounds/stadium.png if present)."""
-    custom = assets.load_override_image("backgrounds", "stadium.png")
-    if custom is not None:
-        return pygame.transform.scale(custom, (W, H)).convert()
-    big = retro.scale_px(_paint_stadium())
-    _crowd_band(big)          # OPTIMIZADO: the stands at final resolution
-    return big.convert()
+  """The whole stadium (or assets/backgrounds/stadium.png if present)."""
+  custom = assets.load_override_image("backgrounds", "stadium.png")
+  if custom is not None:
+    return pygame.transform.scale(custom, (W, H)).convert()
+  big = retro.scale_px(_paint_stadium())
+  _crowd_band(big)          # OPTIMIZADO: the stands at final resolution
+  return big.convert()
 
 
 def _paint_stadium():
-    """Sky, roof, stands, boards and pitch at the native resolution."""
-    rng = random.Random(STADIUM_SEED)
-    s = pygame.Surface((NW, NH))
-    _dither_band(s, 0, SKY_BOTTOM_Y, palette.SKY_TOP, palette.SKY_BOTTOM)
-    for x, y, w in CLOUDS:
-        _cloud(s, x, y, w)
-    _roof(s)
-    _stands(s, rng)
-    _boards(s)
-    _pitch(s, rng)
-    return s
+  """Sky, roof, stands, boards and pitch at the native resolution."""
+  rng = random.Random(STADIUM_SEED)
+  s = pygame.Surface((NW, NH))
+  _dither_band(s, 0, SKY_BOTTOM_Y, palette.SKY_TOP, palette.SKY_BOTTOM)
+  for x, y, w in CLOUDS:
+    _cloud(s, x, y, w)
+  _roof(s)
+  _stands(s, rng)
+  _boards(s)
+  _pitch(s, rng)
+  return s
 
 
 def _crowd_band(screen):
-    """Stands at one pixel per pixel (the animated crowd covers them in FULL).
+  """Stands at one pixel per pixel (the animated crowd covers them in FULL).
 
     The whole background is drawn at 640 x 360 and scaled x2, so its people
     end up as 2 x 2 blocks in OPTIMIZADO. This band keeps the same geometry
     as `k_tribuna` at the final size, so both modes show the same crowd.
     """
-    height = CROWD_BOTTOM - CROWD_TOP
-    band = pygame.Surface((W, height))
-    rng = random.Random(STADIUM_SEED)
-    rows = height // CROWD_SEAT[1]
-    for row in range(rows):
-        _band_row(band, rng, row, rows)
-    _band_stairs(band)
-    screen.blit(band, (0, CROWD_TOP))
+  height = CROWD_BOTTOM - CROWD_TOP
+  band = pygame.Surface((W, height))
+  rng = random.Random(STADIUM_SEED)
+  rows = height // CROWD_SEAT[1]
+  for row in range(rows):
+    _band_row(band, rng, row, rows)
+  _band_stairs(band)
+  screen.blit(band, (0, CROWD_TOP))
 
 
 def _band_row(band, rng, row, rows):
-    """Floor, step and people of one row of the full resolution stands."""
-    top = row * CROWD_SEAT[1]
-    edge = top + CROWD_SEAT[1] - CROWD_STEP
-    shade = _band_shade(row, rows)
-    band.fill(_tone(CROWD_TREAD, shade), (0, top, W, CROWD_SEAT[1]))
-    band.fill(_tone(CROWD_EDGE, shade), (0, edge, W, CROWD_STEP_RIM))
-    band.fill(_tone(CROWD_RISER, shade), (0, edge + CROWD_STEP_RIM, W,
-                                         CROWD_STEP - CROWD_STEP_RIM))
-    _band_people(band, rng, row, edge, shade)
+  """Floor, step and people of one row of the full resolution stands."""
+  top = row * CROWD_SEAT[1]
+  edge = top + CROWD_SEAT[1] - CROWD_STEP
+  shade = _band_shade(row, rows)
+  band.fill(_tone(CROWD_TREAD, shade), (0, top, W, CROWD_SEAT[1]))
+  band.fill(_tone(CROWD_EDGE, shade), (0, edge, W, CROWD_STEP_RIM))
+  band.fill(_tone(CROWD_RISER, shade), (0, edge + CROWD_STEP_RIM, W,
+                                       CROWD_STEP - CROWD_STEP_RIM))
+  _band_people(band, rng, row, edge, shade)
 
 
 def _band_people(band, rng, row, edge, shade):
-    """The people of a row: one seat of the grid each, some of them empty."""
-    seat_w = CROWD_SEAT[0]
-    shift = (row % 2) * (seat_w // 2)
-    for seat in range(-1, W // seat_w + 1):
-        if rng.random() < CROWD_FILL:
-            _band_person(band, rng, seat * seat_w - shift, edge, shade)
+  """The people of a row: one seat of the grid each, some of them empty."""
+  seat_w = CROWD_SEAT[0]
+  shift = (row % 2) * (seat_w // 2)
+  for seat in range(-1, W // seat_w + 1):
+    if rng.random() < CROWD_FILL:
+      _band_person(band, rng, seat * seat_w - shift, edge, shade)
 
 
 def _band_person(band, rng, x, edge, shade):
-    """Torso with shoulders and a head with hair, at the final size."""
-    body_w, body_h = CROWD_BODY
-    left = x + (CROWD_SEAT[0] - body_w) // 2
-    shirt = _tone(CROWD_SHIRTS[0 if x < W // 2 else 1], shade * _vary(rng))
-    band.fill(shirt, (left, edge - body_h, body_w, body_h))
-    band.fill(_darker(shirt, CROWD_SHOULDER_SHADE),
-              (left + 1, edge - body_h, body_w - 2, CROWD_SHOULDER_EDGE))
-    _band_head(band, rng, left + body_w // 2, edge - body_h - CROWD_HEAD, shade)
+  """Torso with shoulders and a head with hair, at the final size."""
+  body_w, body_h = CROWD_BODY
+  left = x + (CROWD_SEAT[0] - body_w) // 2
+  shirt = _tone(CROWD_SHIRTS[0 if x < W // 2 else 1], shade * _vary(rng))
+  band.fill(shirt, (left, edge - body_h, body_w, body_h))
+  band.fill(_darker(shirt, CROWD_SHOULDER_SHADE),
+            (left + 1, edge - body_h, body_w - 2, CROWD_SHOULDER_EDGE))
+  _band_head(band, rng, left + body_w // 2, edge - body_h - CROWD_HEAD, shade)
 
 
 def _band_head(band, rng, cx, cy, shade):
-    """Dark rim, face and hair of one person."""
-    r = int(CROWD_HEAD)
-    pygame.draw.circle(band, _tone(CROWD_OUTLINE_COLOUR, shade), (cx, cy), r)
-    pygame.draw.circle(band, _tone(rng.choice(CROWD_SKINS), shade), (cx, cy),
-                       r - 1)
-    pygame.draw.circle(band, _tone(rng.choice(CROWD_HAIRS), shade),
-                       (cx, cy - CROWD_HAIR_DROP), r - 1)
-    pygame.draw.circle(band, _tone(CROWD_SKINS[0], shade), (cx, cy + 1),
-                       r - CROWD_FACE_INSET)
+  """Dark rim, face and hair of one person."""
+  r = int(CROWD_HEAD)
+  pygame.draw.circle(band, _tone(CROWD_OUTLINE_COLOUR, shade), (cx, cy), r)
+  pygame.draw.circle(band, _tone(rng.choice(CROWD_SKINS), shade), (cx, cy),
+                     r - 1)
+  pygame.draw.circle(band, _tone(rng.choice(CROWD_HAIRS), shade),
+                     (cx, cy - CROWD_HAIR_DROP), r - 1)
+  pygame.draw.circle(band, _tone(CROWD_SKINS[0], shade), (cx, cy + 1),
+                     r - CROWD_FACE_INSET)
 
 
 def _band_stairs(band):
-    """Dark aisles of the stands, at the same x as the scaled background."""
-    for x in range(STAIRS_X0 * PX, W, STAIRS_EVERY * PX):
-        band.fill(palette.SEAT_DEEP, (x, 0, STAIRS_W * PX, band.get_height()))
-        for y in range(0, band.get_height(), STEP_H * PX):
-            band.fill(palette.SEAT_DARK, (x, y, STAIRS_W * PX, PX))
+  """Dark aisles of the stands, at the same x as the scaled background."""
+  for x in range(STAIRS_X0 * PX, W, STAIRS_EVERY * PX):
+    band.fill(palette.SEAT_DEEP, (x, 0, STAIRS_W * PX, band.get_height()))
+    for y in range(0, band.get_height(), STEP_H * PX):
+      band.fill(palette.SEAT_DARK, (x, y, STAIRS_W * PX, PX))
 
 
 def _band_shade(row, rows):
-    """Darkness of a row: the ones up there are further away."""
-    far = row / (rows - 1)
-    return CROWD_SHADE_TOP + (CROWD_SHADE_BOTTOM - CROWD_SHADE_TOP) * far
+  """Darkness of a row: the ones up there are further away."""
+  far = row / (rows - 1)
+  return CROWD_SHADE_TOP + (CROWD_SHADE_BOTTOM - CROWD_SHADE_TOP) * far
 
 
 def _vary(rng):
-    """Brightness of one shirt (the hash does this in the kernel)."""
-    return CROWD_VAR_MIN + CROWD_VAR_RANGE * rng.random()
+  """Brightness of one shirt (the hash does this in the kernel)."""
+  return CROWD_VAR_MIN + CROWD_VAR_RANGE * rng.random()
 
 
 def _tone(rgb, factor):
-    """Colour of the crowd (0-1 floats) times a brightness, as a byte rgb."""
-    return tuple(_clip(channel * factor * BYTE_MAX) for channel in rgb)
+  """Colour of the crowd (0-1 floats) times a brightness, as a byte rgb."""
+  return tuple(_clip(channel * factor * BYTE_MAX) for channel in rgb)
 
 
 def _darker(rgb, factor):
-    """Byte rgb darkened by `factor` (0-1)."""
-    return tuple(_clip(channel * factor) for channel in rgb)
+  """Byte rgb darkened by `factor` (0-1)."""
+  return tuple(_clip(channel * factor) for channel in rgb)
 
 
 def _clip(value):
-    """Byte channel of a 0-255 float (rounded and clipped)."""
-    return min(palette.MAX_CHANNEL, int(value + 0.5))
+  """Byte channel of a 0-255 float (rounded and clipped)."""
+  return min(palette.MAX_CHANNEL, int(value + 0.5))
 
 
 
@@ -484,177 +484,177 @@ def _clip(value):
 # Goals (drawn every frame: their height changes with the powers)
 # ---------------------------------------------------------------------------
 def goal_bar_y(height):
-    """y of the crossbar centre for a goal of that height."""
-    return FLOOR - height - HALF_BAR
+  """y of the crossbar centre for a goal of that height."""
+  return FLOOR - height - HALF_BAR
 
 
 def _goal_x(side):
-    depth = config.Arena.GOAL_DEPTH
-    mouth = depth if side == 0 else W - depth
-    x0, x1 = (0, mouth) if side == 0 else (mouth, W)
-    return mouth, x0, x1
+  depth = config.Arena.GOAL_DEPTH
+  mouth = depth if side == 0 else W - depth
+  x0, x1 = (0, mouth) if side == 0 else (mouth, W)
+  return mouth, x0, x1
 
 
 def draw_goal_back(surf, side, height):
-    """Net, back post and owner flag (behind players and ball)."""
-    _, x0, x1 = _goal_x(side)
-    top = int(goal_bar_y(height) - HALF_BAR)
-    top -= top % PX
-    surf.blit(_net(x1 - x0, FLOOR - top), (x0, top))
-    sh = retro.dither_ellipse((x1 - x0) // PX, GOAL_SHADOW_H,
-                              alpha=GOAL_SHADOW_ALPHA)
-    surf.blit(retro.scale_px(sh), (x0, FLOOR - GOAL_SHADOW_RAISE))
-    px = POST_INSET if side == 0 else W - POST_INSET - POST_W
-    pygame.draw.rect(surf, palette.INK,
-                     (px - PX, top, POST_W + 2 * PX, FLOOR - top))
-    pygame.draw.rect(surf, palette.WHITE, (px, top, POST_W, FLOOR - top))
-    _flag(surf, side, top)
+  """Net, back post and owner flag (behind players and ball)."""
+  _, x0, x1 = _goal_x(side)
+  top = int(goal_bar_y(height) - HALF_BAR)
+  top -= top % PX
+  surf.blit(_net(x1 - x0, FLOOR - top), (x0, top))
+  sh = retro.dither_ellipse((x1 - x0) // PX, GOAL_SHADOW_H,
+                            alpha=GOAL_SHADOW_ALPHA)
+  surf.blit(retro.scale_px(sh), (x0, FLOOR - GOAL_SHADOW_RAISE))
+  px = POST_INSET if side == 0 else W - POST_INSET - POST_W
+  pygame.draw.rect(surf, palette.INK,
+                   (px - PX, top, POST_W + 2 * PX, FLOOR - top))
+  pygame.draw.rect(surf, palette.WHITE, (px, top, POST_W, FLOOR - top))
+  _flag(surf, side, top)
 
 
 def _net(w, h):
-    net = pygame.Surface((w, h), pygame.SRCALPHA)
-    net.fill(NET_FILL)
-    for gx in range(0, w, NET_CELL):
-        net.fill(NET_LINE_COLOR, (gx, 0, PX, h))
-    for gy in range(0, h, NET_CELL):
-        net.fill(NET_LINE_COLOR, (0, gy, w, PX))
-    return net
+  net = pygame.Surface((w, h), pygame.SRCALPHA)
+  net.fill(NET_FILL)
+  for gx in range(0, w, NET_CELL):
+    net.fill(NET_LINE_COLOR, (gx, 0, PX, h))
+  for gy in range(0, h, NET_CELL):
+    net.fill(NET_LINE_COLOR, (0, gy, w, PX))
+  return net
 
 
 def _flag(surf, side, top):
-    """Little flag with the colour of the goal owner."""
-    fx = FLAG_INSET if side == 0 else W - FLAG_INSET
-    fy = top - FLAG_POLE_H
-    pygame.draw.rect(surf, palette.INK, (fx - PX, fy, 2 * PX, top - fy))
-    d = 1 if side == 0 else -1
-    pts = [(fx, fy), (fx + d * FLAG_W, fy + FLAG_H // 2), (fx, fy + FLAG_H)]
-    pygame.draw.polygon(surf, config.PLAYER_COLORS[side], pts)
-    pygame.draw.polygon(surf, palette.INK, pts, PX)
+  """Little flag with the colour of the goal owner."""
+  fx = FLAG_INSET if side == 0 else W - FLAG_INSET
+  fy = top - FLAG_POLE_H
+  pygame.draw.rect(surf, palette.INK, (fx - PX, fy, 2 * PX, top - fy))
+  d = 1 if side == 0 else -1
+  pts = [(fx, fy), (fx + d * FLAG_W, fy + FLAG_H // 2), (fx, fy + FLAG_H)]
+  pygame.draw.polygon(surf, config.PLAYER_COLORS[side], pts)
+  pygame.draw.polygon(surf, palette.INK, pts, PX)
 
 
 def draw_goal_front(surf, side, height, highlight=None):
-    """Crossbar (in front of everything) with a rounded tip."""
-    mouth = _goal_x(side)[0]
-    bar = _crossbar(side, height)
-    pygame.draw.rect(surf, palette.INK, bar.inflate(2 * PX, 2 * PX),
-                     border_radius=BAR_RADIUS)
-    pygame.draw.rect(surf, palette.WHITE, bar, border_radius=BAR_INNER_RADIUS)
-    pygame.draw.rect(surf, palette.STRUCT_SHADE,
-                     (bar.x, bar.bottom - PX, bar.w, PX))
-    if highlight:
-        _glow(surf, bar, highlight)
-    pygame.draw.rect(surf, palette.LINE,
-                     (mouth - PX // 2, FLOOR, PX, GOAL_LINE_MARK))
+  """Crossbar (in front of everything) with a rounded tip."""
+  mouth = _goal_x(side)[0]
+  bar = _crossbar(side, height)
+  pygame.draw.rect(surf, palette.INK, bar.inflate(2 * PX, 2 * PX),
+                   border_radius=BAR_RADIUS)
+  pygame.draw.rect(surf, palette.WHITE, bar, border_radius=BAR_INNER_RADIUS)
+  pygame.draw.rect(surf, palette.STRUCT_SHADE,
+                   (bar.x, bar.bottom - PX, bar.w, PX))
+  if highlight:
+    _glow(surf, bar, highlight)
+  pygame.draw.rect(surf, palette.LINE,
+                   (mouth - PX // 2, FLOOR, PX, GOAL_LINE_MARK))
 
 
 def _crossbar(side, height):
-    mouth, x0, x1 = _goal_x(side)
-    y = int(goal_bar_y(height))
-    t = int(config.Arena.BAR_THICKNESS)
-    a, b = (x0, mouth + t // 2) if side == 0 else (mouth - t // 2, x1)
-    return pygame.Rect(a, y - t // 2, b - a, t)
+  mouth, x0, x1 = _goal_x(side)
+  y = int(goal_bar_y(height))
+  t = int(config.Arena.BAR_THICKNESS)
+  a, b = (x0, mouth + t // 2) if side == 0 else (mouth - t // 2, x1)
+  return pygame.Rect(a, y - t // 2, b - a, t)
 
 
 def _glow(surf, bar, color):
-    glow = pygame.Surface((bar.w + 2 * GLOW_MARGIN, bar.h + 2 * GLOW_MARGIN),
-                          pygame.SRCALPHA)
-    glow.fill((*color, GLOW_ALPHA))
-    surf.blit(glow, (bar.x - GLOW_MARGIN, bar.y - GLOW_MARGIN))
+  glow = pygame.Surface((bar.w + 2 * GLOW_MARGIN, bar.h + 2 * GLOW_MARGIN),
+                        pygame.SRCALPHA)
+  glow.fill((*color, GLOW_ALPHA))
+  surf.blit(glow, (bar.x - GLOW_MARGIN, bar.y - GLOW_MARGIN))
 
 
 # ---------------------------------------------------------------------------
 # Pixel art ball (frames by angle and size)
 # ---------------------------------------------------------------------------
 def _pentagon(cx, cy, r, rot):
-    return [(cx + math.cos(math.radians(rot + k * PENTAGON_STEP)) * r,
-             cy + math.sin(math.radians(rot + k * PENTAGON_STEP)) * r)
-            for k in range(PENTAGON_SIDES)]
+  return [(cx + math.cos(math.radians(rot + k * PENTAGON_STEP)) * r,
+           cy + math.sin(math.radians(rot + k * PENTAGON_STEP)) * r)
+          for k in range(PENTAGON_SIDES)]
 
 
 def _round_mask(r):
-    mask = art.canvas(r * 2, r * 2)
-    art.circle(mask, palette.WHITE, (r, r), r)
-    return mask
+  mask = art.canvas(r * 2, r * 2)
+  art.circle(mask, palette.WHITE, (r, r), r)
+  return mask
 
 
 class BallSprite:
-    """Ball frames, cached by diameter and angle (Flyweight)."""
-    # px: radius of the ball drawing before it becomes pixel art.
-    VECTOR_R = 64
+  """Ball frames, cached by diameter and angle (Flyweight)."""
+  # px: radius of the ball drawing before it becomes pixel art.
+  VECTOR_R = 64
 
-    def __init__(self):
-        custom = assets.load_override_image("sprites", "ball.png")
-        size = (self.VECTOR_R * 2, self.VECTOR_R * 2)
-        self.pattern = (pygame.transform.smoothscale(custom, size)
-                        if custom is not None else self._vector_pattern())
-        self.frames = {}
+  def __init__(self):
+    custom = assets.load_override_image("sprites", "ball.png")
+    size = (self.VECTOR_R * 2, self.VECTOR_R * 2)
+    self.pattern = (pygame.transform.smoothscale(custom, size)
+                    if custom is not None else self._vector_pattern())
+    self.frames = {}
 
-    def _vector_pattern(self):
-        r = self.VECTOR_R
-        s = art.canvas(r * 2, r * 2)
-        art.circle(s, BALL_WHITE, (r, r), r)
-        art.poly(s, palette.INK, _pentagon(r, r, r * CENTER_PATCH, UP_ANGLE))
-        for k in range(PENTAGON_SIDES):
-            rot = UP_ANGLE + PATCH_OFFSET + k * PENTAGON_STEP
-            a = math.radians(rot)
-            art.poly(s, palette.INK, _pentagon(
-                r + math.cos(a) * r * PATCH_DISTANCE,
-                r + math.sin(a) * r * PATCH_DISTANCE,
-                r * PATCH_SIZE, rot + PATCH_FLIP))
-        art.clip(s, _round_mask(r))
-        return s
+  def _vector_pattern(self):
+    r = self.VECTOR_R
+    s = art.canvas(r * 2, r * 2)
+    art.circle(s, BALL_WHITE, (r, r), r)
+    art.poly(s, palette.INK, _pentagon(r, r, r * CENTER_PATCH, UP_ANGLE))
+    for k in range(PENTAGON_SIDES):
+      rot = UP_ANGLE + PATCH_OFFSET + k * PENTAGON_STEP
+      a = math.radians(rot)
+      art.poly(s, palette.INK, _pentagon(
+          r + math.cos(a) * r * PATCH_DISTANCE,
+          r + math.sin(a) * r * PATCH_DISTANCE,
+          r * PATCH_SIZE, rot + PATCH_FLIP))
+    art.clip(s, _round_mask(r))
+    return s
 
-    def frame(self, radius, angle):
-        """Ball image for that radius (px) and angle (degrees)."""
-        d = max(MIN_BALL_PX, int(round(radius * 2 / PX)))   # native diameter
-        abucket = int(angle // ANGLE_STEP) % ANGLE_BUCKETS
-        key = (d, abucket)
-        img = self.frames.get(key)
-        if img is None:
-            img = self._draw_frame(d, abucket)
-            self.frames[key] = img
-        return img
+  def frame(self, radius, angle):
+    """Ball image for that radius (px) and angle (degrees)."""
+    d = max(MIN_BALL_PX, int(round(radius * 2 / PX)))   # native diameter
+    abucket = int(angle // ANGLE_STEP) % ANGLE_BUCKETS
+    key = (d, abucket)
+    img = self.frames.get(key)
+    if img is None:
+      img = self._draw_frame(d, abucket)
+      self.frames[key] = img
+    return img
 
-    def _draw_frame(self, d, abucket):
-        r = self.VECTOR_R
-        rot = pygame.transform.rotozoom(self.pattern, abucket * ANGLE_STEP,
-                                        1.0)
-        cx, cy = rot.get_width() / 2, rot.get_height() / 2
-        crop = rot.subsurface(pygame.Rect(round(cx - r), round(cy - r),
-                                          2 * r, 2 * r)).copy()
-        crop.blit(self._shade(r), (0, 0))
-        shine_x, shine_y = SHINE_AT
-        art.circle(crop, BALL_SHINE, (r * shine_x, r * shine_y), r * SHINE_R)
-        native = retro.outline_native(retro.pixelize(crop, d), palette.INK, 1)
-        return retro.scale_px(native)
+  def _draw_frame(self, d, abucket):
+    r = self.VECTOR_R
+    rot = pygame.transform.rotozoom(self.pattern, abucket * ANGLE_STEP,
+                                    1.0)
+    cx, cy = rot.get_width() / 2, rot.get_height() / 2
+    crop = rot.subsurface(pygame.Rect(round(cx - r), round(cy - r),
+                                      2 * r, 2 * r)).copy()
+    crop.blit(self._shade(r), (0, 0))
+    shine_x, shine_y = SHINE_AT
+    art.circle(crop, BALL_SHINE, (r * shine_x, r * shine_y), r * SHINE_R)
+    native = retro.outline_native(retro.pixelize(crop, d), palette.INK, 1)
+    return retro.scale_px(native)
 
-    def _shade(self, r):
-        """Fixed shading (it does not turn with the ball)."""
-        shade = art.canvas(2 * r, 2 * r)
-        shade_x, shade_y = SHADE_AT
-        art.circle(shade, BALL_SHADE, (r + r * shade_x, r + r * shade_y),
-                   r * SHADE_R)
-        return art.clip(shade, _round_mask(r))
+  def _shade(self, r):
+    """Fixed shading (it does not turn with the ball)."""
+    shade = art.canvas(2 * r, 2 * r)
+    shade_x, shade_y = SHADE_AT
+    art.circle(shade, BALL_SHADE, (r + r * shade_x, r + r * shade_y),
+               r * SHADE_R)
+    return art.clip(shade, _round_mask(r))
 
-    def draw(self, surf, x, y, r, angle):
-        """Draws the ball centred at (x, y)."""
-        img = self.frame(r, angle)
-        surf.blit(img, img.get_rect(center=(round(x), round(y))))
+  def draw(self, surf, x, y, r, angle):
+    """Draws the ball centred at (x, y)."""
+    img = self.frame(r, angle)
+    surf.blit(img, img.get_rect(center=(round(x), round(y))))
 
 
 _shadows = {}
 
 
 def draw_shadow(surf, x, width, height_above, alpha=SHADOW_ALPHA):
-    """Dithered shadow; it shrinks and fades with height."""
-    k = max(SHADOW_MIN_SCALE, 1 - height_above / SHADOW_FADE_HEIGHT)
-    w = max(SHADOW_MIN_W, int(width * k / PX))
-    h = max(2, int(w * SHADOW_FLATNESS))
-    a = min(palette.MAX_CHANNEL, int(alpha * k * SHADOW_BOOST))
-    key = (w, h, a // SHADOW_ALPHA_STEP)
-    img = _shadows.get(key)
-    if img is None:
-        img = retro.scale_px(retro.dither_ellipse(w, h, alpha=a))
-        _shadows[key] = img
-    surf.blit(img, (round(x - img.get_width() / 2),
-                    FLOOR - img.get_height() // 2 + SHADOW_DROP))
+  """Dithered shadow; it shrinks and fades with height."""
+  k = max(SHADOW_MIN_SCALE, 1 - height_above / SHADOW_FADE_HEIGHT)
+  w = max(SHADOW_MIN_W, int(width * k / PX))
+  h = max(2, int(w * SHADOW_FLATNESS))
+  a = min(palette.MAX_CHANNEL, int(alpha * k * SHADOW_BOOST))
+  key = (w, h, a // SHADOW_ALPHA_STEP)
+  img = _shadows.get(key)
+  if img is None:
+    img = retro.scale_px(retro.dither_ellipse(w, h, alpha=a))
+    _shadows[key] = img
+  surf.blit(img, (round(x - img.get_width() / 2),
+                  FLOOR - img.get_height() // 2 + SHADOW_DROP))

@@ -209,633 +209,633 @@ GOAL_SCORER_Y = 368                # name of the scorer (px)
 
 
 def fmt_clock(secs):
-    """Clock text m:ss for that many seconds left."""
-    secs = max(0, int(math.ceil(secs - CLOCK_EPSILON)))
-    return (f"{secs // SECONDS_PER_MINUTE:01d}:"
-            f"{secs % SECONDS_PER_MINUTE:02d}")
+  """Clock text m:ss for that many seconds left."""
+  secs = max(0, int(math.ceil(secs - CLOCK_EPSILON)))
+  return (f"{secs // SECONDS_PER_MINUTE:01d}:"
+          f"{secs % SECONDS_PER_MINUTE:02d}")
 
 
 def kick_angle(prog):
-    """Boot angle during the kick (0 = rest; negative = forward)."""
-    if prog < KICK_WINDUP_END:
-        return KICK_WINDUP_ANGLE * prog / KICK_WINDUP_END
-    if prog < KICK_SWING_END:
-        return (KICK_WINDUP_ANGLE
-                - KICK_SWING_ARC * (prog - KICK_WINDUP_END) / KICK_SWING_TIME)
-    if prog < KICK_HOLD_END:
-        return KICK_FORWARD_ANGLE
-    return (KICK_FORWARD_ANGLE
-            - KICK_FORWARD_ANGLE * (prog - KICK_HOLD_END) / KICK_RETURN_TIME)
+  """Boot angle during the kick (0 = rest; negative = forward)."""
+  if prog < KICK_WINDUP_END:
+    return KICK_WINDUP_ANGLE * prog / KICK_WINDUP_END
+  if prog < KICK_SWING_END:
+    return (KICK_WINDUP_ANGLE
+            - KICK_SWING_ARC * (prog - KICK_WINDUP_END) / KICK_SWING_TIME)
+  if prog < KICK_HOLD_END:
+    return KICK_FORWARD_ANGLE
+  return (KICK_FORWARD_ANGLE
+          - KICK_FORWARD_ANGLE * (prog - KICK_HOLD_END) / KICK_RETURN_TIME)
 
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def timer_bar(surf, x, y, w, frac, color):
-    """Retro bar of remaining time."""
-    b = TIMER_BAR_BORDER
-    pygame.draw.rect(surf, palette.INK, (x, y, w, TIMER_BAR_H))
-    pygame.draw.rect(surf, palette.CREAM_DARK,
-                     (x + b, y + b, w - 2 * b, TIMER_BAR_H - 2 * b))
-    fill = int((w - 2 * b) * max(0.0, min(1.0, frac)))
-    if fill > 0:
-        pygame.draw.rect(surf, color, (x + b, y + b, fill, TIMER_BAR_H - 2 * b))
+  """Retro bar of remaining time."""
+  b = TIMER_BAR_BORDER
+  pygame.draw.rect(surf, palette.INK, (x, y, w, TIMER_BAR_H))
+  pygame.draw.rect(surf, palette.CREAM_DARK,
+                   (x + b, y + b, w - 2 * b, TIMER_BAR_H - 2 * b))
+  fill = int((w - 2 * b) * max(0.0, min(1.0, frac)))
+  if fill > 0:
+    pygame.draw.rect(surf, color, (x + b, y + b, fill, TIMER_BAR_H - 2 * b))
 
 
 def snap(v):
-    """Takes a coordinate to the grid of art pixels."""
-    return int(v) // PX * PX
+  """Takes a coordinate to the grid of art pixels."""
+  return int(v) // PX * PX
 
 
 def _around(x, y, rect):
-    """Rectangle (dx, dy, width, height) relative to the point (x, y)."""
-    dx, dy, w, h = rect
-    return x + dx, y + dy, w, h
+  """Rectangle (dx, dy, width, height) relative to the point (x, y)."""
+  dx, dy, w, h = rect
+  return x + dx, y + dy, w, h
 
 
 def _power_color(power_id):
-    return config.CATEGORY_COLORS[config.POWERS_BY_ID[power_id].category]
+  return config.CATEGORY_COLORS[config.POWERS_BY_ID[power_id].category]
 
 
 def _effect_frac(e):
-    return e["left"] / max(MIN_DURATION, e["dur"])
+  return e["left"] / max(MIN_DURATION, e["dur"])
 
 
 def _column(target):
-    """HUD column of an effect: 0 (left), 1 (right) or "c" (centre)."""
-    if target in LEFT_TARGETS:
-        return 0
-    return 1 if target in RIGHT_TARGETS else "c"
+  """HUD column of an effect: 0 (left), 1 (right) or "c" (centre)."""
+  if target in LEFT_TARGETS:
+    return 0
+  return 1 if target in RIGHT_TARGETS else "c"
 
 
 def _walk_pose(stride):
-    """(boot angle, head hop) while walking."""
-    ph = stride / STRIDE_PX
-    return (WALK_SWING * math.sin(ph),
-            (-1 if abs(math.cos(ph)) > WALK_BOB_AT else 0))
+  """(boot angle, head hop) while walking."""
+  ph = stride / STRIDE_PX
+  return (WALK_SWING * math.sin(ph),
+          (-1 if abs(math.cos(ph)) > WALK_BOB_AT else 0))
 
 
 def _draw_no_kick(surf, bx, by):
-    """No kick sign: white square with a border and a red cross, centred
+  """No kick sign: white square with a border and a red cross, centred
     at (bx, by)."""
-    half = NO_KICK_SIZE // 2
-    inner = half - NO_KICK_BORDER
-    length, thick = NO_KICK_CROSS
-    pygame.draw.rect(surf, palette.INK,
-                     (bx - half, by - half, NO_KICK_SIZE, NO_KICK_SIZE))
-    pygame.draw.rect(surf, palette.WHITE,
-                     (bx - inner, by - inner, 2 * inner, 2 * inner))
-    pygame.draw.rect(surf, palette.RED,
-                     (bx - length // 2, by - thick // 2, length, thick))
-    pygame.draw.rect(surf, palette.RED,
-                     (bx - thick // 2, by - length // 2, thick, length))
+  half = NO_KICK_SIZE // 2
+  inner = half - NO_KICK_BORDER
+  length, thick = NO_KICK_CROSS
+  pygame.draw.rect(surf, palette.INK,
+                   (bx - half, by - half, NO_KICK_SIZE, NO_KICK_SIZE))
+  pygame.draw.rect(surf, palette.WHITE,
+                   (bx - inner, by - inner, 2 * inner, 2 * inner))
+  pygame.draw.rect(surf, palette.RED,
+                   (bx - length // 2, by - thick // 2, length, thick))
+  pygame.draw.rect(surf, palette.RED,
+                   (bx - thick // 2, by - length // 2, thick, length))
 
 
 def _draw_ice(surf, p):
-    s = p["scale"]
-    r = pygame.Rect(0, 0, snap(ICE_W * s),
-                    snap((config.PlayerSpec.HEIGHT + ICE_EXTRA_H) * s))
-    r.midbottom = (p["x"], p["y"] + ICE_SINK)
-    ice = pygame.Surface(r.size, pygame.SRCALPHA)
-    ice.fill(ICE_FILL)
-    pygame.draw.rect(ice, ICE_EDGE, ice.get_rect(), ICE_EDGE_LINE)
-    for k in range(ICE_STREAKS):
-        x = snap(r.width * (ICE_STREAK_FIRST + ICE_STREAK_STEP * k))
-        for j in range(ICE_STREAK_STEPS):
-            ice.fill(ICE_STREAK_COLOR, (x - j * PX, ICE_STREAK_TOP + j * 2 * PX,
-                                        PX, 2 * PX))
-    surf.blit(ice, r)
+  s = p["scale"]
+  r = pygame.Rect(0, 0, snap(ICE_W * s),
+                  snap((config.PlayerSpec.HEIGHT + ICE_EXTRA_H) * s))
+  r.midbottom = (p["x"], p["y"] + ICE_SINK)
+  ice = pygame.Surface(r.size, pygame.SRCALPHA)
+  ice.fill(ICE_FILL)
+  pygame.draw.rect(ice, ICE_EDGE, ice.get_rect(), ICE_EDGE_LINE)
+  for k in range(ICE_STREAKS):
+    x = snap(r.width * (ICE_STREAK_FIRST + ICE_STREAK_STEP * k))
+    for j in range(ICE_STREAK_STEPS):
+      ice.fill(ICE_STREAK_COLOR, (x - j * PX, ICE_STREAK_TOP + j * 2 * PX,
+                                  PX, 2 * PX))
+  surf.blit(ice, r)
 
 
 def _burnt(img):
-    """Copy of the sprite of a burnt player: charred, without glow."""
-    dark = img.copy()
-    dark.fill(BURN_TINT, special_flags=pygame.BLEND_RGB_MULT)
-    return dark
+  """Copy of the sprite of a burnt player: charred, without glow."""
+  dark = img.copy()
+  dark.fill(BURN_TINT, special_flags=pygame.BLEND_RGB_MULT)
+  return dark
 
 
 def burn_badge(p, ball_x, flame_size, text_size):
-    """Boxes of the flame and the seconds of a burnt player: over its head
+  """Boxes of the flame and the seconds of a burnt player: over its head
     and on the side away from the ball, so the ball never hides them."""
-    side = 1 if ball_x <= p["x"] else -1
-    head_top = p["y"] - (config.PlayerSpec.HEAD_OFFSET_Y
-                         + config.PlayerSpec.HEAD_RADIUS) * p["scale"]
-    flame = pygame.Rect((0, 0), flame_size)
-    flame.midbottom = (snap(p["x"] + side * BURN_FLAME_SIDE),
-                       int(head_top - BURN_FLAME_GAP))
-    text = pygame.Rect((0, 0), text_size)
-    if side > 0:
-        text.midleft = (flame.right + BURN_TEXT_GAP, flame.centery)
-    else:
-        text.midright = (flame.left - BURN_TEXT_GAP, flame.centery)
-    return flame, text
+  side = 1 if ball_x <= p["x"] else -1
+  head_top = p["y"] - (config.PlayerSpec.HEAD_OFFSET_Y
+                       + config.PlayerSpec.HEAD_RADIUS) * p["scale"]
+  flame = pygame.Rect((0, 0), flame_size)
+  flame.midbottom = (snap(p["x"] + side * BURN_FLAME_SIDE),
+                     int(head_top - BURN_FLAME_GAP))
+  text = pygame.Rect((0, 0), text_size)
+  if side > 0:
+    text.midleft = (flame.right + BURN_TEXT_GAP, flame.centery)
+  else:
+    text.midright = (flame.left - BURN_TEXT_GAP, flame.centery)
+  return flame, text
 
 
 def _draw_burn(surf, p, ball_x):
-    """Flame and seconds left over the head of a burnt player."""
-    flame = icons.flame()
-    label = _label(f"{max(0.0, p.get('burned_left') or 0.0):.1f}s")
-    flame_rect, text_rect = burn_badge(p, ball_x, flame.get_size(),
-                                       label.get_size())
-    surf.blit(flame, flame_rect)
-    surf.blit(label, text_rect)
+  """Flame and seconds left over the head of a burnt player."""
+  flame = icons.flame()
+  label = _label(f"{max(0.0, p.get('burned_left') or 0.0):.1f}s")
+  flame_rect, text_rect = burn_badge(p, ball_x, flame.get_size(),
+                                     label.get_size())
+  surf.blit(flame, flame_rect)
+  surf.blit(label, text_rect)
 
 
 def _draw_kick_arc(surf, p, f):
-    """Visible reach of the kick: an arc of white pixels."""
-    s = p["scale"]
-    cx, cy = p["x"], p["y"] - KICK_ARC_HEIGHT * s
-    spec = config.PlayerSpec
-    reach = (spec.KICK_REACH_X + spec.KICK_RADIUS * KICK_ARC_REACH_SHARE) * s
-    prog = min(1.0, (p["kick"] - KICK_ARC_FROM) / KICK_ARC_GROW)
-    for k in range(KICK_ARC_DOTS):
-        a = math.radians(KICK_ARC_START
-                         + KICK_ARC_SPAN * prog * k / (KICK_ARC_DOTS - 1))
-        x = cx + math.sin(a) * reach * f
-        y = cy + math.cos(a) * reach
-        sz = PX + (k * 2) // KICK_ARC_GROWTH * PX
-        surf.fill(palette.WHITE, (snap(x) - sz // 2, snap(y) - sz // 2, sz, sz))
+  """Visible reach of the kick: an arc of white pixels."""
+  s = p["scale"]
+  cx, cy = p["x"], p["y"] - KICK_ARC_HEIGHT * s
+  spec = config.PlayerSpec
+  reach = (spec.KICK_REACH_X + spec.KICK_RADIUS * KICK_ARC_REACH_SHARE) * s
+  prog = min(1.0, (p["kick"] - KICK_ARC_FROM) / KICK_ARC_GROW)
+  for k in range(KICK_ARC_DOTS):
+    a = math.radians(KICK_ARC_START
+                     + KICK_ARC_SPAN * prog * k / (KICK_ARC_DOTS - 1))
+    x = cx + math.sin(a) * reach * f
+    y = cy + math.cos(a) * reach
+    sz = PX + (k * 2) // KICK_ARC_GROWTH * PX
+    surf.fill(palette.WHITE, (snap(x) - sz // 2, snap(y) - sz // 2, sz, sz))
 
 
 def _draw_speed_lines(surf, p, col, t):
-    s = p["scale"]
-    d = -1 if p["vx"] > 0 else 1
-    for k, hh in enumerate(SPEED_LINE_HEIGHTS):
-        x0 = p["x"] + d * (SPEED_LINE_BEHIND + k * SPEED_LINE_STAGGER) * s
-        ln = snap(SPEED_LINE_LEN
-                  + SPEED_LINE_WOBBLE * math.sin(t * SPEED_LINE_HZ + k))
-        pygame.draw.rect(surf, col, (min(x0, x0 + d * ln), p["y"] - hh * s,
-                                     ln, 2 * PX))
+  s = p["scale"]
+  d = -1 if p["vx"] > 0 else 1
+  for k, hh in enumerate(SPEED_LINE_HEIGHTS):
+    x0 = p["x"] + d * (SPEED_LINE_BEHIND + k * SPEED_LINE_STAGGER) * s
+    ln = snap(SPEED_LINE_LEN
+              + SPEED_LINE_WOBBLE * math.sin(t * SPEED_LINE_HZ + k))
+    pygame.draw.rect(surf, col, (min(x0, x0 + d * ln), p["y"] - hh * s,
+                                 ln, 2 * PX))
 
 
 def _draw_spring(surf, p, col):
-    r = pygame.Rect(0, 0, int(SPRING_W * p["scale"]), SPRING_H)
-    r.center = (p["x"], stadium.FLOOR + SPRING_DROP)
-    pygame.draw.ellipse(surf, col, r, SPRING_LINE)
+  r = pygame.Rect(0, 0, int(SPRING_W * p["scale"]), SPRING_H)
+  r.center = (p["x"], stadium.FLOOR + SPRING_DROP)
+  pygame.draw.ellipse(surf, col, r, SPRING_LINE)
 
 
 def effect_icon(effect, size):
-    """Icon of an effect: the flame of a burn, the badge of its power."""
-    if effect.get("prop") == BURN_PROP:
-        return icons.flame()
-    return icons.power_icon(effect["power"], size)
+  """Icon of an effect: the flame of a burn, the badge of its power."""
+  if effect.get("prop") == BURN_PROP:
+    return icons.flame()
+  return icons.power_icon(effect["power"], size)
 
 
 def effect_color(effect):
-    """Colour of an effect: fire orange for a burn, its category otherwise."""
-    if effect.get("prop") == BURN_PROP:
-        return palette.ORANGE
-    return _power_color(effect["power"])
+  """Colour of an effect: fire orange for a burn, its category otherwise."""
+  if effect.get("prop") == BURN_PROP:
+    return palette.ORANGE
+  return _power_color(effect["power"])
 
 
 def _draw_mini_effect(surf, e, center):
-    icon = icons.power_icon(e["power"], MINI_ICON)
-    r = icon.get_rect(center=(round(center[0]), round(center[1])))
-    surf.blit(icon, r)
-    timer_bar(surf, r.left, r.bottom + MINI_TIMER_GAP, r.width,
-              _effect_frac(e), _power_color(e["power"]))
+  icon = icons.power_icon(e["power"], MINI_ICON)
+  r = icon.get_rect(center=(round(center[0]), round(center[1])))
+  surf.blit(icon, r)
+  timer_bar(surf, r.left, r.bottom + MINI_TIMER_GAP, r.width,
+            _effect_frac(e), _power_color(e["power"]))
 
 
 def _draw_blast_ring(surf, x, y, t):
-    """Twinkling red dots on the reach of the explosion."""
-    reach = config.PowerRules.BOMB_BLAST_RADIUS
-    n = BLAST_DOTS
-    for k in range(n):
-        if (k + int(t * BLAST_DOTS_HZ)) % 2:
-            a = 2 * math.pi * k / n
-            surf.fill(palette.RED, (snap(x + math.cos(a) * reach),
-                                    snap(y + math.sin(a) * reach),
-                                    BLAST_DOT, BLAST_DOT))
+  """Twinkling red dots on the reach of the explosion."""
+  reach = config.PowerRules.BOMB_BLAST_RADIUS
+  n = BLAST_DOTS
+  for k in range(n):
+    if (k + int(t * BLAST_DOTS_HZ)) % 2:
+      a = 2 * math.pi * k / n
+      surf.fill(palette.RED, (snap(x + math.cos(a) * reach),
+                              snap(y + math.sin(a) * reach),
+                              BLAST_DOT, BLAST_DOT))
 
 
 def _draw_bomb_body(surf, x, y, on):
-    pygame.draw.circle(surf, palette.INK, (x, y), BOMB_R)
-    pygame.draw.circle(surf, palette.RED if on else palette.INK, (x, y),
-                       BOMB_CORE_R)
-    surf.fill(palette.WHITE, _around(x, y, BOMB_SHINE))
-    pygame.draw.rect(surf, palette.INK, _around(x, y, BOMB_FUSE))
-    surf.fill(BOMB_SPARK_ON if on else palette.ORANGE,
-              _around(x, y, BOMB_SPARK))
+  pygame.draw.circle(surf, palette.INK, (x, y), BOMB_R)
+  pygame.draw.circle(surf, palette.RED if on else palette.INK, (x, y),
+                     BOMB_CORE_R)
+  surf.fill(palette.WHITE, _around(x, y, BOMB_SHINE))
+  pygame.draw.rect(surf, palette.INK, _around(x, y, BOMB_FUSE))
+  surf.fill(BOMB_SPARK_ON if on else palette.ORANGE,
+            _around(x, y, BOMB_SPARK))
 
 
 def _draw_pickup_icon(surf, power_id, x, y, col, pulse=0.0):
-    r = config.PowerRules.PICKUP_RADIUS
-    pygame.draw.circle(surf, col, (x, y), r + PICKUP_RING_GAP,
-                       EFFECT_RING_LINE)
-    icon = icons.power_icon(power_id, int(r * PICKUP_ICON_SCALE), pulse)
-    surf.blit(icon, icon.get_rect(center=(x, y)))
+  r = config.PowerRules.PICKUP_RADIUS
+  pygame.draw.circle(surf, col, (x, y), r + PICKUP_RING_GAP,
+                     EFFECT_RING_LINE)
+  icon = icons.power_icon(power_id, int(r * PICKUP_ICON_SCALE), pulse)
+  surf.blit(icon, icon.get_rect(center=(x, y)))
 
 
 def _pickup_pulse(pk, t):
-    """Brightness of the pickup icon: a pulse at birth, then a soft breath."""
-    age = pk["ttl_max"] - pk["ttl"]
-    born = max(0.0, 1.0 - age / PICKUP_PULSE_TIME)
-    soft = PICKUP_PULSE_FLOOR * (0.5 + 0.5 * math.sin(t * PICKUP_PULSE_HZ))
-    return max(born, soft)
+  """Brightness of the pickup icon: a pulse at birth, then a soft breath."""
+  age = pk["ttl_max"] - pk["ttl"]
+  born = max(0.0, 1.0 - age / PICKUP_PULSE_TIME)
+  soft = PICKUP_PULSE_FLOOR * (0.5 + 0.5 * math.sin(t * PICKUP_PULSE_HZ))
+  return max(born, soft)
 
 
 def _draw_score(surf, led_area, i, score):
-    img = pixelfont.render_led(str(score), SCORE_LED_SCALE, palette.LED_ON,
-                               palette.LED_OFF)
-    sx = led_area.centerx - SCORE_X if i == 0 else led_area.centerx + SCORE_X
-    surf.blit(img, img.get_rect(center=(sx, led_area.centery - SCORE_RAISE)))
+  img = pixelfont.render_led(str(score), SCORE_LED_SCALE, palette.LED_ON,
+                             palette.LED_OFF)
+  sx = led_area.centerx - SCORE_X if i == 0 else led_area.centerx + SCORE_X
+  surf.blit(img, img.get_rect(center=(sx, led_area.centery - SCORE_RAISE)))
 
 
 def _draw_time_left(surf, inner, e, col):
-    """Seconds left of an effect and its timer bar."""
-    assets.draw_text(surf, f"{max(0.0, e['left']):.1f}s", layout.FONT_SMALL,
-                     (inner.right - HUD_TIME_MARGIN, inner.top + HUD_TEXT_Y),
-                     col, anchor="topright", outline=palette.INK)
-    timer_bar(surf, inner.left + HUD_TEXT_X, inner.bottom - HUD_TIMER_BOTTOM,
-              inner.width - HUD_TEXT_X - HUD_TIME_MARGIN, _effect_frac(e), col)
+  """Seconds left of an effect and its timer bar."""
+  assets.draw_text(surf, f"{max(0.0, e['left']):.1f}s", layout.FONT_SMALL,
+                   (inner.right - HUD_TIME_MARGIN, inner.top + HUD_TEXT_Y),
+                   col, anchor="topright", outline=palette.INK)
+  timer_bar(surf, inner.left + HUD_TEXT_X, inner.bottom - HUD_TIMER_BOTTOM,
+            inner.width - HUD_TEXT_X - HUD_TIME_MARGIN, _effect_frac(e), col)
 
 
 def _draw_golden_sign(surf):
-    _title(surf, "¡GOL DE ORO!", layout.FONT_BANNER,
-           (layout.CENTER_X, GOLDEN_Y), palette.GOLD)
-    assets.draw_text(surf, "Empate: el próximo gol gana", layout.FONT_TEXT,
-                     (layout.CENTER_X, GOLDEN_NOTE_Y), palette.INK,
-                     outline=palette.WHITE)
+  _title(surf, "¡GOL DE ORO!", layout.FONT_BANNER,
+         (layout.CENTER_X, GOLDEN_Y), palette.GOLD)
+  assets.draw_text(surf, "Empate: el próximo gol gana", layout.FONT_TEXT,
+                   (layout.CENTER_X, GOLDEN_NOTE_Y), palette.INK,
+                   outline=palette.WHITE)
 
 
 def _draw_goal_band(surf, col):
-    """Cream band with stripes of the scorer colour."""
-    width = layout.SCREEN_W
-    band = pygame.Rect(0, GOAL_BAND_TOP, width, GOAL_BAND_H)
-    pygame.draw.rect(surf, palette.INK, band)
-    pygame.draw.rect(surf, palette.CREAM,
-                     band.inflate(0, -2 * GOAL_BAND_BORDER))
-    pygame.draw.rect(surf, col, (0, band.top + GOAL_BAND_BORDER, width,
-                                 GOAL_STRIPE))
-    pygame.draw.rect(surf, col, (0, band.bottom - GOAL_BAND_BORDER
-                                 - GOAL_STRIPE, width, GOAL_STRIPE))
+  """Cream band with stripes of the scorer colour."""
+  width = layout.SCREEN_W
+  band = pygame.Rect(0, GOAL_BAND_TOP, width, GOAL_BAND_H)
+  pygame.draw.rect(surf, palette.INK, band)
+  pygame.draw.rect(surf, palette.CREAM,
+                   band.inflate(0, -2 * GOAL_BAND_BORDER))
+  pygame.draw.rect(surf, col, (0, band.top + GOAL_BAND_BORDER, width,
+                               GOAL_STRIPE))
+  pygame.draw.rect(surf, col, (0, band.bottom - GOAL_BAND_BORDER
+                               - GOAL_STRIPE, width, GOAL_STRIPE))
 
 
 def _label(text):
-    return pixelfont.render(text, LABEL_SCALE, palette.WHITE,
-                            outline=palette.INK)
+  return pixelfont.render(text, LABEL_SCALE, palette.WHITE,
+                          outline=palette.INK)
 
 
 def _title(surf, text, size, pos, color):
-    assets.draw_text(surf, text, size, pos, color, kind="title",
-                     outline=palette.INK, shadow=True)
+  assets.draw_text(surf, text, size, pos, color, kind="title",
+                   outline=palette.INK, shadow=True)
 
 
 class MatchRenderer:
-    """Draws the world, the scoreboard and the centre signs."""
+  """Draws the world, the scoreboard and the centre signs."""
 
-    def __init__(self, app, chars):
-        self.app = app
-        self.sprites = app.sprites
-        self.ball_sprite = app.ball_sprite
-        self.background = app.background
-        self.chars = list(chars)
-        self.t = 0.0
-        self.trail = collections.deque(maxlen=TRAIL_LENGTH)
-        self.kickoff_flash = 0.0
-        self.goal_banner = None      # (time left, goal data)
-        self.golden_flash = 0.0
-        # Small text below the scoreboard (online: a pause was requested).
-        self.center_note = None
+  def __init__(self, app, chars):
+    self.app = app
+    self.sprites = app.sprites
+    self.ball_sprite = app.ball_sprite
+    self.background = app.background
+    self.chars = list(chars)
+    self.t = 0.0
+    self.trail = collections.deque(maxlen=TRAIL_LENGTH)
+    self.kickoff_flash = 0.0
+    self.goal_banner = None      # (time left, goal data)
+    self.golden_flash = 0.0
+    # Small text below the scoreboard (online: a pause was requested).
+    self.center_note = None
 
-    def who(self, i, side_if_same=True):
-        """Character name (side and colour already tell the players apart).
+  def who(self, i, side_if_same=True):
+    """Character name (side and colour already tell the players apart).
         If both chose the same one, the side is added."""
-        name = characters.short_name(
-            characters.CHARACTERS_BY_ID[self.chars[i]])
-        if side_if_same and self.chars[0] == self.chars[1]:
-            name += " (izq.)" if i == 0 else " (der.)"
-        return name
+    name = characters.short_name(
+        characters.CHARACTERS_BY_ID[self.chars[i]])
+    if side_if_same and self.chars[0] == self.chars[1]:
+      name += " (izq.)" if i == 0 else " (der.)"
+    return name
 
-    def reset(self):
-        self.trail.clear()
-        self.kickoff_flash = 0.0
-        self.golden_flash = 0.0
-        self.goal_banner = None
+  def reset(self):
+    self.trail.clear()
+    self.kickoff_flash = 0.0
+    self.golden_flash = 0.0
+    self.goal_banner = None
 
-    def update(self, dt):
-        self.t += dt
-        self.kickoff_flash = max(0.0, self.kickoff_flash - dt)
-        self.golden_flash = max(0.0, self.golden_flash - dt)
-        if self.goal_banner:
-            left, data = self.goal_banner
-            self.goal_banner = (left - dt, data) if left - dt > 0 else None
+  def update(self, dt):
+    self.t += dt
+    self.kickoff_flash = max(0.0, self.kickoff_flash - dt)
+    self.golden_flash = max(0.0, self.golden_flash - dt)
+    if self.goal_banner:
+      left, data = self.goal_banner
+      self.goal_banner = (left - dt, data) if left - dt > 0 else None
 
-    # ------------------------------------------------------------ world
-    def draw_world(self, surf, st, offset=(0, 0)):
-        surf.blit(self.background, offset)
-        self.app.postfx.draw_crowd(surf)
-        goals = st["goals"]
-        for side in (0, 1):
-            stadium.draw_goal_back(surf, side, goals[side])
-        self._objects(surf, st)
-        self._shadows(surf, st)
-        for i in sorted(range(2), key=lambda k: st["players"][k]["y"]):
-            self._player(surf, i, st["players"][i], st)
-        self._ball(surf, st["ball"], st)
-        for side in (0, 1):
-            stadium.draw_goal_front(surf, side, goals[side],
-                                    self._goal_highlight(st, side))
+  # ------------------------------------------------------------ world
+  def draw_world(self, surf, st, offset=(0, 0)):
+    surf.blit(self.background, offset)
+    self.app.postfx.draw_crowd(surf)
+    goals = st["goals"]
+    for side in (0, 1):
+      stadium.draw_goal_back(surf, side, goals[side])
+    self._objects(surf, st)
+    self._shadows(surf, st)
+    for i in sorted(range(2), key=lambda k: st["players"][k]["y"]):
+      self._player(surf, i, st["players"][i], st)
+    self._ball(surf, st["ball"], st)
+    for side in (0, 1):
+      stadium.draw_goal_front(surf, side, goals[side],
+                              self._goal_highlight(st, side))
 
-    def _objects(self, surf, st):
-        """Bombs and the power object on the pitch."""
-        for b in st.get("bombs", []):
-            self._bomb(surf, b)
-        if st.get("pickup"):
-            self._pickup(surf, st["pickup"])
+  def _objects(self, surf, st):
+    """Bombs and the power object on the pitch."""
+    for b in st.get("bombs", []):
+      self._bomb(surf, b)
+    if st.get("pickup"):
+      self._pickup(surf, st["pickup"])
 
-    def _shadows(self, surf, st):
-        ball = st["ball"]
-        stadium.draw_shadow(surf, ball["x"], ball["r"] * BALL_SHADOW_SCALE,
-                            stadium.FLOOR - ball["y"] - ball["r"])
-        for p in st["players"]:
-            stadium.draw_shadow(surf, p["x"], PLAYER_SHADOW_W * p["scale"],
-                                stadium.FLOOR - p["y"], PLAYER_SHADOW_ALPHA)
+  def _shadows(self, surf, st):
+    ball = st["ball"]
+    stadium.draw_shadow(surf, ball["x"], ball["r"] * BALL_SHADOW_SCALE,
+                        stadium.FLOOR - ball["y"] - ball["r"])
+    for p in st["players"]:
+      stadium.draw_shadow(surf, p["x"], PLAYER_SHADOW_W * p["scale"],
+                          stadium.FLOOR - p["y"], PLAYER_SHADOW_ALPHA)
 
-    def _goal_highlight(self, st, side):
-        """Colour of the last power acting on that goal (or None)."""
-        hl = None
-        for e in st.get("effects", []):
-            if e["target"] == f"goal{side}":
-                hl = _power_color(e["power"])
-        return hl
+  def _goal_highlight(self, st, side):
+    """Colour of the last power acting on that goal (or None)."""
+    hl = None
+    for e in st.get("effects", []):
+      if e["target"] == f"goal{side}":
+        hl = _power_color(e["power"])
+    return hl
 
-    def pose(self, i, p, phase):
-        """(boot angle, head hop in native px)."""
-        if p["frozen"]:
-            return 0, 0
-        celebrating = phase in (protocol.PHASE_GOAL, protocol.PHASE_FINISHED)
-        if p["celebrate"] and celebrating:
-            return sprites.celebrate_pose(self.t)
-        if p["kick"] >= 0:
-            return kick_angle(p["kick"]), 0
-        if not p["ground"]:
-            return (AIR_UP_ANGLE, 0) if p["vy"] < 0 else (AIR_DOWN_ANGLE, 0)
-        if abs(p["vx"]) > WALK_MIN_SPEED:
-            return _walk_pose(p["stride"])
-        return sprites.idle_pose(self.t, i)
+  def pose(self, i, p, phase):
+    """(boot angle, head hop in native px)."""
+    if p["frozen"]:
+      return 0, 0
+    celebrating = phase in (protocol.PHASE_GOAL, protocol.PHASE_FINISHED)
+    if p["celebrate"] and celebrating:
+      return sprites.celebrate_pose(self.t)
+    if p["kick"] >= 0:
+      return kick_angle(p["kick"]), 0
+    if not p["ground"]:
+      return (AIR_UP_ANGLE, 0) if p["vy"] < 0 else (AIR_DOWN_ANGLE, 0)
+    if abs(p["vx"]) > WALK_MIN_SPEED:
+      return _walk_pose(p["stride"])
+    return sprites.idle_pose(self.t, i)
 
-    def _player_image(self, i, p, st):
-        """Sprite of the player, charred if it is burnt."""
-        f = 1 if p["facing"] >= 0 else -1
-        ang, bob = self.pose(i, p, st["phase"])
-        img, (fx, fy) = self.sprites.player(
-            self.chars[i], f, ang, bob, config.PLAYER_COLORS[i], p["frozen"],
-            p["scale"])
-        if p.get("burned"):
-            img = _burnt(img)
-        return img, (fx, fy), f
+  def _player_image(self, i, p, st):
+    """Sprite of the player, charred if it is burnt."""
+    f = 1 if p["facing"] >= 0 else -1
+    ang, bob = self.pose(i, p, st["phase"])
+    img, (fx, fy) = self.sprites.player(
+        self.chars[i], f, ang, bob, config.PLAYER_COLORS[i], p["frozen"],
+        p["scale"])
+    if p.get("burned"):
+      img = _burnt(img)
+    return img, (fx, fy), f
 
-    def _player(self, surf, i, p, st):
-        img, (fx, fy), f = self._player_image(i, p, st)
-        surf.blit(img, (round(p["x"] - fx), round(p["y"] - fy)))
-        mine = [e for e in st.get("effects", []) if e["target"] == f"p{i}"]
-        self._player_effects(surf, p, f, mine)
-        if KICK_ARC_FROM <= p["kick"] <= KICK_ARC_TO:
-            _draw_kick_arc(surf, p, f)
-        self._over_head(surf, i, p, mine, st.get("last_touch") == i)
-        if p.get("burned"):
-            _draw_burn(surf, p, st["ball"]["x"])
+  def _player(self, surf, i, p, st):
+    img, (fx, fy), f = self._player_image(i, p, st)
+    surf.blit(img, (round(p["x"] - fx), round(p["y"] - fy)))
+    mine = [e for e in st.get("effects", []) if e["target"] == f"p{i}"]
+    self._player_effects(surf, p, f, mine)
+    if KICK_ARC_FROM <= p["kick"] <= KICK_ARC_TO:
+      _draw_kick_arc(surf, p, f)
+    self._over_head(surf, i, p, mine, st.get("last_touch") == i)
+    if p.get("burned"):
+      _draw_burn(surf, p, st["ball"]["x"])
 
-    def _over_head(self, surf, i, p, mine, last):
-        """Arrow of the player and its active effects over the head."""
-        spec = config.PlayerSpec
-        top = (p["y"] - (spec.HEAD_OFFSET_Y + spec.HEAD_RADIUS) * p["scale"]
-               - INDICATOR_GAP)
-        self._indicator(surf, p["x"], top, i, last)
-        marks = [e for e in mine if e.get("prop") != BURN_PROP]
-        for k, e in enumerate(marks):
-            cx = p["x"] + (k - (len(marks) - 1) / 2) * MINI_EFFECT_STEP
-            _draw_mini_effect(surf, e, (cx, top - MINI_EFFECT_RAISE))
+  def _over_head(self, surf, i, p, mine, last):
+    """Arrow of the player and its active effects over the head."""
+    spec = config.PlayerSpec
+    top = (p["y"] - (spec.HEAD_OFFSET_Y + spec.HEAD_RADIUS) * p["scale"]
+           - INDICATOR_GAP)
+    self._indicator(surf, p["x"], top, i, last)
+    marks = [e for e in mine if e.get("prop") != BURN_PROP]
+    for k, e in enumerate(marks):
+      cx = p["x"] + (k - (len(marks) - 1) / 2) * MINI_EFFECT_STEP
+      _draw_mini_effect(surf, e, (cx, top - MINI_EFFECT_RAISE))
 
-    def _player_effects(self, surf, p, f, mine):
-        """Ice, no kick sign, speed lines and spring of a player."""
-        props = {config.POWERS_BY_ID[e["power"]].prop: e for e in mine}
-        if p["frozen"]:
-            _draw_ice(surf, p)
-        if "no_kick" in props:
-            _draw_no_kick(surf, snap(p["x"] - f * NO_KICK_BEHIND),
-                          int(p["y"] - NO_KICK_HEIGHT))
-        if "speed" in props and abs(p["vx"]) > SPEED_LINES_MIN:
-            _draw_speed_lines(surf, p, _power_color(props["speed"]["power"]),
-                              self.t)
-        if "jump" in props:
-            _draw_spring(surf, p, _power_color(props["jump"]["power"]))
+  def _player_effects(self, surf, p, f, mine):
+    """Ice, no kick sign, speed lines and spring of a player."""
+    props = {config.POWERS_BY_ID[e["power"]].prop: e for e in mine}
+    if p["frozen"]:
+      _draw_ice(surf, p)
+    if "no_kick" in props:
+      _draw_no_kick(surf, snap(p["x"] - f * NO_KICK_BEHIND),
+                    int(p["y"] - NO_KICK_HEIGHT))
+    if "speed" in props and abs(p["vx"]) > SPEED_LINES_MIN:
+      _draw_speed_lines(surf, p, _power_color(props["speed"]["power"]),
+                        self.t)
+    if "jump" in props:
+      _draw_spring(surf, p, _power_color(props["jump"]["power"]))
 
-    def _indicator(self, surf, x, y, i, last):
-        col = config.PLAYER_COLORS[i]
-        x = snap(x)
-        pygame.draw.polygon(surf, palette.INK,
-                            [(x + dx, y + dy) for dx, dy in ARROW_OUTER])
-        pygame.draw.polygon(surf, col,
-                            [(x + dx, y + dy) for dx, dy in ARROW_INNER])
-        if last:                       # last touch: small ball by the arrow
-            ball = self.ball_sprite.frame(LAST_TOUCH_BALL_R, 0)
-            dx, dy = LAST_TOUCH_BALL_AT
-            surf.blit(ball, ball.get_rect(midleft=(x + dx, y + dy)))
+  def _indicator(self, surf, x, y, i, last):
+    col = config.PLAYER_COLORS[i]
+    x = snap(x)
+    pygame.draw.polygon(surf, palette.INK,
+                        [(x + dx, y + dy) for dx, dy in ARROW_OUTER])
+    pygame.draw.polygon(surf, col,
+                        [(x + dx, y + dy) for dx, dy in ARROW_INNER])
+    if last:                       # last touch: small ball by the arrow
+      ball = self.ball_sprite.frame(LAST_TOUCH_BALL_R, 0)
+      dx, dy = LAST_TOUCH_BALL_AT
+      surf.blit(ball, ball.get_rect(midleft=(x + dx, y + dy)))
 
-    def _ball(self, surf, ball, st):
-        sp = math.hypot(ball["vx"], ball["vy"])
-        self.trail.append((ball["x"], ball["y"], ball["r"]))
-        if sp > TRAIL_SPEED:
-            self._trail(surf)
-        for e in st.get("effects", []):
-            if e["target"] == "ball":
-                pygame.draw.circle(surf, _power_color(e["power"]),
-                                   (int(ball["x"]), int(ball["y"])),
-                                   int(ball["r"] + BALL_RING_GAP),
-                                   EFFECT_RING_LINE)
-        self.ball_sprite.draw(surf, ball["x"], ball["y"], ball["r"],
-                              ball["angle"])
+  def _ball(self, surf, ball, st):
+    sp = math.hypot(ball["vx"], ball["vy"])
+    self.trail.append((ball["x"], ball["y"], ball["r"]))
+    if sp > TRAIL_SPEED:
+      self._trail(surf)
+    for e in st.get("effects", []):
+      if e["target"] == "ball":
+        pygame.draw.circle(surf, _power_color(e["power"]),
+                           (int(ball["x"]), int(ball["y"])),
+                           int(ball["r"] + BALL_RING_GAP),
+                           EFFECT_RING_LINE)
+    self.ball_sprite.draw(surf, ball["x"], ball["y"], ball["r"],
+                          ball["angle"])
 
-    def _trail(self, surf):
-        pts = list(self.trail)[:-1]
-        for k, (x, y, r) in enumerate(pts):
-            share = TRAIL_MIN_SHARE + TRAIL_EXTRA_SHARE * k / max(1, len(pts))
-            sz = max(PX, snap(r * share))
-            layer = pygame.Surface((sz, sz), pygame.SRCALPHA)
-            layer.fill((*palette.WHITE, TRAIL_ALPHA + TRAIL_ALPHA_STEP * k))
-            surf.blit(layer, (int(x - sz / 2), int(y - sz / 2)))
+  def _trail(self, surf):
+    pts = list(self.trail)[:-1]
+    for k, (x, y, r) in enumerate(pts):
+      share = TRAIL_MIN_SHARE + TRAIL_EXTRA_SHARE * k / max(1, len(pts))
+      sz = max(PX, snap(r * share))
+      layer = pygame.Surface((sz, sz), pygame.SRCALPHA)
+      layer.fill((*palette.WHITE, TRAIL_ALPHA + TRAIL_ALPHA_STEP * k))
+      surf.blit(layer, (int(x - sz / 2), int(y - sz / 2)))
 
-    def _pickup(self, surf, pk):
-        pdef = config.POWERS_BY_ID[pk["power"]]
-        col = config.CATEGORY_COLORS[pdef.category]
-        bob = PX * round(math.sin(self.t * PICKUP_BOB_HZ))
-        x, y = int(pk["x"]), int(pk["y"] + bob)
-        r = config.PowerRules.PICKUP_RADIUS
-        if not self._pickup_blinks(pk):
-            _draw_pickup_icon(surf, pk["power"], x, y, col,
-                              _pickup_pulse(pk, self.t))
-        timer_bar(surf, x - r, y + r + PICKUP_RING_GAP, 2 * r,
-                  pk["ttl"] / pk["ttl_max"], col)
-        lab = _label(pdef.label)
-        surf.blit(lab, lab.get_rect(midtop=(x, y + r + PICKUP_LABEL_GAP)))
+  def _pickup(self, surf, pk):
+    pdef = config.POWERS_BY_ID[pk["power"]]
+    col = config.CATEGORY_COLORS[pdef.category]
+    bob = PX * round(math.sin(self.t * PICKUP_BOB_HZ))
+    x, y = int(pk["x"]), int(pk["y"] + bob)
+    r = config.PowerRules.PICKUP_RADIUS
+    if not self._pickup_blinks(pk):
+      _draw_pickup_icon(surf, pk["power"], x, y, col,
+                        _pickup_pulse(pk, self.t))
+    timer_bar(surf, x - r, y + r + PICKUP_RING_GAP, 2 * r,
+              pk["ttl"] / pk["ttl_max"], col)
+    lab = _label(pdef.label)
+    surf.blit(lab, lab.get_rect(midtop=(x, y + r + PICKUP_LABEL_GAP)))
 
-    def _pickup_blinks(self, pk):
-        """True on the frames the pickup hides (it is about to expire)."""
-        return (pk["ttl"] < PICKUP_BLINK_TIME
-                and int(self.t * PICKUP_BLINK_HZ) % 2 == 0)
+  def _pickup_blinks(self, pk):
+    """True on the frames the pickup hides (it is about to expire)."""
+    return (pk["ttl"] < PICKUP_BLINK_TIME
+            and int(self.t * PICKUP_BLINK_HZ) % 2 == 0)
 
-    def _bomb(self, surf, b):
-        x, y = int(b["x"]), int(b["y"])
-        frac = b["fuse"] / b["fuse_max"]
-        hz = BOMB_BLINK_HZ + BOMB_BLINK_EXTRA * (1 - frac)
-        on = int(self.t * hz) % 2 == 0
-        _draw_blast_ring(surf, x, y, self.t)
-        _draw_bomb_body(surf, x, y, on)
-        lab = _label(f"{b['fuse']:.1f}")
-        surf.blit(lab, lab.get_rect(midbottom=(x, y - BOMB_LABEL_GAP)))
+  def _bomb(self, surf, b):
+    x, y = int(b["x"]), int(b["y"])
+    frac = b["fuse"] / b["fuse_max"]
+    hz = BOMB_BLINK_HZ + BOMB_BLINK_EXTRA * (1 - frac)
+    on = int(self.t * hz) % 2 == 0
+    _draw_blast_ring(surf, x, y, self.t)
+    _draw_bomb_body(surf, x, y, on)
+    lab = _label(f"{b['fuse']:.1f}")
+    surf.blit(lab, lab.get_rect(midbottom=(x, y - BOMB_LABEL_GAP)))
 
-    # ------------------------------------------------------------ HUD
-    def draw_hud(self, surf, st):
-        board = pygame.Rect((0, 0), BOARD)
-        board.midtop = (layout.CENTER_X, BOARD_TOP)
-        led_area = self._board(surf, board)
-        for i in (0, 1):
-            self._plate(surf, led_area, i, st["score"][i])
-        self._clock(surf, led_area, st)
-        self._state_label(surf, led_area, st)
-        for i in (0, 1):
-            self._name_sign(surf, board, i)
-        self._effects(surf, board, st)
+  # ------------------------------------------------------------ HUD
+  def draw_hud(self, surf, st):
+    board = pygame.Rect((0, 0), BOARD)
+    board.midtop = (layout.CENTER_X, BOARD_TOP)
+    led_area = self._board(surf, board)
+    for i in (0, 1):
+      self._plate(surf, led_area, i, st["score"][i])
+    self._clock(surf, led_area, st)
+    self._state_label(surf, led_area, st)
+    for i in (0, 1):
+      self._name_sign(surf, board, i)
+    self._effects(surf, board, st)
 
-    def _board(self, surf, board):
-        """Frame of the scoreboard; returns its LED area."""
-        pygame.draw.rect(surf, palette.INK,
-                         board.move(layout.SHADOW_OFFSET, layout.SHADOW_OFFSET))
-        pygame.draw.rect(surf, palette.STRUCT_DARK, board)
-        pygame.draw.rect(surf, palette.INK, board, layout.FRAME_LINE)
-        led_area = board.inflate(-2 * BOARD_INSET, -2 * BOARD_INSET)
-        pygame.draw.rect(surf, palette.LED_BG, led_area)
-        return led_area
+  def _board(self, surf, board):
+    """Frame of the scoreboard; returns its LED area."""
+    pygame.draw.rect(surf, palette.INK,
+                     board.move(layout.SHADOW_OFFSET, layout.SHADOW_OFFSET))
+    pygame.draw.rect(surf, palette.STRUCT_DARK, board)
+    pygame.draw.rect(surf, palette.INK, board, layout.FRAME_LINE)
+    led_area = board.inflate(-2 * BOARD_INSET, -2 * BOARD_INSET)
+    pygame.draw.rect(surf, palette.LED_BG, led_area)
+    return led_area
 
-    def _plate(self, surf, led_area, i, score):
-        """Face of player i on its colour and its goals in LED."""
-        head = self.sprites.mini_head(self.chars[i], 1, 1 if i == 0 else -1)
-        plate = pygame.Rect((0, 0), PLATE)
-        if i == 0:
-            plate.midleft = (led_area.left + PLATE_INSET, led_area.centery)
-        else:
-            plate.midright = (led_area.right - PLATE_INSET, led_area.centery)
-        pygame.draw.rect(surf, config.PLAYER_COLORS[i], plate)
-        pygame.draw.rect(surf, palette.INK, plate, PLATE_LINE)
-        surf.blit(head, head.get_rect(center=plate.center))
-        _draw_score(surf, led_area, i, score)
+  def _plate(self, surf, led_area, i, score):
+    """Face of player i on its colour and its goals in LED."""
+    head = self.sprites.mini_head(self.chars[i], 1, 1 if i == 0 else -1)
+    plate = pygame.Rect((0, 0), PLATE)
+    if i == 0:
+      plate.midleft = (led_area.left + PLATE_INSET, led_area.centery)
+    else:
+      plate.midright = (led_area.right - PLATE_INSET, led_area.centery)
+    pygame.draw.rect(surf, config.PLAYER_COLORS[i], plate)
+    pygame.draw.rect(surf, palette.INK, plate, PLATE_LINE)
+    surf.blit(head, head.get_rect(center=plate.center))
+    _draw_score(surf, led_area, i, score)
 
-    def _clock(self, surf, led_area, st):
-        low = (st["clock"] <= CLOCK_WARNING
-               and st["phase"] == protocol.PHASE_PLAYING
-               and int(self.t * CLOCK_BLINK_HZ) % 2 == 0)
-        golden = st.get("golden")
-        text = "ORO" if golden else fmt_clock(st["clock"])
-        color = palette.LED_ON_2 if (low or golden) else palette.LED_ON
-        clock = pixelfont.render_led(text, CLOCK_LED_SCALE, color,
-                                     palette.LED_OFF)
-        surf.blit(clock, clock.get_rect(
-            center=(led_area.centerx, led_area.centery - CLOCK_RAISE)))
+  def _clock(self, surf, led_area, st):
+    low = (st["clock"] <= CLOCK_WARNING
+           and st["phase"] == protocol.PHASE_PLAYING
+           and int(self.t * CLOCK_BLINK_HZ) % 2 == 0)
+    golden = st.get("golden")
+    text = "ORO" if golden else fmt_clock(st["clock"])
+    color = palette.LED_ON_2 if (low or golden) else palette.LED_ON
+    clock = pixelfont.render_led(text, CLOCK_LED_SCALE, color,
+                                 palette.LED_OFF)
+    surf.blit(clock, clock.get_rect(
+        center=(led_area.centerx, led_area.centery - CLOCK_RAISE)))
 
-    def _state_label(self, surf, led_area, st):
-        state_txt = STATE_TEXTS[st["phase"]]
-        if st.get("golden") and st["phase"] in (protocol.PHASE_PLAYING,
-                                                protocol.PHASE_COUNTDOWN):
-            state_txt = "GOL DE ORO"
-        if st["paused"]:
-            state_txt = "EN PAUSA"
-        lab = retro.scale_px(pixelfont.render(state_txt, 1, STATE_TEXT_COLOR))
-        surf.blit(lab, lab.get_rect(
-            center=(led_area.centerx, led_area.bottom - STATE_TEXT_BOTTOM)))
+  def _state_label(self, surf, led_area, st):
+    state_txt = STATE_TEXTS[st["phase"]]
+    if st.get("golden") and st["phase"] in (protocol.PHASE_PLAYING,
+                                            protocol.PHASE_COUNTDOWN):
+      state_txt = "GOL DE ORO"
+    if st["paused"]:
+      state_txt = "EN PAUSA"
+    lab = retro.scale_px(pixelfont.render(state_txt, 1, STATE_TEXT_COLOR))
+    surf.blit(lab, lab.get_rect(
+        center=(led_area.centerx, led_area.bottom - STATE_TEXT_BOTTOM)))
 
-    def _name_sign(self, surf, board, i):
-        ch = characters.CHARACTERS_BY_ID[self.chars[i]]
-        name = _label(characters.short_name(ch).upper())
-        r = name.get_rect()
-        if i == 0:
-            r.topright = (board.left - NAME_GAP, board.top + NAME_TOP)
-        else:
-            r.topleft = (board.right + NAME_GAP, board.top + NAME_TOP)
-        retro.bevel_box(surf, r.inflate(*NAME_PAD), config.PLAYER_COLORS[i])
-        surf.blit(name, r)
+  def _name_sign(self, surf, board, i):
+    ch = characters.CHARACTERS_BY_ID[self.chars[i]]
+    name = _label(characters.short_name(ch).upper())
+    r = name.get_rect()
+    if i == 0:
+      r.topright = (board.left - NAME_GAP, board.top + NAME_TOP)
+    else:
+      r.topleft = (board.right + NAME_GAP, board.top + NAME_TOP)
+    retro.bevel_box(surf, r.inflate(*NAME_PAD), config.PLAYER_COLORS[i])
+    surf.blit(name, r)
 
-    def _effects(self, surf, board, st):
-        """Active effects: P1 on the left, P2 on the right, ball and match
+  def _effects(self, surf, board, st):
+    """Active effects: P1 on the left, P2 on the right, ball and match
         in the centre."""
-        cols = {0: [], 1: [], "c": []}
-        for e in st.get("effects", []):
-            cols[_column(e["target"])].append(e)
-        effect_w = HUD_EFFECT[0]
-        self._side_column(surf, board, cols[0],
-                          board.left - NAME_GAP - effect_w)
-        self._side_column(surf, board, cols[1], board.right + NAME_GAP)
-        top = board.bottom + CENTER_EFFECTS_GAP
-        if self.center_note:
-            top = self._note(surf, board)
-        for k, e in enumerate(cols["c"]):
-            self._hud_effect(surf, e, (board.centerx - effect_w // 2,
-                                       top + k * HUD_EFFECT_STEP))
+    cols = {0: [], 1: [], "c": []}
+    for e in st.get("effects", []):
+      cols[_column(e["target"])].append(e)
+    effect_w = HUD_EFFECT[0]
+    self._side_column(surf, board, cols[0],
+                      board.left - NAME_GAP - effect_w)
+    self._side_column(surf, board, cols[1], board.right + NAME_GAP)
+    top = board.bottom + CENTER_EFFECTS_GAP
+    if self.center_note:
+      top = self._note(surf, board)
+    for k, e in enumerate(cols["c"]):
+      self._hud_effect(surf, e, (board.centerx - effect_w // 2,
+                                 top + k * HUD_EFFECT_STEP))
 
-    def _side_column(self, surf, board, effects, x):
-        for k, e in enumerate(effects):
-            y = board.top + HUD_EFFECTS_TOP + k * HUD_EFFECT_STEP
-            self._hud_effect(surf, e, (x, y))
+  def _side_column(self, surf, board, effects, x):
+    for k, e in enumerate(effects):
+      y = board.top + HUD_EFFECTS_TOP + k * HUD_EFFECT_STEP
+      self._hud_effect(surf, e, (x, y))
 
-    def _note(self, surf, board):
-        """Small note below the board; returns the y below it."""
-        width = (pixelfont.text_width(self.center_note, LABEL_SCALE)
-                 + NOTE_PADDING)
-        note = pygame.Rect(0, 0, width, NOTE_H)
-        note.midtop = (board.centerx, board.bottom + NOTE_GAP)
-        inner = retro.bevel_box(surf, note, palette.CREAM, shadow=False)
-        assets.draw_text(surf, self.center_note, layout.FONT_SMALL,
-                         inner.center, palette.INK, outline=None)
-        return note.bottom + NOTE_BOTTOM_GAP
+  def _note(self, surf, board):
+    """Small note below the board; returns the y below it."""
+    width = (pixelfont.text_width(self.center_note, LABEL_SCALE)
+             + NOTE_PADDING)
+    note = pygame.Rect(0, 0, width, NOTE_H)
+    note.midtop = (board.centerx, board.bottom + NOTE_GAP)
+    inner = retro.bevel_box(surf, note, palette.CREAM, shadow=False)
+    assets.draw_text(surf, self.center_note, layout.FONT_SMALL,
+                     inner.center, palette.INK, outline=None)
+    return note.bottom + NOTE_BOTTOM_GAP
 
-    def _hud_effect(self, surf, e, topleft):
-        inner = retro.bevel_box(surf, pygame.Rect(topleft, HUD_EFFECT),
-                                palette.CREAM)
-        icon = effect_icon(e, HUD_ICON)
-        surf.blit(icon, (inner.left + HUD_ICON_INSET,
-                         inner.top + HUD_ICON_INSET))
-        assets.draw_text(surf, self._target_label(e["target"]),
-                         layout.FONT_SMALL,
-                         (inner.left + HUD_TEXT_X, inner.top + HUD_TEXT_Y),
-                         palette.INK, anchor="topleft", outline=None)
-        _draw_time_left(surf, inner, e, effect_color(e))
+  def _hud_effect(self, surf, e, topleft):
+    inner = retro.bevel_box(surf, pygame.Rect(topleft, HUD_EFFECT),
+                            palette.CREAM)
+    icon = effect_icon(e, HUD_ICON)
+    surf.blit(icon, (inner.left + HUD_ICON_INSET,
+                     inner.top + HUD_ICON_INSET))
+    assets.draw_text(surf, self._target_label(e["target"]),
+                     layout.FONT_SMALL,
+                     (inner.left + HUD_TEXT_X, inner.top + HUD_TEXT_Y),
+                     palette.INK, anchor="topleft", outline=None)
+    _draw_time_left(surf, inner, e, effect_color(e))
 
-    def _target_label(self, target):
-        if target == "ball":
-            return "PELOTA"
-        if target.startswith("goal"):
-            return "ARCO"
-        return self.who(int(target[1]), side_if_same=False).upper()
+  def _target_label(self, target):
+    if target == "ball":
+      return "PELOTA"
+    if target.startswith("goal"):
+      return "ARCO"
+    return self.who(int(target[1]), side_if_same=False).upper()
 
-    # ------------------------------------------------------------ signs
-    def draw_center_messages(self, surf, st):
-        """Countdown, go sign, golden goal and goal."""
-        if st["phase"] == protocol.PHASE_COUNTDOWN and not st["paused"]:
-            self._countdown(surf, st["phase_left"])
-        if self.kickoff_flash > 0:
-            _title(surf, "¡YA!", layout.FONT_GO,
-                   (layout.CENTER_X, COUNTDOWN_Y), palette.WHITE)
-        if self.golden_flash > 0:
-            _draw_golden_sign(surf)
-        if self.goal_banner:
-            self._goal_band(surf, self.goal_banner[1])
+  # ------------------------------------------------------------ signs
+  def draw_center_messages(self, surf, st):
+    """Countdown, go sign, golden goal and goal."""
+    if st["phase"] == protocol.PHASE_COUNTDOWN and not st["paused"]:
+      self._countdown(surf, st["phase_left"])
+    if self.kickoff_flash > 0:
+      _title(surf, "¡YA!", layout.FONT_GO,
+             (layout.CENTER_X, COUNTDOWN_Y), palette.WHITE)
+    if self.golden_flash > 0:
+      _draw_golden_sign(surf)
+    if self.goal_banner:
+      self._goal_band(surf, self.goal_banner[1])
 
-    def _countdown(self, surf, phase_left):
-        n = max(1, math.ceil(phase_left))
-        frac = phase_left - math.floor(phase_left)
-        size = (layout.FONT_COUNTDOWN
-                + int(COUNTDOWN_GROWTH * frac) // FONT_STEP * FONT_STEP)
-        _title(surf, str(n), size, (layout.CENTER_X, COUNTDOWN_Y),
-               palette.GOLD)
+  def _countdown(self, surf, phase_left):
+    n = max(1, math.ceil(phase_left))
+    frac = phase_left - math.floor(phase_left)
+    size = (layout.FONT_COUNTDOWN
+            + int(COUNTDOWN_GROWTH * frac) // FONT_STEP * FONT_STEP)
+    _title(surf, str(n), size, (layout.CENTER_X, COUNTDOWN_Y),
+           palette.GOLD)
 
-    def _goal_band(self, surf, g):
-        col = config.PLAYER_COLORS[g["scorer"]]
-        _draw_goal_band(surf, col)
-        wob = GOAL_WOBBLE_PX if int(self.t * GOAL_WOBBLE_HZ) % 2 else 0
-        _title(surf, "¡GOOOL!", layout.FONT_GOAL,
-               (layout.CENTER_X, GOAL_TEXT_Y - wob), col)
-        sub = self.who(g["scorer"])
-        if g.get("own_goal"):
-            sub += "  (en contra)"
-        assets.draw_text(surf, sub, layout.FONT_TEXT,
-                         (layout.CENTER_X, GOAL_SCORER_Y), palette.INK,
-                         outline=None)
+  def _goal_band(self, surf, g):
+    col = config.PLAYER_COLORS[g["scorer"]]
+    _draw_goal_band(surf, col)
+    wob = GOAL_WOBBLE_PX if int(self.t * GOAL_WOBBLE_HZ) % 2 else 0
+    _title(surf, "¡GOOOL!", layout.FONT_GOAL,
+           (layout.CENTER_X, GOAL_TEXT_Y - wob), col)
+    sub = self.who(g["scorer"])
+    if g.get("own_goal"):
+      sub += "  (en contra)"
+    assets.draw_text(surf, sub, layout.FONT_TEXT,
+                     (layout.CENTER_X, GOAL_SCORER_Y), palette.INK,
+                     outline=None)

@@ -33,203 +33,203 @@ NO_VALUE = "-"
 
 
 def lines(info, mode=FULL):
-    """Text lines of the overlay for an `info` dict (see `info_of`)."""
-    if mode == OFF:
-        return ()
-    out = [_mode_line(info)]
-    out.append(_device_line(info))
-    if mode == COMPACT:
-        return out
-    out.append(_window_line(info))
-    out.append(_effects_line(info))
-    out.append(_kernels_line(info))
-    other = info.get("other")
-    if other:
-        out.append(f"Otro modo (última medición): {other}")
+  """Text lines of the overlay for an `info` dict (see `info_of`)."""
+  if mode == OFF:
+    return ()
+  out = [_mode_line(info)]
+  out.append(_device_line(info))
+  if mode == COMPACT:
     return out
+  out.append(_window_line(info))
+  out.append(_effects_line(info))
+  out.append(_kernels_line(info))
+  other = info.get("other")
+  if other:
+    out.append(f"Otro modo (última medición): {other}")
+  return out
 
 
 def _mode_line(info):
-    """Line 1: quality mode, backend, real FPS and cost of the effects."""
-    ms = float(info.get("work_ms") or 0.0)
-    capacity = config.Gpu.MEASURE_FPS / ms if ms > 0 else 0.0
-    fx = float(info.get("fx_ms") or 0.0)
-    return (f"CALIDAD {_quality_name(info)}   ·   {_mode_name(info)}   ·   "
-            f"FPS {info.get('fps', 0):.0f}   ·   efectos {fx:.1f} ms"
-            f"   ·   capacidad {capacity:.0f} fps")
+  """Line 1: quality mode, backend, real FPS and cost of the effects."""
+  ms = float(info.get("work_ms") or 0.0)
+  capacity = config.Gpu.MEASURE_FPS / ms if ms > 0 else 0.0
+  fx = float(info.get("fx_ms") or 0.0)
+  return (f"CALIDAD {_quality_name(info)}   ·   {_mode_name(info)}   ·   "
+          f"FPS {info.get('fps', 0):.0f}   ·   efectos {fx:.1f} ms"
+          f"   ·   capacidad {capacity:.0f} fps")
 
 
 def _quality_name(info):
-    """Quality mode of the chain: FULL, OPTIMIZADO, AUTO or '-'."""
-    return info.get("quality_name") or config.Gpu.MODE_NAMES.get(
-        info.get("quality_mode"), "-")
+  """Quality mode of the chain: FULL, OPTIMIZADO, AUTO or '-'."""
+  return info.get("quality_name") or config.Gpu.MODE_NAMES.get(
+      info.get("quality_mode"), "-")
 
 
 
 def _mode_name(info):
-    """Readable name of the backend of the effects."""
-    if info.get("mode") == "gpu":
-        return "GPU (CUDA)"
-    if info.get("mode") == "cpu":
-        return "CPU (numpy)"
-    return "SIN EFECTOS"
+  """Readable name of the backend of the effects."""
+  if info.get("mode") == "gpu":
+    return "GPU (CUDA)"
+  if info.get("mode") == "cpu":
+    return "CPU (numpy)"
+  return "SIN EFECTOS"
 
 
 def _numpy_version(info):
-    """The numpy version: from the info, or from the installed module."""
-    if info.get("numpy"):
-        return info["numpy"]
-    try:
-        import numpy  # pylint: disable=import-outside-toplevel
-        return numpy.__version__
-    except ImportError:
-        return "no instalado"
+  """The numpy version: from the info, or from the installed module."""
+  if info.get("numpy"):
+    return info["numpy"]
+  try:
+    import numpy  # pylint: disable=import-outside-toplevel
+    return numpy.__version__
+  except ImportError:
+    return "no instalado"
 
 
 def _device_line(info):
-    """Line 2: the device, its launch geometry and the CPU quality."""
-    if info.get("mode") == "gpu":
-        return (f"GPU: {info.get('device', '?')} · bloque "
-                f"{info.get('block', '?')} · grilla {info.get('grid', '?')} · "
-                f"hilos {info.get('threads', '?')} "
-                f"(sobrantes {info.get('surplus', 0)})")
-    if info.get("reason"):
-        return f"GPU no disponible: {info['reason']}"
-    quality = info.get("quality_level") or info.get("quality", "Q0")
-    return (f"CPU: {info.get('device', 'cpu')} · numpy {_numpy_version(info)}"
-            f" · calidad {quality}")
+  """Line 2: the device, its launch geometry and the CPU quality."""
+  if info.get("mode") == "gpu":
+    return (f"GPU: {info.get('device', '?')} · bloque "
+            f"{info.get('block', '?')} · grilla {info.get('grid', '?')} · "
+            f"hilos {info.get('threads', '?')} "
+            f"(sobrantes {info.get('surplus', 0)})")
+  if info.get("reason"):
+    return f"GPU no disponible: {info['reason']}"
+  quality = info.get("quality_level") or info.get("quality", "Q0")
+  return (f"CPU: {info.get('device', 'cpu')} · numpy {_numpy_version(info)}"
+          f" · calidad {quality}")
 
 
 def _window_line(info):
-    """Line 3: processed and window size, and whether it is a remote desk."""
-    remote = "sí" if info.get("remote") else "no"
-    return (f"Resolución procesada {info.get('resolution', '?')} · ventana "
-            f"{info.get('window', '?')} · sesión remota: {remote}")
+  """Line 3: processed and window size, and whether it is a remote desk."""
+  remote = "sí" if info.get("remote") else "no"
+  return (f"Resolución procesada {info.get('resolution', '?')} · ventana "
+          f"{info.get('window', '?')} · sesión remota: {remote}")
 
 
 def _effects_line(info):
-    """Line 4: active effects and the total cost of the chain."""
-    active = info.get("active") or "ninguno"
-    fx = float(info.get("fx_ms") or 0.0)
-    htod = float(info.get("htod_ms") or 0.0)
-    dtoh = float(info.get("dtoh_ms") or 0.0)
-    text = f"Efectos activos: {active}   ·   fx total {fx:.1f} ms"
-    if htod or dtoh:
-        text += f" (HtoD {htod:.1f} · DtoH {dtoh:.1f})"
-    return text
+  """Line 4: active effects and the total cost of the chain."""
+  active = info.get("active") or "ninguno"
+  fx = float(info.get("fx_ms") or 0.0)
+  htod = float(info.get("htod_ms") or 0.0)
+  dtoh = float(info.get("dtoh_ms") or 0.0)
+  text = f"Efectos activos: {active}   ·   fx total {fx:.1f} ms"
+  if htod or dtoh:
+    text += f" (HtoD {htod:.1f} · DtoH {dtoh:.1f})"
+  return text
 
 
 def _kernels_line(info):
-    """Line 5: one number per stage of the chain."""
-    parts = [f"{name} {ms:.2f}" for name, ms in (info.get("kernels") or [])]
-    return " · ".join(parts) if parts else "Sin etapas medidas"
+  """Line 5: one number per stage of the chain."""
+  parts = [f"{name} {ms:.2f}" for name, ms in (info.get("kernels") or [])]
+  return " · ".join(parts) if parts else "Sin etapas medidas"
 
 
 def info_of(postfx_summary, app=None, extra=None):
-    """Builds the `info` dict from the numbers of the chain."""
-    data = dict(postfx_summary or {})
-    data.update(extra or {})
-    data.setdefault("kernels", _kernels(data))
-    return data
+  """Builds the `info` dict from the numbers of the chain."""
+  data = dict(postfx_summary or {})
+  data.update(extra or {})
+  data.setdefault("kernels", _kernels(data))
+  return data
 
 
 def _kernels(data):
-    """[(stage, ms)] of the stages that ran this frame (mean > 0)."""
-    keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
-            "histogram", "shock", "fire", "confusion", "confusion_rot",
-            "ice", "blackout", "night", "exposure", "crt",
-            "var", "tribuna")
-    return [(key, float(data.get(key) or 0.0)) for key in keys
-            if (data.get(key) or 0.0) > 0.0]
+  """[(stage, ms)] of the stages that ran this frame (mean > 0)."""
+  keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
+          "histogram", "shock", "fire", "confusion", "confusion_rot",
+          "ice", "blackout", "night", "exposure", "crt",
+          "var", "tribuna")
+  return [(key, float(data.get(key) or 0.0)) for key in keys
+          if (data.get(key) or 0.0) > 0.0]
 
 
 class Overlay:
-    """The panel: mode, cached lines and the cached text surfaces."""
+  """The panel: mode, cached lines and the cached text surfaces."""
 
-    def __init__(self, mode=COMPACT, font_size=None):
-        self.mode = mode if mode in MODES else COMPACT
-        self.font = pygame.font.Font(None, font_size or config.Gpu.OVERLAY_FONT)
-        self.badge_font = pygame.font.Font(None,
-                                           (font_size or
-                                            config.Gpu.OVERLAY_FONT) + PADDING)
-        self._cache = None          # (key, [(surface, surface)])
-        self._age = config.Gpu.OVERLAY_REFRESH
-        self._last = None
+  def __init__(self, mode=COMPACT, font_size=None):
+    self.mode = mode if mode in MODES else COMPACT
+    self.font = pygame.font.Font(None, font_size or config.Gpu.OVERLAY_FONT)
+    self.badge_font = pygame.font.Font(None,
+                                       (font_size or
+                                        config.Gpu.OVERLAY_FONT) + PADDING)
+    self._cache = None          # (key, [(surface, surface)])
+    self._age = config.Gpu.OVERLAY_REFRESH
+    self._last = None
 
-    def cycle(self):
-        """Next mode: off -> compact -> full -> off."""
-        self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
-        self._cache = None
-        return self.mode
+  def cycle(self):
+    """Next mode: off -> compact -> full -> off."""
+    self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
+    self._cache = None
+    return self.mode
 
-    def draw(self, surface, info):
-        """Paints the panel (it is rebuilt at most 4 times per second)."""
-        if self.mode == OFF:
-            return
-        key = (self.mode, tuple(sorted(self._flatten(info))))
-        if key != self._last:
-            self._cache = self._build(info)
-            self._last = key
-        self._paint(surface, self._cache)
+  def draw(self, surface, info):
+    """Paints the panel (it is rebuilt at most 4 times per second)."""
+    if self.mode == OFF:
+      return
+    key = (self.mode, tuple(sorted(self._flatten(info))))
+    if key != self._last:
+      self._cache = self._build(info)
+      self._last = key
+    self._paint(surface, self._cache)
 
-    def _flatten(self, info):
-        """Hashable view of the numbers that the panel shows."""
-        out = []
-        for name, value in info.items():
-            if isinstance(value, float):
-                value = round(value, TWO_DECIMALS)
-            if isinstance(value, list):
-                value = tuple(value)
-            out.append((name, str(value)))
-        return out
+  def _flatten(self, info):
+    """Hashable view of the numbers that the panel shows."""
+    out = []
+    for name, value in info.items():
+      if isinstance(value, float):
+        value = round(value, TWO_DECIMALS)
+      if isinstance(value, list):
+        value = tuple(value)
+      out.append((name, str(value)))
+    return out
 
-    def _build(self, info):
-        """Renders every line; the badge is the first one."""
-        rows = [self._render(text) for text in lines(info, self.mode)]
-        badge = self._badge(info)
-        return badge, rows
+  def _build(self, info):
+    """Renders every line; the badge is the first one."""
+    rows = [self._render(text) for text in lines(info, self.mode)]
+    badge = self._badge(info)
+    return badge, rows
 
-    def _badge(self, info):
-        """Green GPU / orange CPU tag of the panel."""
-        name = "GPU" if info.get("mode") == "gpu" else "CPU"
-        colour = GPU_COLOUR if info.get("mode") == "gpu" else CPU_COLOUR
-        text = self.badge_font.render(name, True, TEXT, colour)
-        rect = text.get_rect().inflate(BADGE_PAD, BADGE_PAD)
-        tag = pygame.Surface(rect.size, pygame.SRCALPHA)
-        tag.blit(text, (BADGE_PAD, BADGE_PAD // 2))
-        return tag
+  def _badge(self, info):
+    """Green GPU / orange CPU tag of the panel."""
+    name = "GPU" if info.get("mode") == "gpu" else "CPU"
+    colour = GPU_COLOUR if info.get("mode") == "gpu" else CPU_COLOUR
+    text = self.badge_font.render(name, True, TEXT, colour)
+    rect = text.get_rect().inflate(BADGE_PAD, BADGE_PAD)
+    tag = pygame.Surface(rect.size, pygame.SRCALPHA)
+    tag.blit(text, (BADGE_PAD, BADGE_PAD // 2))
+    return tag
 
-    def _render(self, text):
-        """One white line with a black shadow (it reads over any image)."""
-        shadow = self.font.render(text, True, BACKGROUND)
-        front = self.font.render(text, True, TEXT)
-        width = max(front.get_width(), shadow.get_width())
-        height = front.get_height() + shadow.get_height() // 2
-        line = pygame.Surface((width, height), pygame.SRCALPHA)
-        line.blit(shadow, (1, 1))
-        line.blit(front, (0, 0))
-        return line
+  def _render(self, text):
+    """One white line with a black shadow (it reads over any image)."""
+    shadow = self.font.render(text, True, BACKGROUND)
+    front = self.font.render(text, True, TEXT)
+    width = max(front.get_width(), shadow.get_width())
+    height = front.get_height() + shadow.get_height() // 2
+    line = pygame.Surface((width, height), pygame.SRCALPHA)
+    line.blit(shadow, (1, 1))
+    line.blit(front, (0, 0))
+    return line
 
-    def _paint(self, surface, cache):
-        """Blits the background, the badge and the lines, bottom left."""
-        if not cache:
-            return
-        panel = self._panel(cache)
-        surface.blit(panel, (MARGIN, surface.get_height() - panel.get_height()
-                             - MARGIN))
+  def _paint(self, surface, cache):
+    """Blits the background, the badge and the lines, bottom left."""
+    if not cache:
+      return
+    panel = self._panel(cache)
+    surface.blit(panel, (MARGIN, surface.get_height() - panel.get_height()
+                         - MARGIN))
 
-    def _panel(self, cache):
-        """Panel surface with the badge and every line already drawn."""
-        badge, rows = cache
-        width = max([badge.get_width()] + [r.get_width() for r in rows])
-        width = max(width, MIN_WIDTH) + PADDING * 2
-        height = (badge.get_height() + BADGE_GAP
-                  + sum(r.get_height() + LINE_GAP for r in rows) + PADDING)
-        panel = pygame.Surface((width, height), pygame.SRCALPHA)
-        panel.fill((*BACKGROUND, config.Gpu.OVERLAY_ALPHA))
-        panel.blit(badge, (PADDING, PADDING))
-        top = PADDING + badge.get_height() + BADGE_GAP
-        for row in rows:
-            panel.blit(row, (PADDING, top))
-            top += row.get_height() + LINE_GAP
-        return panel
+  def _panel(self, cache):
+    """Panel surface with the badge and every line already drawn."""
+    badge, rows = cache
+    width = max([badge.get_width()] + [r.get_width() for r in rows])
+    width = max(width, MIN_WIDTH) + PADDING * 2
+    height = (badge.get_height() + BADGE_GAP
+              + sum(r.get_height() + LINE_GAP for r in rows) + PADDING)
+    panel = pygame.Surface((width, height), pygame.SRCALPHA)
+    panel.fill((*BACKGROUND, config.Gpu.OVERLAY_ALPHA))
+    panel.blit(badge, (PADDING, PADDING))
+    top = PADDING + badge.get_height() + BADGE_GAP
+    for row in rows:
+      panel.blit(row, (PADDING, top))
+      top += row.get_height() + LINE_GAP
+    return panel

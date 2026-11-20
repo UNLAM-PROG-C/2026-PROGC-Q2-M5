@@ -49,9 +49,9 @@ from fdc.ui import stadium
 # The effects need numpy (and PyCUDA for the GPU): without them the game
 # still runs, it just draws the frames as they are.
 try:
-    from fdc.gpu import postfx
+  from fdc.gpu import postfx
 except Exception:               # pylint: disable=broad-except
-    postfx = None
+  postfx = None
 
 log = logging.getLogger("fdc.ui")
 
@@ -90,683 +90,683 @@ GLOBAL_KEYS = (config.DEBUG_PANEL_KEY, config.FULLSCREEN_KEY,
 
 
 def _yes(v):
-    return "sí" if v else "no"
+  return "sí" if v else "no"
 
 
 class FrameLimiter:
-    """Limits to N frames per second by SLEEPING until the frame deadline.
+  """Limits to N frames per second by SLEEPING until the frame deadline.
 
     It is used instead of pygame.time.Clock.tick() because on macOS that
     method oversleeps (about 47 FPS when asking for 60). time.sleep frees
     the CPU: it is not a busy wait.
     """
 
-    def __init__(self, fps, sleep=True):
-        # In the browser the rhythm is set by the browser itself.
-        self.sleep = sleep
-        self.period = 1.0 / fps
-        self.deadline = time.perf_counter()
-        self.last = self.deadline
-        self.samples = collections.deque(maxlen=FPS_SAMPLES)
+  def __init__(self, fps, sleep=True):
+    # In the browser the rhythm is set by the browser itself.
+    self.sleep = sleep
+    self.period = 1.0 / fps
+    self.deadline = time.perf_counter()
+    self.last = self.deadline
+    self.samples = collections.deque(maxlen=FPS_SAMPLES)
 
-    def tick(self):
-        """Sleeps until the next frame; returns the real dt (s)."""
-        self.deadline += self.period
-        now = time.perf_counter()
-        remaining = self.deadline - now
-        if remaining > 0 and self.sleep:
-            time.sleep(remaining)
-        else:
-            self.deadline = now        # late frame: do not try to catch up
-        now = time.perf_counter()
-        dt = now - self.last
-        self.last = now
-        self.samples.append(dt)
-        return dt
+  def tick(self):
+    """Sleeps until the next frame; returns the real dt (s)."""
+    self.deadline += self.period
+    now = time.perf_counter()
+    remaining = self.deadline - now
+    if remaining > 0 and self.sleep:
+      time.sleep(remaining)
+    else:
+      self.deadline = now        # late frame: do not try to catch up
+    now = time.perf_counter()
+    dt = now - self.last
+    self.last = now
+    self.samples.append(dt)
+    return dt
 
-    def get_fps(self):
-        if not self.samples:
-            return 0.0
-        return len(self.samples) / max(EPSILON, sum(self.samples))
+  def get_fps(self):
+    if not self.samples:
+      return 0.0
+    return len(self.samples) / max(EPSILON, sum(self.samples))
 
 
 class _NoFx:
-    """Stand-in of the effects when they are not available (web, no numpy)."""
+  """Stand-in of the effects when they are not available (web, no numpy)."""
 
-    enabled = False
-    night = False
+  enabled = False
+  night = False
 
-    def begin(self, screen, state):
-        return screen
+  def begin(self, screen, state):
+    return screen
 
-    def view_state(self, state):
-        """The live state: there is no replay without the effects."""
-        return state
+  def view_state(self, state):
+    """The live state: there is no replay without the effects."""
+    return state
 
-    def replay_mode(self):
-        """No replay without the effects."""
-        return None
+  def replay_mode(self):
+    """No replay without the effects."""
+    return None
 
-    def replay_stage(self):
-        """No VAR without the effects."""
-        return None
+  def replay_stage(self):
+    """No VAR without the effects."""
+    return None
 
-    def replay_zoom(self):
-        """No zoom without the effects."""
-        return None
+  def replay_zoom(self):
+    """No zoom without the effects."""
+    return None
 
-    def skip(self):
-        """Nothing to skip without the effects."""
-        return False
+  def skip(self):
+    """Nothing to skip without the effects."""
+    return False
 
-    def heat_overlay(self, surface, channel):
-        """No heat map without the effects."""
-        del surface, channel
-        return False
+  def heat_overlay(self, surface, channel):
+    """No heat map without the effects."""
+    del surface, channel
+    return False
 
-    def draw_crowd(self, surface):
-        """No animated stands without the effects."""
-        del surface
+  def draw_crowd(self, surface):
+    """No animated stands without the effects."""
+    del surface
 
-    def standing_crowd(self):
-        """No crowd without the effects."""
-        return False
+  def standing_crowd(self):
+    """No crowd without the effects."""
+    return False
 
-    def cycle_quality_mode(self):
-        """No quality modes without the effects."""
-        return None
+  def cycle_quality_mode(self):
+    """No quality modes without the effects."""
+    return None
 
-    def quality_mode_name(self):
-        """No quality mode without the effects."""
-        return "-"
+  def quality_mode_name(self):
+    """No quality mode without the effects."""
+    return "-"
 
-    def finish(self, screen, dt):
-        """Nothing to do."""
+  def finish(self, screen, dt):
+    """Nothing to do."""
 
-    def event(self, msg):
-        """Nothing to do."""
+  def event(self, msg):
+    """Nothing to do."""
 
-    def toggle(self):
-        """Nothing to toggle: the effects are off."""
-        return "off"
+  def toggle(self):
+    """Nothing to toggle: the effects are off."""
+    return "off"
 
-    def clear(self):
-        """Nothing to do."""
+  def clear(self):
+    """Nothing to do."""
 
-    def summary(self):
-        return {"mode": "off", "quality": "-", "quality_level": "Q0",
-                "quality_mode": "off", "quality_name": "SIN EFECTOS",
-                "active": "ninguno", "other": None, "gpu": "CPU", "fps": 0.0}
+  def summary(self):
+    return {"mode": "off", "quality": "-", "quality_level": "Q0",
+            "quality_mode": "off", "quality_name": "SIN EFECTOS",
+            "active": "ninguno", "other": None, "gpu": "CPU", "fps": 0.0}
 
-    def quality_label(self):
-        """No adaptive quality without the effects."""
-        return "Q0"
+  def quality_label(self):
+    """No adaptive quality without the effects."""
+    return "Q0"
 
-    def level_index(self):
-        """Always the full size without the effects."""
-        return 0
+  def level_index(self):
+    """Always the full size without the effects."""
+    return 0
 
-    def force(self, **params):
-        """The demo cannot force anything without the effects."""
+  def force(self, **params):
+    """The demo cannot force anything without the effects."""
 
-    def begin_replay(self, var=False):
-        """No replay without the effects."""
-        del var
-        return False
+  def begin_replay(self, var=False):
+    """No replay without the effects."""
+    del var
+    return False
 
-    def start_goal_replay(self):
-        """No replay without the effects: the screen draws it plain."""
-        return False
+  def start_goal_replay(self):
+    """No replay without the effects: the screen draws it plain."""
+    return False
 
-    def drive_replay(self, progress):
-        """Nothing to drive without the effects."""
-        del progress
+  def drive_replay(self, progress):
+    """Nothing to drive without the effects."""
+    del progress
 
-    def end_goal_replay(self):
-        """Nothing to close without the effects."""
+  def end_goal_replay(self):
+    """Nothing to close without the effects."""
 
-    def active_effects(self):
-        """Nothing is active: the effects are off."""
-        return "ninguno"
+  def active_effects(self):
+    """Nothing is active: the effects are off."""
+    return "ninguno"
 
-    def other_measurement(self):
-        """No other backend to compare with."""
-        return None
+  def other_measurement(self):
+    """No other backend to compare with."""
+    return None
 
 
 class App:
-    """The window, the current screen and the shared resources."""
+  """The window, the current screen and the shared resources."""
 
-    def __init__(self, options):
-        self.options = options
-        # Browser version (pygbag).
-        self.web = bool(getattr(options, "web", False))
-        self.screen = self._open_window()
-        self.clock = FrameLimiter(config.UI_FPS, sleep=not self.web)
-        if self.web:
-            # Esc, F3, Tab and the arrows do not fire browser actions.
-            browser.install_key_guard()
-        self._load_resources()
-        self._init_state()
-        self._start_simulation()
+  def __init__(self, options):
+    self.options = options
+    # Browser version (pygbag).
+    self.web = bool(getattr(options, "web", False))
+    self.screen = self._open_window()
+    self.clock = FrameLimiter(config.UI_FPS, sleep=not self.web)
+    if self.web:
+      # Esc, F3, Tab and the arrows do not fire browser actions.
+      browser.install_key_guard()
+    self._load_resources()
+    self._init_state()
+    self._start_simulation()
 
-    def _start_simulation(self):
-        """The simulation process starts BEFORE the menu is shown; the boot
+  def _start_simulation(self):
+    """The simulation process starts BEFORE the menu is shown; the boot
         screen waits for its READY without blocking the window. In the
         browser there are no processes: the local simulation runs in the
         page."""
-        self.link = self._create_link()
-        self.link.start()
-        self.current = screens.BootScreen(self)
-        self.current.enter()
+    self.link = self._create_link()
+    self.link.start()
+    self.current = screens.BootScreen(self)
+    self.current.enter()
 
-    def _open_window(self):
-        if getattr(self.options, "render", None):
-            os.environ["SDL_RENDER_DRIVER"] = self.options.render
-        pygame.mixer.pre_init(audio.AUDIO_RATE, audio.AUDIO_BITS,
-                              audio.AUDIO_CHANNELS, audio.AUDIO_BUFFER)
-        pygame.init()
-        pygame.display.set_caption(
-            f"{config.GAME_NAME} v{config.GAME_VERSION}")
-        return pygame.display.set_mode(self._window_size(),
-                                       self._display_flags())
+  def _open_window(self):
+    if getattr(self.options, "render", None):
+      os.environ["SDL_RENDER_DRIVER"] = self.options.render
+    pygame.mixer.pre_init(audio.AUDIO_RATE, audio.AUDIO_BITS,
+                          audio.AUDIO_CHANNELS, audio.AUDIO_BUFFER)
+    pygame.init()
+    pygame.display.set_caption(
+        f"{config.GAME_NAME} v{config.GAME_VERSION}")
+    return pygame.display.set_mode(self._window_size(),
+                                   self._display_flags())
 
-    def _display_flags(self):
-        """Flags of the window: never exclusive unless --fullscreen."""
-        if self.web:
-            return 0                   # the browser scales the canvas
-        flags = pygame.SCALED | pygame.RESIZABLE
-        return flags | pygame.FULLSCREEN if self.options.fullscreen else flags
+  def _display_flags(self):
+    """Flags of the window: never exclusive unless --fullscreen."""
+    if self.web:
+      return 0                   # the browser scales the canvas
+    flags = pygame.SCALED | pygame.RESIZABLE
+    return flags | pygame.FULLSCREEN if self.options.fullscreen else flags
 
-    def _window_size(self):
-        """Window size: 1280x720 unless `--window WxH` says otherwise."""
-        value = getattr(self.options, "window", None)
-        if not value:
-            return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
-        try:
-            width, height = (int(part)
-                             for part in str(value).lower().split("x"))
-        except ValueError:
-            return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
-        return (width, height)
+  def _window_size(self):
+    """Window size: 1280x720 unless `--window WxH` says otherwise."""
+    value = getattr(self.options, "window", None)
+    if not value:
+      return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
+    try:
+      width, height = (int(part)
+                       for part in str(value).lower().split("x"))
+    except ValueError:
+      return (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT)
+    return (width, height)
 
-    def _load_resources(self):
-        self.audio = audio.Audio(enabled=not self.options.no_audio)
-        self.sprites = sprites.CharacterSprites()
-        self.ball_sprite = stadium.BallSprite()
-        self.background = stadium.build_background()
-        self._set_icon()
-        self.fx = fx.Effects()
-        self.input = ui_input.InputTracker()
-        self.postfx = postfx.PostFx(self.options, self.screen.get_size()) \
-            if postfx else _NoFx()
-        if self.postfx.enabled and self.postfx.ops is None:
-            self.postfx.start()          # CUDA check now: banner + log
+  def _load_resources(self):
+    self.audio = audio.Audio(enabled=not self.options.no_audio)
+    self.sprites = sprites.CharacterSprites()
+    self.ball_sprite = stadium.BallSprite()
+    self.background = stadium.build_background()
+    self._set_icon()
+    self.fx = fx.Effects()
+    self.input = ui_input.InputTracker()
+    self.postfx = postfx.PostFx(self.options, self.screen.get_size()) \
+        if postfx else _NoFx()
+    if self.postfx.enabled and self.postfx.ops is None:
+      self.postfx.start()          # CUDA check now: banner + log
 
-    def _init_state(self):
-        options = self.options
-        self.last_characters = self.tournament = None
-        self.match_counter = 0
-        self.show_debug = options.debug_panel
-        self._init_prediction(options)
-        self.running = True
-        self.last_dt = 0.0           # s: last frame time (effects need it)
-        self.work_ms = 0.0           # ms of the last frame without the limiter
-        self._init_overlay()
-        self.keys = {k: ui_input.key_code(k) for k in GLOBAL_KEYS}
-        self.first_frame_shown = False
-        self._init_online()
-        self._init_profile(options)
+  def _init_state(self):
+    options = self.options
+    self.last_characters = self.tournament = None
+    self.match_counter = 0
+    self.show_debug = options.debug_panel
+    self._init_prediction(options)
+    self.running = True
+    self.last_dt = 0.0           # s: last frame time (effects need it)
+    self.work_ms = 0.0           # ms of the last frame without the limiter
+    self._init_overlay()
+    self.keys = {k: ui_input.key_code(k) for k in GLOBAL_KEYS}
+    self.first_frame_shown = False
+    self._init_online()
+    self._init_profile(options)
 
-    def _init_prediction(self, options):
-        """Online: predict the own player (the menu can turn it off)."""
-        enabled = config.Online.PREDICT_ENABLED
-        self.prediction = enabled and not getattr(options, "sin_prediccion",
-                                                  False)
+  def _init_prediction(self, options):
+    """Online: predict the own player (the menu can turn it off)."""
+    enabled = config.Online.PREDICT_ENABLED
+    self.prediction = enabled and not getattr(options, "sin_prediccion",
+                                              False)
 
-    def _init_profile(self, options):
-        """Player name: chosen once at the start, valid for every mode."""
-        self.profile_path = getattr(options, "profile_path", None)
-        self.profile = profiles.load(self.profile_path)
+  def _init_profile(self, options):
+    """Player name: chosen once at the start, valid for every mode."""
+    self.profile_path = getattr(options, "profile_path", None)
+    self.profile = profiles.load(self.profile_path)
 
-    def _init_online(self):
-        self.net = None             # online server connection (when online)
-        # --server, then FDC_SERVER, then servidor.txt (see endpoint).
-        self.server_url = endpoint.resolve_url(
-            getattr(self.options, "server_url", None))
-        self.last_online_char = None
+  def _init_online(self):
+    self.net = None             # online server connection (when online)
+    # --server, then FDC_SERVER, then servidor.txt (see endpoint).
+    self.server_url = endpoint.resolve_url(
+        getattr(self.options, "server_url", None))
+    self.last_online_char = None
 
-    def _create_link(self):
-        options = self.options
-        duration = getattr(options, "duration", None)
-        if self.web:
-            return inline.InlineLink(test_mode=options.test_mode,
-                                     seed=options.seed, duration=duration)
-        # pylint: disable-next=import-outside-toplevel
-        from fdc import ipc  # Here: the browser has no multiprocessing.
-        return ipc.SimLink(test_mode=options.test_mode, seed=options.seed,
-                           duration=duration)
+  def _create_link(self):
+    options = self.options
+    duration = getattr(options, "duration", None)
+    if self.web:
+      return inline.InlineLink(test_mode=options.test_mode,
+                               seed=options.seed, duration=duration)
+    # pylint: disable-next=import-outside-toplevel
+    from fdc import ipc  # Here: the browser has no multiprocessing.
+    return ipc.SimLink(test_mode=options.test_mode, seed=options.seed,
+                       duration=duration)
 
-    def _set_icon(self):
-        """Window icon: the logo of the game (assets/icono/logo.png)."""
-        try:
-            pygame.display.set_icon(pygame.image.load(ICON_PATH))
-            return
-        except (pygame.error, OSError):
-            pass                    # no logo: the drawn ball stays
-        icon = pygame.Surface((ICON_SIZE, ICON_SIZE), pygame.SRCALPHA)
-        center = ICON_SIZE // 2
-        self.ball_sprite.draw(icon, center, center, ICON_BALL_RADIUS,
-                              ICON_BALL_ANGLE)
-        pygame.display.set_icon(icon)
+  def _set_icon(self):
+    """Window icon: the logo of the game (assets/icono/logo.png)."""
+    try:
+      pygame.display.set_icon(pygame.image.load(ICON_PATH))
+      return
+    except (pygame.error, OSError):
+      pass                    # no logo: the drawn ball stays
+    icon = pygame.Surface((ICON_SIZE, ICON_SIZE), pygame.SRCALPHA)
+    center = ICON_SIZE // 2
+    self.ball_sprite.draw(icon, center, center, ICON_BALL_RADIUS,
+                          ICON_BALL_ANGLE)
+    pygame.display.set_icon(icon)
 
-    # ------------------------------------------------------------ navigation
-    def switch(self, screen):
-        """Changes the current screen (State pattern)."""
-        self.current.leave()
-        self.current = screen
-        screen.enter()
+  # ------------------------------------------------------------ navigation
+  def switch(self, screen):
+    """Changes the current screen (State pattern)."""
+    self.current.leave()
+    self.current = screen
+    screen.enter()
 
-    def home(self):
-        """The main menu (the same on desktop and in the browser)."""
-        return screens.MenuScreen(self)
+  def home(self):
+    """The main menu (the same on desktop and in the browser)."""
+    return screens.MenuScreen(self)
 
-    def first_screen(self):
-        """After the boot: the name (if not chosen yet) and then the menu.
+  def first_screen(self):
+    """After the boot: the name (if not chosen yet) and then the menu.
         If the browser reloaded in the middle of the online mode, back to
         the room. With `--demo` the automatic demo starts instead."""
-        if getattr(self.options, "demo", False):
-            # Lazy import: fdc.gpu.demo imports this module.
-            from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
-            return demo.DemoScreen(self)
-        if self.profile is None:
-            return profile_screen.ProfileScreen(self, first_run=True)
-        if self.web and client.saved_session():
-            return online_screens.OnlineHomeScreen(self)
-        return self.home()
+    if getattr(self.options, "demo", False):
+      # Lazy import: fdc.gpu.demo imports this module.
+      from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
+      return demo.DemoScreen(self)
+    if self.profile is None:
+      return profile_screen.ProfileScreen(self, first_run=True)
+    if self.web and client.saved_session():
+      return online_screens.OnlineHomeScreen(self)
+    return self.home()
 
-    def set_profile(self, profile):
-        self.profile = profile
-        profiles.save(profile, self.profile_path)
-        self.close_online()     # online comes back with the new name
+  def set_profile(self, profile):
+    self.profile = profile
+    profiles.save(profile, self.profile_path)
+    self.close_online()     # online comes back with the new name
 
-    def online(self):
-        """Network client (created the first time the online mode opens)."""
-        if self.net is None:
-            self.net = client.NetClient(self.server_url)
-        return self.net
+  def online(self):
+    """Network client (created the first time the online mode opens)."""
+    if self.net is None:
+      self.net = client.NetClient(self.server_url)
+    return self.net
 
-    def close_online(self):
-        if self.net is not None:
-            self.net.close()
-            self.net = None
+  def close_online(self):
+    if self.net is not None:
+      self.net.close()
+      self.net = None
 
-    def next_match_id(self):
-        self.match_counter += 1
-        return self.match_counter
+  def next_match_id(self):
+    self.match_counter += 1
+    return self.match_counter
 
-    def quit(self):
-        self.running = False
+  def quit(self):
+    self.running = False
 
-    def restart_simulation(self):
-        """After an error: orderly shutdown of the old process and a new
+  def restart_simulation(self):
+    """After an error: orderly shutdown of the old process and a new
         one."""
-        self.link.restart()
-        self.switch(screens.BootScreen(self))
+    self.link.restart()
+    self.switch(screens.BootScreen(self))
 
-    # ------------------------------------------------------------ loop
-    def frame(self):
-        """One frame: events -> SIM messages -> health -> screen logic ->
+  # ------------------------------------------------------------ loop
+  def frame(self):
+    """One frame: events -> SIM messages -> health -> screen logic ->
         drawing. `work_ms` is the cost without the sleep of the limiter."""
-        dt = self._tick()
-        start = time.perf_counter()
-        try:
-            self._process(dt)
-        finally:
-            self.work_ms = (time.perf_counter() - start) * MS_PER_S
+    dt = self._tick()
+    start = time.perf_counter()
+    try:
+      self._process(dt)
+    finally:
+      self.work_ms = (time.perf_counter() - start) * MS_PER_S
 
-    def _process(self, dt):
-        """Everything a frame does, in order (see `frame`)."""
-        for ev in pygame.event.get():
-            self.handle_event(ev)
-            if not self.running:
-                return
-        self._poll_simulation()
-        self._poll_network()
-        self.current.update(dt)
-        self._draw()
+  def _process(self, dt):
+    """Everything a frame does, in order (see `frame`)."""
+    for ev in pygame.event.get():
+      self.handle_event(ev)
+      if not self.running:
+        return
+    self._poll_simulation()
+    self._poll_network()
+    self.current.update(dt)
+    self._draw()
 
-    def _poll_network(self):
-        """One network message at a time: a screen change is respected."""
-        if self.net is None:
-            return
-        for msg in self.net.poll():
-            self.current.on_net(msg)
+  def _poll_network(self):
+    """One network message at a time: a screen change is respected."""
+    if self.net is None:
+      return
+    for msg in self.net.poll():
+      self.current.on_net(msg)
 
-    def _tick(self):
-        """Real frame time (s), capped so a late frame does not jump."""
-        self.last_dt = min(self.clock.tick(), MAX_FRAME_DT)
-        return self.last_dt
+  def _tick(self):
+    """Real frame time (s), capped so a late frame does not jump."""
+    self.last_dt = min(self.clock.tick(), MAX_FRAME_DT)
+    return self.last_dt
 
-    def _poll_simulation(self):
-        if self.link is None:
-            return
-        msgs, state = self.link.poll()
-        self.current.on_link(msgs, state)
-        err = self.link.check_health()
-        if err and not isinstance(self.current, screens.ErrorScreen):
-            self.switch(screens.ErrorScreen(self, err, self.link.error_detail))
+  def _poll_simulation(self):
+    if self.link is None:
+      return
+    msgs, state = self.link.poll()
+    self.current.on_link(msgs, state)
+    err = self.link.check_health()
+    if err and not isinstance(self.current, screens.ErrorScreen):
+      self.switch(screens.ErrorScreen(self, err, self.link.error_detail))
 
-    def _draw(self):
-        self.current.draw(self.screen)
-        if self.show_debug:
-            self.draw_debug(self.screen)
-        self.overlay.draw(self.screen, self._overlay_info())
-        self._draw_gpu_notice(self.screen)
-        pygame.display.flip()
-        if self.web and not self.first_frame_shown:
-            self.first_frame_shown = True
-            browser.hide_loading_screen()
+  def _draw(self):
+    self.current.draw(self.screen)
+    if self.show_debug:
+      self.draw_debug(self.screen)
+    self.overlay.draw(self.screen, self._overlay_info())
+    self._draw_gpu_notice(self.screen)
+    pygame.display.flip()
+    if self.web and not self.first_frame_shown:
+      self.first_frame_shown = True
+      browser.hide_loading_screen()
 
-    def _draw_gpu_notice(self, surf):
-        """Banner for the first seconds: why the effects run on the CPU."""
-        why = getattr(self.postfx, "gpu_failure", lambda: None)()
-        self.notice_left -= self.last_dt
-        if not why or self.notice_left <= 0:
-            return
-        _draw_notice_box(surf, ("GPU no disponible: los efectos usan la CPU",
-                                why))
+  def _draw_gpu_notice(self, surf):
+    """Banner for the first seconds: why the effects run on the CPU."""
+    why = getattr(self.postfx, "gpu_failure", lambda: None)()
+    self.notice_left -= self.last_dt
+    if not why or self.notice_left <= 0:
+      return
+    _draw_notice_box(surf, ("GPU no disponible: los efectos usan la CPU",
+                            why))
 
-    def run(self):
-        try:
-            while self.running:
-                self.frame()
-        except KeyboardInterrupt:
-            log.info("interrupted from the terminal: orderly shutdown")
-        finally:
-            self.shutdown()
+  def run(self):
+    try:
+      while self.running:
+        self.frame()
+    except KeyboardInterrupt:
+      log.info("interrupted from the terminal: orderly shutdown")
+    finally:
+      self.shutdown()
 
-    async def run_async(self):
-        """Browser loop: every frame gives the control back (no sleep)."""
-        try:
-            while self.running:
-                self.frame()
-                await asyncio.sleep(0)
-        finally:
-            self.shutdown()
+  async def run_async(self):
+    """Browser loop: every frame gives the control back (no sleep)."""
+    try:
+      while self.running:
+        self.frame()
+        await asyncio.sleep(0)
+    finally:
+      self.shutdown()
 
-    def handle_event(self, ev):
-        if ev.type == pygame.QUIT:
-            self.running = False          # close from any screen
-            return
-        if ev.type in (pygame.WINDOWFOCUSLOST, pygame.WINDOWMINIMIZED):
-            # No player keeps walking with a stuck key.
-            self.input.release_all()
-            self.current.on_focus_lost()
-            return
-        if ev.type == pygame.KEYDOWN and self._global_key(ev.key):
-            return
-        self.input.handle_event(ev)
-        self.current.handle_event(ev)
+  def handle_event(self, ev):
+    if ev.type == pygame.QUIT:
+      self.running = False          # close from any screen
+      return
+    if ev.type in (pygame.WINDOWFOCUSLOST, pygame.WINDOWMINIMIZED):
+      # No player keeps walking with a stuck key.
+      self.input.release_all()
+      self.current.on_focus_lost()
+      return
+    if ev.type == pygame.KEYDOWN and self._global_key(ev.key):
+      return
+    self.input.handle_event(ev)
+    self.current.handle_event(ev)
 
-    def _global_key(self, key):
-        """F2..F4, N, F11 and M work on every screen. True if it was one."""
-        action = self._global_actions().get(key)
-        if action is None:
-            return False
-        if action() is False:
-            return False        # the screen wants that key (typing a name)
-        return True
+  def _global_key(self, key):
+    """F2..F4, N, F11 and M work on every screen. True if it was one."""
+    action = self._global_actions().get(key)
+    if action is None:
+      return False
+    if action() is False:
+      return False        # the screen wants that key (typing a name)
+    return True
 
-    def _global_actions(self):
-        """Table of the keys that work on every screen."""
-        return {
-            self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
-            self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
-            self.keys[config.OVERLAY_KEY]: self._overlay_key,
-            self.keys[config.QUALITY_KEY]: self._quality_key,
-            self.keys[config.NIGHT_KEY]: self._night_key,
-            self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
-            self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
-        }
+  def _global_actions(self):
+    """Table of the keys that work on every screen."""
+    return {
+        self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
+        self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
+        self.keys[config.OVERLAY_KEY]: self._overlay_key,
+        self.keys[config.QUALITY_KEY]: self._quality_key,
+        self.keys[config.NIGHT_KEY]: self._night_key,
+        self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
+        self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
+    }
 
-    def _toggle_panel(self):
-        """F3: test panel (powers, crashes)."""
-        self.show_debug = not self.show_debug
+  def _toggle_panel(self):
+    """F3: test panel (powers, crashes)."""
+    self.show_debug = not self.show_debug
 
-    def _overlay_mode(self):
-        """Off / compact / full of the performance overlay (F2)."""
-        mode = getattr(self.options, "overlay", None)
-        if mode:
-            return mode
-        return gpu_overlay.FULL if getattr(self.options, "demo", False) \
-            else gpu_overlay.COMPACT
+  def _overlay_mode(self):
+    """Off / compact / full of the performance overlay (F2)."""
+    mode = getattr(self.options, "overlay", None)
+    if mode:
+      return mode
+    return gpu_overlay.FULL if getattr(self.options, "demo", False) \
+        else gpu_overlay.COMPACT
 
-    def _init_overlay(self):
-        """Remote session and overlay of this run (F7)."""
-        self.remote = sysinfo.is_remote_session()
-        self.overlay = gpu_overlay.Overlay(self._overlay_mode())
-        self.notice_left = NOTICE_TIME   # s left of the "no GPU" banner
+  def _init_overlay(self):
+    """Remote session and overlay of this run (F7)."""
+    self.remote = sysinfo.is_remote_session()
+    self.overlay = gpu_overlay.Overlay(self._overlay_mode())
+    self.notice_left = NOTICE_TIME   # s left of the "no GPU" banner
 
-    def _overlay_key(self):
-        """F2: cycles the overlay; the key is never 'swallowed'."""
-        self.overlay.cycle()
-        return True
+  def _overlay_key(self):
+    """F2: cycles the overlay; the key is never 'swallowed'."""
+    self.overlay.cycle()
+    return True
 
-    def _quality_key(self):
-        """F10: next quality mode (FULL -> OPTIMIZADO -> AUTO)."""
-        if self.postfx.cycle_quality_mode() is None:
-            return False
-        return True
+  def _quality_key(self):
+    """F10: next quality mode (FULL -> OPTIMIZADO -> AUTO)."""
+    if self.postfx.cycle_quality_mode() is None:
+      return False
+    return True
 
-    def _overlay_info(self):
-        """Everything the overlay shows of this frame."""
-        data = self.postfx.summary() if self.postfx else {"mode": "off"}
-        data["fx_ms"] = data.get("frame", 0.0)
-        data["device"] = data.get("gpu", "CPU")
-        data.update(self._display_info())
-        data.update(self._launch_info())
-        return gpu_overlay.info_of(data)
+  def _overlay_info(self):
+    """Everything the overlay shows of this frame."""
+    data = self.postfx.summary() if self.postfx else {"mode": "off"}
+    data["fx_ms"] = data.get("frame", 0.0)
+    data["device"] = data.get("gpu", "CPU")
+    data.update(self._display_info())
+    data.update(self._launch_info())
+    return gpu_overlay.info_of(data)
 
-    def _display_info(self):
-        """Frame time, FPS, sizes and remote session of the overlay."""
-        width, height = self.screen.get_size()
-        return {
-            "work_ms": self.work_ms,
-            "fps": self.clock.get_fps(),
-            "resolution": (f"{config.LOGICAL_WIDTH}x{config.LOGICAL_HEIGHT}"
-                           if self.postfx and self.postfx.enabled
-                           else "ninguna"),
-            "window": f"{width}x{height}",
-            "remote": self.remote,
-        }
+  def _display_info(self):
+    """Frame time, FPS, sizes and remote session of the overlay."""
+    width, height = self.screen.get_size()
+    return {
+        "work_ms": self.work_ms,
+        "fps": self.clock.get_fps(),
+        "resolution": (f"{config.LOGICAL_WIDTH}x{config.LOGICAL_HEIGHT}"
+                       if self.postfx and self.postfx.enabled
+                       else "ninguna"),
+        "window": f"{width}x{height}",
+        "remote": self.remote,
+    }
 
-    @staticmethod
-    def _launch_info():
-        """Block, grid, threads and spare threads of the kernels."""
-        block = gpu_backend.BLOCK
-        across = (config.LOGICAL_WIDTH + block[0] - 1) // block[0]
-        down = (config.LOGICAL_HEIGHT + block[1] - 1) // block[1]
-        threads = block[0] * block[1]
-        spare = across * down * threads - config.LOGICAL_WIDTH * \
-            config.LOGICAL_HEIGHT
-        return {"block": f"{block[0]}x{block[1]}",
-                "grid": f"{across}x{down}", "threads": threads,
-                "surplus": spare}
+  @staticmethod
+  def _launch_info():
+    """Block, grid, threads and spare threads of the kernels."""
+    block = gpu_backend.BLOCK
+    across = (config.LOGICAL_WIDTH + block[0] - 1) // block[0]
+    down = (config.LOGICAL_HEIGHT + block[1] - 1) // block[1]
+    threads = block[0] * block[1]
+    spare = across * down * threads - config.LOGICAL_WIDTH * \
+        config.LOGICAL_HEIGHT
+    return {"block": f"{block[0]}x{block[1]}",
+            "grid": f"{across}x{down}", "threads": threads,
+            "surplus": spare}
 
-    def _night_key(self):
-        """N: night mode, but only inside a match (not while typing)."""
-        if not self.input.capture:
-            return False
-        self.postfx.night = not self.postfx.night
-        return True
+  def _night_key(self):
+    """N: night mode, but only inside a match (not while typing)."""
+    if not self.input.capture:
+      return False
+    self.postfx.night = not self.postfx.night
+    return True
 
-    def _fullscreen_key(self):
-        """F11: full screen (not in the browser)."""
-        if not self.web:
-            pygame.display.toggle_fullscreen()
-        return True
+  def _fullscreen_key(self):
+    """F11: full screen (not in the browser)."""
+    if not self.web:
+      pygame.display.toggle_fullscreen()
+    return True
 
-    def shutdown(self):
-        try:
-            self.audio.crowd(False)
-        except pygame.error:
-            pass
-        self.close_online()
-        if self.link is not None:
-            report = self.link.stop()
-            log.info("shutdown complete: %s", report)
-        assets.clear_caches()
-        pygame.quit()
+  def shutdown(self):
+    try:
+      self.audio.crowd(False)
+    except pygame.error:
+      pass
+    self.close_online()
+    if self.link is not None:
+      report = self.link.stop()
+      log.info("shutdown complete: %s", report)
+    assets.clear_caches()
+    pygame.quit()
 
-    # ------------------------------------------------------------ F3 panel
-    def draw_debug(self, surf):
-        """F3 panel: processes, link, network and frame data."""
-        si = self.current.debug_info()
-        lines = [("PANEL DE DEPURACIÓN (F3)", palette.GOLD)]
-        if self.link is not None:
-            lines += self._process_lines()
-        lines += _screen_lines(type(self.current).__name__, si)
-        if self.link is not None:
-            lines += _link_lines(self.link.debug_lines())
-        if self.net is not None:
-            lines += _net_lines(self.net)
-        lines += self._gpu_lines()
-        lines += self._frame_lines(si)
-        _draw_panel(surf, lines)
+  # ------------------------------------------------------------ F3 panel
+  def draw_debug(self, surf):
+    """F3 panel: processes, link, network and frame data."""
+    si = self.current.debug_info()
+    lines = [("PANEL DE DEPURACIÓN (F3)", palette.GOLD)]
+    if self.link is not None:
+      lines += self._process_lines()
+    lines += _screen_lines(type(self.current).__name__, si)
+    if self.link is not None:
+      lines += _link_lines(self.link.debug_lines())
+    if self.net is not None:
+      lines += _net_lines(self.net)
+    lines += self._gpu_lines()
+    lines += self._frame_lines(si)
+    _draw_panel(surf, lines)
 
-    def _gpu_lines(self):
-        """Effects of the post-processing chain (mode, cost, fps)."""
-        data = self.postfx.summary()
-        if data.get("mode") == "off":
-            return [("Efectos: apagados", None)]
-        return [(f"Efectos: {data['gpu']} ({data['mode']}, "
-                 f"{data['quality']})  |  cadena {data['frame']:.2f} ms  "
-                 f"{data['fps']:.1f} fps  |  glow {data['glow']:.2f}  "
-                 f"part {data['particles']:.2f} ms", None)]
+  def _gpu_lines(self):
+    """Effects of the post-processing chain (mode, cost, fps)."""
+    data = self.postfx.summary()
+    if data.get("mode") == "off":
+      return [("Efectos: apagados", None)]
+    return [(f"Efectos: {data['gpu']} ({data['mode']}, "
+             f"{data['quality']})  |  cadena {data['frame']:.2f} ms  "
+             f"{data['fps']:.1f} fps  |  glow {data['glow']:.2f}  "
+             f"part {data['particles']:.2f} ms", None)]
 
-    def _process_lines(self):
-        if getattr(self.link, "inline", False):
-            return [("Navegador: sin procesos; la simulación local corre en "
-                     "la misma página (el online, en el servidor)", None)]
-        li = self.link.debug_lines()
-        info = self.link.ready_info or {}
-        state = "viva" if li["alive"] else "detenida"
-        return [(f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} "
-                 f"({state}), pygame en SIM: "
-                 f"{_yes(info.get('pygame_loaded'))}", None)]
+  def _process_lines(self):
+    if getattr(self.link, "inline", False):
+      return [("Navegador: sin procesos; la simulación local corre en "
+               "la misma página (el online, en el servidor)", None)]
+    li = self.link.debug_lines()
+    info = self.link.ready_info or {}
+    state = "viva" if li["alive"] else "detenida"
+    return [(f"UI pid {os.getpid()}  |  SIM pid {li['sim_pid']} "
+             f"({state}), pygame en SIM: "
+             f"{_yes(info.get('pygame_loaded'))}", None)]
 
-    def _frame_lines(self, si):
-        return [
-            (f"Estados ignorados: {si.get('filtered', '-')}", None),
-            (f"SIM reemplazó {si.get('sim_dropped', 0)} estados  |  eventos "
-             f"cosméticos perdidos {si.get('cosmetic_dropped', 0)}  |  "
-             f"eventos viejos {si.get('ignored_events', 0)}", None),
-            (f"FPS UI {screens.fps_value(self.clock):.0f}  |  física "
-             f"{config.PHYSICS_HZ} Hz  |  prueba: "
-             f"{_yes(self.options.test_mode)}  |  semilla "
-             f"{self.options.seed}", None),
-        ]
+  def _frame_lines(self, si):
+    return [
+        (f"Estados ignorados: {si.get('filtered', '-')}", None),
+        (f"SIM reemplazó {si.get('sim_dropped', 0)} estados  |  eventos "
+         f"cosméticos perdidos {si.get('cosmetic_dropped', 0)}  |  "
+         f"eventos viejos {si.get('ignored_events', 0)}", None),
+        (f"FPS UI {screens.fps_value(self.clock):.0f}  |  física "
+         f"{config.PHYSICS_HZ} Hz  |  prueba: "
+         f"{_yes(self.options.test_mode)}  |  semilla "
+         f"{self.options.seed}", None),
+    ]
 
 
 def _screen_lines(name, si):
-    clock = f"{si['clock']:.2f} s" if si.get("clock") is not None else "-"
-    return [
-        (f"Pantalla {name}  |  partido #{si.get('match', '-')}  |  "
-         f"fase {si.get('phase', '-')}", None),
-        (f"Pausa SIM: {_yes(si.get('paused'))}  |  pausa UI: "
-         f"{si.get('ui_pause', '-')}  |  reloj {clock}", None),
-        (f"Actualización seq {si.get('seq', '-')}  |  tick "
-         f"{si.get('tick', '-')}", None),
-    ]
+  clock = f"{si['clock']:.2f} s" if si.get("clock") is not None else "-"
+  return [
+      (f"Pantalla {name}  |  partido #{si.get('match', '-')}  |  "
+       f"fase {si.get('phase', '-')}", None),
+      (f"Pausa SIM: {_yes(si.get('paused'))}  |  pausa UI: "
+       f"{si.get('ui_pause', '-')}  |  reloj {clock}", None),
+      (f"Actualización seq {si.get('seq', '-')}  |  tick "
+       f"{si.get('tick', '-')}", None),
+  ]
 
 
 def _link_lines(li):
-    return [
-        (f"Último confirmado: {li['confirmed']}", None),
-        (f"Órdenes sin confirmar: {li['pending']}  |  controles: "
-         f"{li['inputs']}", None),
-        (f"Recibidos: {li['received']}", None),
-    ]
+  return [
+      (f"Último confirmado: {li['confirmed']}", None),
+      (f"Órdenes sin confirmar: {li['pending']}  |  controles: "
+       f"{li['inputs']}", None),
+      (f"Recibidos: {li['received']}", None),
+  ]
 
 
 def _net_lines(net):
-    ni = net.debug_lines()
-    lines = [
-        (f"Online: {ni['status']} como {ni['user']}  |  latencia "
-         f"{ni['rtt']}  |  {ni['url']}", None),
-        (f"Mensajes: {ni['traffic']}", None),
-    ]
-    if net.room_info:   # the room seen from the server (once per second)
-        lines += _room_lines(net.room_info)
-    return lines
+  ni = net.debug_lines()
+  lines = [
+      (f"Online: {ni['status']} como {ni['user']}  |  latencia "
+       f"{ni['rtt']}  |  {ni['url']}", None),
+      (f"Mensajes: {ni['traffic']}", None),
+  ]
+  if net.room_info:   # the room seen from the server (once per second)
+    lines += _room_lines(net.room_info)
+  return lines
 
 
 def _room_lines(ri):
-    ack = f"{ri['ack_ms']:.1f} ms" if ri.get("ack_ms") is not None else "-"
-    alive = "vivo" if ri["sim_alive"] else "detenido"
-    return [
-        (f"Servidor pid {ri['server_pid']}  |  sala {ri['room']}: proceso "
-         f"de simulación pid {ri['sim_pid']} ({alive})  |  partido "
-         f"#{ri['match']}", palette.GOLD),
-        (f"La sala manda {ri['states_per_s']:.0f} estados/s  |  recibe "
-         f"{ri['inputs_per_s']:.0f} fotos de controles/s  |  último ACK "
-         f"{ack}  |  sin confirmar {ri['pending_acks']}  |  pausa: "
-         f"{', '.join(ri['hold']) or '-'}", None),
-    ]
+  ack = f"{ri['ack_ms']:.1f} ms" if ri.get("ack_ms") is not None else "-"
+  alive = "vivo" if ri["sim_alive"] else "detenido"
+  return [
+      (f"Servidor pid {ri['server_pid']}  |  sala {ri['room']}: proceso "
+       f"de simulación pid {ri['sim_pid']} ({alive})  |  partido "
+       f"#{ri['match']}", palette.GOLD),
+      (f"La sala manda {ri['states_per_s']:.0f} estados/s  |  recibe "
+       f"{ri['inputs_per_s']:.0f} fotos de controles/s  |  último ACK "
+       f"{ack}  |  sin confirmar {ri['pending_acks']}  |  pausa: "
+       f"{', '.join(ri['hold']) or '-'}", None),
+  ]
 
 
 def _draw_panel(surf, lines):
-    """Translucent box at the bottom left with the F3 lines."""
-    w = (max(pixelfont.text_width(t, DEBUG_TEXT_SCALE) for t, _ in lines)
-         + DEBUG_PADDING)
-    h = len(lines) * DEBUG_LINE_H + DEBUG_EXTRA_H
-    top = config.LOGICAL_HEIGHT - h - DEBUG_MARGIN
-    box = pygame.Surface((w, h), pygame.SRCALPHA)
-    box.fill((*palette.INK, DEBUG_ALPHA))
-    surf.blit(box, (DEBUG_MARGIN, top))
-    pygame.draw.rect(surf, palette.GOLD, (DEBUG_MARGIN, top, w, h),
-                     DEBUG_BORDER)
-    _panel_text(surf, lines, top)
+  """Translucent box at the bottom left with the F3 lines."""
+  w = (max(pixelfont.text_width(t, DEBUG_TEXT_SCALE) for t, _ in lines)
+       + DEBUG_PADDING)
+  h = len(lines) * DEBUG_LINE_H + DEBUG_EXTRA_H
+  top = config.LOGICAL_HEIGHT - h - DEBUG_MARGIN
+  box = pygame.Surface((w, h), pygame.SRCALPHA)
+  box.fill((*palette.INK, DEBUG_ALPHA))
+  surf.blit(box, (DEBUG_MARGIN, top))
+  pygame.draw.rect(surf, palette.GOLD, (DEBUG_MARGIN, top, w, h),
+                   DEBUG_BORDER)
+  _panel_text(surf, lines, top)
 
 
 def _panel_text(surf, lines, top):
-    for k, (t, col) in enumerate(lines):
-        assets.draw_text(surf, t, layout.FONT_SMALL,
-                         (DEBUG_TEXT_X, top + DEBUG_MARGIN + DEBUG_TEXT_TOP
-                          + k * DEBUG_LINE_H), col or palette.CREAM,
-                         anchor="topleft", outline=None)
+  for k, (t, col) in enumerate(lines):
+    assets.draw_text(surf, t, layout.FONT_SMALL,
+                     (DEBUG_TEXT_X, top + DEBUG_MARGIN + DEBUG_TEXT_TOP
+                      + k * DEBUG_LINE_H), col or palette.CREAM,
+                     anchor="topleft", outline=None)
 
 
 def run_app(options):
-    """Creates the window and runs the game until it is closed."""
-    app = App(options)
-    app.run()
-    return 0
+  """Creates the window and runs the game until it is closed."""
+  app = App(options)
+  app.run()
+  return 0
 
 
 def setup_logging():
-    """Log to the terminal and to logs/fdc.log."""
-    handlers = [logging.StreamHandler(sys.stderr)]
-    try:
-        os.makedirs(config.LOG_DIR, exist_ok=True)
-        handlers.append(logging.FileHandler(
-            os.path.join(config.LOG_DIR, LOG_FILE), mode="w",
-            encoding="utf-8"))
-    except OSError:
-        pass
-    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT,
-                        handlers=handlers, force=True)
+  """Log to the terminal and to logs/fdc.log."""
+  handlers = [logging.StreamHandler(sys.stderr)]
+  try:
+    os.makedirs(config.LOG_DIR, exist_ok=True)
+    handlers.append(logging.FileHandler(
+        os.path.join(config.LOG_DIR, LOG_FILE), mode="w",
+        encoding="utf-8"))
+  except OSError:
+    pass
+  logging.basicConfig(level=logging.INFO, format=LOG_FORMAT,
+                      handlers=handlers, force=True)
 
 
 def _draw_notice_box(surf, lines):
-    """Dark strip at the top with the lines of the "no GPU" banner."""
-    box = pygame.Surface((config.LOGICAL_WIDTH, NOTICE_HEIGHT),
-                         pygame.SRCALPHA)
-    box.fill((*palette.INK, DEBUG_ALPHA))
-    surf.blit(box, (0, 0))
-    for k, line in enumerate(lines):
-        assets.draw_text(surf, line[:NOTICE_CHARS], layout.FONT_SMALL,
-                         (NOTICE_X, NOTICE_X + k * DEBUG_LINE_H),
-                         palette.GOLD if k == 0 else palette.CREAM,
-                         anchor="topleft", outline=None)
+  """Dark strip at the top with the lines of the "no GPU" banner."""
+  box = pygame.Surface((config.LOGICAL_WIDTH, NOTICE_HEIGHT),
+                       pygame.SRCALPHA)
+  box.fill((*palette.INK, DEBUG_ALPHA))
+  surf.blit(box, (0, 0))
+  for k, line in enumerate(lines):
+    assets.draw_text(surf, line[:NOTICE_CHARS], layout.FONT_SMALL,
+                     (NOTICE_X, NOTICE_X + k * DEBUG_LINE_H),
+                     palette.GOLD if k == 0 else palette.CREAM,
+                     anchor="topleft", outline=None)

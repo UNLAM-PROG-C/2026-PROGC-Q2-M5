@@ -63,168 +63,168 @@ LEVELS = (
 
 @dataclasses.dataclass
 class _Situation:
-    """What the bot sees in one decision."""
-    me: dict
-    rival: dict
-    ball: dict
-    direction: int      # 1 if it attacks to the right, -1 to the left
-    scale: float
-    radius: float       # head radius R of the bot, already scaled
-    mouth: float        # x of its own goal line
-    head_top: float     # y of the top of its head
+  """What the bot sees in one decision."""
+  me: dict
+  rival: dict
+  ball: dict
+  direction: int      # 1 if it attacks to the right, -1 to the left
+  scale: float
+  radius: float       # head radius R of the bot, already scaled
+  mouth: float        # x of its own goal line
+  head_top: float     # y of the top of its head
 
 
 class Bot:
-    """Produces keyboard-like controls from the latest match state."""
+  """Produces keyboard-like controls from the latest match state."""
 
-    def __init__(self, slot, level, seed=None):
-        self.slot = slot                       # 0 = left, 1 = right
-        self.cfg = LEVELS[max(0, min(level, len(LEVELS) - 1))]
-        self.rng = random.Random(seed)
-        self.timer = 0.0
-        self.move = 0
-        self.want_jump = False
-        self.want_kick = False
-        self.jumps = 0             # cumulative counters, like the keyboard
-        self.kicks = 0
-        self._prev_jump = False
-        self._prev_kick = False
+  def __init__(self, slot, level, seed=None):
+    self.slot = slot                       # 0 = left, 1 = right
+    self.cfg = LEVELS[max(0, min(level, len(LEVELS) - 1))]
+    self.rng = random.Random(seed)
+    self.timer = 0.0
+    self.move = 0
+    self.want_jump = False
+    self.want_kick = False
+    self.jumps = 0             # cumulative counters, like the keyboard
+    self.kicks = 0
+    self._prev_jump = False
+    self._prev_kick = False
 
-    def controls(self, st, dt):
-        """[left, right, jumps, kicks] from the latest state."""
-        if (st is None or st.get("phase") != protocol.PHASE_PLAYING
-                or st.get("paused")):
-            self.move, self.want_jump, self.want_kick = 0, False, False
-        else:
-            self._tick(st, dt)
-        if self.want_jump and not self._prev_jump:
-            self.jumps += 1
-        if self.want_kick and not self._prev_kick:
-            self.kicks += 1
-        self._prev_jump, self._prev_kick = self.want_jump, self.want_kick
-        return [self.move < 0, self.move > 0, self.jumps, self.kicks]
+  def controls(self, st, dt):
+    """[left, right, jumps, kicks] from the latest state."""
+    if (st is None or st.get("phase") != protocol.PHASE_PLAYING
+            or st.get("paused")):
+      self.move, self.want_jump, self.want_kick = 0, False, False
+    else:
+      self._tick(st, dt)
+    if self.want_jump and not self._prev_jump:
+      self.jumps += 1
+    if self.want_kick and not self._prev_kick:
+      self.kicks += 1
+    self._prev_jump, self._prev_kick = self.want_jump, self.want_kick
+    return [self.move < 0, self.move > 0, self.jumps, self.kicks]
 
-    def _tick(self, st, dt):
-        """Decides once per "reaction time" (with some variation)."""
-        self.timer -= dt
-        if self.timer <= 0:
-            self.timer = (self.cfg["reaction"]
-                          * self.rng.uniform(*REACTION_JITTER))
-            self._think(st)
+  def _tick(self, st, dt):
+    """Decides once per "reaction time" (with some variation)."""
+    self.timer -= dt
+    if self.timer <= 0:
+      self.timer = (self.cfg["reaction"]
+                    * self.rng.uniform(*REACTION_JITTER))
+      self._think(st)
 
-    # ------------------------------------------------------------- decision
-    def _think(self, st):
-        sit = self._situation(st)
-        behind = (sit.direction * (sit.me["x"] - sit.ball["x"])
-                  > BEHIND_MARGIN)      # the ball got between me and my goal
-        self.move = self._move(sit, behind)
-        self.want_jump = self._jump(sit, behind)
-        self.want_kick = self._kick(sit)
-        if self.rng.random() < self.cfg["error"]:       # human mistakes
-            self.move = self.rng.choice((-1, 0, 1))
-            self.want_jump = False
+  # ------------------------------------------------------------- decision
+  def _think(self, st):
+    sit = self._situation(st)
+    behind = (sit.direction * (sit.me["x"] - sit.ball["x"])
+              > BEHIND_MARGIN)      # the ball got between me and my goal
+    self.move = self._move(sit, behind)
+    self.want_jump = self._jump(sit, behind)
+    self.want_kick = self._kick(sit)
+    if self.rng.random() < self.cfg["error"]:       # human mistakes
+      self.move = self.rng.choice((-1, 0, 1))
+      self.want_jump = False
 
-    def _situation(self, st):
-        me = st["players"][self.slot]
-        scale = me["scale"]
-        mouth = (config.Arena.GOAL_DEPTH if self.slot == 0
-                 else config.Arena.WIDTH - config.Arena.GOAL_DEPTH)
-        return _Situation(
-            me=me, rival=st["players"][1 - self.slot], ball=st["ball"],
-            direction=1 if self.slot == 0 else -1, scale=scale,
-            radius=config.PlayerSpec.HEAD_RADIUS * scale, mouth=mouth,
-            head_top=me["y"] - config.PlayerSpec.HEIGHT * scale)
+  def _situation(self, st):
+    me = st["players"][self.slot]
+    scale = me["scale"]
+    mouth = (config.Arena.GOAL_DEPTH if self.slot == 0
+             else config.Arena.WIDTH - config.Arena.GOAL_DEPTH)
+    return _Situation(
+        me=me, rival=st["players"][1 - self.slot], ball=st["ball"],
+        direction=1 if self.slot == 0 else -1, scale=scale,
+        radius=config.PlayerSpec.HEAD_RADIUS * scale, mouth=mouth,
+        head_top=me["y"] - config.PlayerSpec.HEIGHT * scale)
 
-    # ---------------------------------------------------------- where to go
-    def _move(self, sit, behind):
-        """-1, 0 or 1: the direction to walk to the chosen spot."""
-        dx = self._target(sit, behind) - sit.me["x"]
-        if abs(dx) < sit.radius * STOP_TOLERANCE:
-            return 0
-        return 1 if dx > 0 else -1
+  # ---------------------------------------------------------- where to go
+  def _move(self, sit, behind):
+    """-1, 0 or 1: the direction to walk to the chosen spot."""
+    dx = self._target(sit, behind) - sit.me["x"]
+    if abs(dx) < sit.radius * STOP_TOLERANCE:
+      return 0
+    return 1 if dx > 0 else -1
 
-    def _target(self, sit, behind):
-        d, ball, radius = sit.direction, sit.ball, sit.radius
-        if behind:                         # go back behind the ball
-            return ball["x"] - d * radius * BACK_GAP
-        if _danger(sit) and self.rng.random() < self.cfg["defend"]:
-            return sit.mouth + d * (abs(ball["x"] - sit.mouth) * COVER_SHARE
-                                    + radius * COVER_GAP)   # cover the goal
-        ahead_x = ball["x"] + ball["vx"] * BALL_LOOKAHEAD
-        return ahead_x - d * radius * ATTACK_GAP   # push to the rival goal
+  def _target(self, sit, behind):
+    d, ball, radius = sit.direction, sit.ball, sit.radius
+    if behind:                         # go back behind the ball
+      return ball["x"] - d * radius * BACK_GAP
+    if _danger(sit) and self.rng.random() < self.cfg["defend"]:
+      return sit.mouth + d * (abs(ball["x"] - sit.mouth) * COVER_SHARE
+                              + radius * COVER_GAP)   # cover the goal
+    ahead_x = ball["x"] + ball["vx"] * BALL_LOOKAHEAD
+    return ahead_x - d * radius * ATTACK_GAP   # push to the rival goal
 
-    # ---------------------------------------------------------------- jumps
-    def _jump(self, sit, behind):
-        """Computes when the ball arrives (with the aim of the level)."""
-        me, ball = sit.me, sit.ball
-        can_jump = me["ground"] and not me["frozen"]
-        if behind and can_jump and _low_ball_near(sit):
-            # Going back with the ball close and low: jump over it instead
-            # of pushing it into the own goal.
-            return self.rng.random() < 0.5 + self.cfg["defend"] * 0.5
-        if not can_jump:
-            return False
-        coming = (abs(ball["vx"]) > 1
-                  and (ball["x"] - me["x"]) * ball["vx"] < 0)
-        if coming:
-            return self._jump_to_meet(sit)
-        return self._header(sit)
+  # ---------------------------------------------------------------- jumps
+  def _jump(self, sit, behind):
+    """Computes when the ball arrives (with the aim of the level)."""
+    me, ball = sit.me, sit.ball
+    can_jump = me["ground"] and not me["frozen"]
+    if behind and can_jump and _low_ball_near(sit):
+      # Going back with the ball close and low: jump over it instead
+      # of pushing it into the own goal.
+      return self.rng.random() < 0.5 + self.cfg["defend"] * 0.5
+    if not can_jump:
+      return False
+    coming = (abs(ball["vx"]) > 1
+              and (ball["x"] - me["x"]) * ball["vx"] < 0)
+    if coming:
+      return self._jump_to_meet(sit)
+    return self._header(sit)
 
-    def _jump_to_meet(self, sit):
-        """Jumps if the ball will pass within reach right now."""
-        me, ball = sit.me, sit.ball
-        tt = abs(ball["x"] - me["x"]) / abs(ball["vx"])
-        yy = (ball["y"] + ball["vy"] * tt
-              + 0.5 * config.BallSpec.GRAVITY * tt * tt)
-        need = sit.head_top - yy + ball["r"] * 0.5
-        if not (0 < need < sit.radius * JUMP_REACH
-                and yy < config.Arena.FLOOR_Y - ball["r"]):
-            return False
-        return (tt <= _rise_time(need) + JUMP_TIMING_SLACK
-                and self.rng.random() < self.cfg["jump"])
+  def _jump_to_meet(self, sit):
+    """Jumps if the ball will pass within reach right now."""
+    me, ball = sit.me, sit.ball
+    tt = abs(ball["x"] - me["x"]) / abs(ball["vx"])
+    yy = (ball["y"] + ball["vy"] * tt
+          + 0.5 * config.BallSpec.GRAVITY * tt * tt)
+    need = sit.head_top - yy + ball["r"] * 0.5
+    if not (0 < need < sit.radius * JUMP_REACH
+            and yy < config.Arena.FLOOR_Y - ball["r"]):
+      return False
+    return (tt <= _rise_time(need) + JUMP_TIMING_SLACK
+            and self.rng.random() < self.cfg["jump"])
 
-    def _header(self, sit):
-        """Ball falling right above: try a header."""
-        me, ball = sit.me, sit.ball
-        return (abs(ball["x"] - me["x"]) < sit.radius * HEADER_RANGE
-                and (sit.head_top - sit.radius * JUMP_REACH < ball["y"]
-                     < sit.head_top)
-                and ball["vy"] > 0 and self.rng.random() < self.cfg["jump"])
+  def _header(self, sit):
+    """Ball falling right above: try a header."""
+    me, ball = sit.me, sit.ball
+    return (abs(ball["x"] - me["x"]) < sit.radius * HEADER_RANGE
+            and (sit.head_top - sit.radius * JUMP_REACH < ball["y"]
+                 < sit.head_top)
+            and ball["vy"] > 0 and self.rng.random() < self.cfg["jump"])
 
-    # ---------------------------------------------------------------- kicks
-    def _kick(self, sit):
-        """Only if it faces the rival goal and has the ball in front."""
-        me, ball, d, scale = sit.me, sit.ball, sit.direction, sit.scale
-        foot_x = me["x"] + d * config.PlayerSpec.KICK_REACH_X * scale
-        foot_y = me["y"] - config.PlayerSpec.KICK_REACH_Y * scale
-        reach = config.PlayerSpec.KICK_RADIUS * scale + ball["r"]
-        return (me["facing"] == d and not me["no_kick"]
-                and abs(ball["x"] - foot_x) < reach + sit.radius * KICK_RANGE_X
-                and abs(ball["y"] - foot_y) < reach + sit.radius * KICK_RANGE_Y
-                and self.rng.random() < self.cfg["kick"])
+  # ---------------------------------------------------------------- kicks
+  def _kick(self, sit):
+    """Only if it faces the rival goal and has the ball in front."""
+    me, ball, d, scale = sit.me, sit.ball, sit.direction, sit.scale
+    foot_x = me["x"] + d * config.PlayerSpec.KICK_REACH_X * scale
+    foot_y = me["y"] - config.PlayerSpec.KICK_REACH_Y * scale
+    reach = config.PlayerSpec.KICK_RADIUS * scale + ball["r"]
+    return (me["facing"] == d and not me["no_kick"]
+            and abs(ball["x"] - foot_x) < reach + sit.radius * KICK_RANGE_X
+            and abs(ball["y"] - foot_y) < reach + sit.radius * KICK_RANGE_Y
+            and self.rng.random() < self.cfg["kick"])
 
 
 def _danger(sit):
-    """The ball comes to my goal, or it is on my half closer to the rival."""
-    d, ball, me, rival = sit.direction, sit.ball, sit.me, sit.rival
-    if ball["vx"] * d < -DANGER_SPEED:
-        return True
-    my_half = d * (ball["x"] - config.Arena.WIDTH / 2) < 0
-    return my_half and (abs(rival["x"] - ball["x"])
-                        < abs(me["x"] - ball["x"]))
+  """The ball comes to my goal, or it is on my half closer to the rival."""
+  d, ball, me, rival = sit.direction, sit.ball, sit.me, sit.rival
+  if ball["vx"] * d < -DANGER_SPEED:
+    return True
+  my_half = d * (ball["x"] - config.Arena.WIDTH / 2) < 0
+  return my_half and (abs(rival["x"] - ball["x"])
+                      < abs(me["x"] - ball["x"]))
 
 
 def _low_ball_near(sit):
-    """The ball is low (below the head) and close to the bot."""
-    low = sit.ball["y"] > sit.head_top + sit.radius * LOW_BALL_MARGIN
-    near = abs(sit.ball["x"] - sit.me["x"]) < sit.radius * HOP_DISTANCE
-    return low and near
+  """The ball is low (below the head) and close to the bot."""
+  low = sit.ball["y"] > sit.head_top + sit.radius * LOW_BALL_MARGIN
+  near = abs(sit.ball["x"] - sit.me["x"]) < sit.radius * HOP_DISTANCE
+  return low and near
 
 
 def _rise_time(height):
-    """Seconds a jump takes to rise `height` px (or to its top)."""
-    speed, gravity = config.PlayerSpec.JUMP_SPEED, config.PlayerSpec.GRAVITY
-    disc = speed * speed - 2 * gravity * height
-    if disc > 0:
-        return (speed - math.sqrt(disc)) / gravity
-    return speed / gravity
+  """Seconds a jump takes to rise `height` px (or to its top)."""
+  speed, gravity = config.PlayerSpec.JUMP_SPEED, config.PlayerSpec.GRAVITY
+  disc = speed * speed - 2 * gravity * height
+  if disc > 0:
+    return (speed - math.sqrt(disc)) / gravity
+  return speed / gravity

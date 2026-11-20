@@ -24,23 +24,23 @@ if (!window.fdcKeyGuard) {
 
 
 def _window():
-    # pylint: disable-next=import-outside-toplevel
-    import platform     # in pygbag, "platform" exposes the JS window object
-    return platform.window
+  # pylint: disable-next=import-outside-toplevel
+  import platform     # in pygbag, "platform" exposes the JS window object
+  return platform.window
 
 
 def install_key_guard():
-    """Stops the browser actions of the game keys."""
-    if sys.platform != "emscripten":
-        return          # outside the browser (e.g. web mode tests) not needed
-    _window().eval(_GUARD_JS)
+  """Stops the browser actions of the game keys."""
+  if sys.platform != "emscripten":
+    return          # outside the browser (e.g. web mode tests) not needed
+  _window().eval(_GUARD_JS)
 
 
 def hide_loading_screen():
-    """The game drew its first frame: the loading screen goes away
+  """The game drew its first frame: the loading screen goes away
     (web/template.tmpl)."""
-    if sys.platform != "emscripten":
-        return
-    splash = getattr(_window(), "fdcSplash", None)
-    if splash is not None:
-        splash.done()
+  if sys.platform != "emscripten":
+    return
+  splash = getattr(_window(), "fdcSplash", None)
+  if splash is not None:
+    splash.done()

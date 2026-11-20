@@ -103,64 +103,64 @@ COMMAND_LINE = (
 
 
 def parse_args(argv=None):
-    """Options of the command line (see COMMAND_LINE)."""
-    parser = argparse.ArgumentParser(
-        description="Futbol De Cabeza: duelo de cabezones (local u online).")
-    for flags, settings in COMMAND_LINE:
-        parser.add_argument(*flags, **settings)
-    return parser.parse_args(argv)
+  """Options of the command line (see COMMAND_LINE)."""
+  parser = argparse.ArgumentParser(
+      description="Futbol De Cabeza: duelo de cabezones (local u online).")
+  for flags, settings in COMMAND_LINE:
+    parser.add_argument(*flags, **settings)
+  return parser.parse_args(argv)
 
 
 def main(argv=None):
-    """Parses the options and runs the game."""
-    options = parse_args(argv)
-    apply_gpu_options(options)
-    # The interface is imported here and not at the top: with the "spawn"
-    # method the simulation process imports this module again, and this way
-    # it never loads pygame nor opens windows.
-    # pylint: disable-next=import-outside-toplevel
-    from fdc.ui import app
-    app.setup_logging()
-    return app.run_app(options)
+  """Parses the options and runs the game."""
+  options = parse_args(argv)
+  apply_gpu_options(options)
+  # The interface is imported here and not at the top: with the "spawn"
+  # method the simulation process imports this module again, and this way
+  # it never loads pygame nor opens windows.
+  # pylint: disable-next=import-outside-toplevel
+  from fdc.ui import app
+  app.setup_logging()
+  return app.run_app(options)
 
 
 def _prepare_toolchain(options):
-    """nvcc and cl.exe in the PATH (jugar.bat does not activate them)."""
-    if options.backend == "cpu" or options.no_gpu:
-        return
-    if not (config.Gpu.ENABLED and config.Effects.ENABLED):
-        return                     # no CUDA and/or no effects: nothing to set
-    from fdc.gpu import env    # pylint: disable=import-outside-toplevel
-    env.setup()
+  """nvcc and cl.exe in the PATH (jugar.bat does not activate them)."""
+  if options.backend == "cpu" or options.no_gpu:
+    return
+  if not (config.Gpu.ENABLED and config.Effects.ENABLED):
+    return                     # no CUDA and/or no effects: nothing to set
+  from fdc.gpu import env    # pylint: disable=import-outside-toplevel
+  env.setup()
 
 
 def apply_gpu_options(options):
-    """--backend, --block and --render: before the effects start."""
-    from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
-    _prepare_toolchain(options)
-    if options.backend == "cpu" or not config.Gpu.ENABLED:
-        options.force_cpu = True   # FDC_GPU=0: numpy, never PyCUDA
-    if options.block:
-        backend.set_block(options.block)
-    if _asks_cuda(options):
-        _report_cuda(backend.detect())
+  """--backend, --block and --render: before the effects start."""
+  from fdc.gpu import backend    # pylint: disable=import-outside-toplevel
+  _prepare_toolchain(options)
+  if options.backend == "cpu" or not config.Gpu.ENABLED:
+    options.force_cpu = True   # FDC_GPU=0: numpy, never PyCUDA
+  if options.block:
+    backend.set_block(options.block)
+  if _asks_cuda(options):
+    _report_cuda(backend.detect())
 
 
 def _asks_cuda(options):
-    """True if this run wants CUDA: --backend gpu, FDC_GPU=1 and effects."""
-    return (options.backend == "gpu" and not options.no_gpu
-            and config.Gpu.ENABLED and config.Effects.ENABLED)
+  """True if this run wants CUDA: --backend gpu, FDC_GPU=1 and effects."""
+  return (options.backend == "gpu" and not options.no_gpu
+          and config.Gpu.ENABLED and config.Effects.ENABLED)
 
 
 def _report_cuda(found):
-    """One line when CUDA was asked for and it does not work here."""
-    if found["kind"] == "gpu":
-        return
-    print("GPU pedida con --backend gpu pero no disponible: "
-          f"{found['reason']}")
-    print("Se usan los efectos en CPU (numpy).")
+  """One line when CUDA was asked for and it does not work here."""
+  if found["kind"] == "gpu":
+    return
+  print("GPU pedida con --backend gpu pero no disponible: "
+        f"{found['reason']}")
+  print("Se usan los efectos en CPU (numpy).")
 
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
-    sys.exit(main())
+  multiprocessing.freeze_support()
+  sys.exit(main())

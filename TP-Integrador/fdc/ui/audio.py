@@ -53,38 +53,38 @@ SOUND_NAMES = ("kick", "whoosh", "bounce", "header", "post", "goal",
 
 
 class Tone(typing.NamedTuple):
-    """Tone that goes from f0 to f1 Hz (if f1 is missing, it stays)."""
-    secs: float
-    f0: float
-    f1: typing.Optional[float] = None
-    wave: str = "sine"              # "sine", "square", "tri" or "saw"
-    vol: float = TONE_VOLUME
-    attack: float = TONE_ATTACK
-    decay: typing.Optional[float] = None   # None: fades in a straight line
-    vib: float = 0.0                # vibrato: how much the frequency varies...
-    vib_hz: float = 0.0             # ...and how many times per second
-    at: float = 0.0
+  """Tone that goes from f0 to f1 Hz (if f1 is missing, it stays)."""
+  secs: float
+  f0: float
+  f1: typing.Optional[float] = None
+  wave: str = "sine"              # "sine", "square", "tri" or "saw"
+  vol: float = TONE_VOLUME
+  attack: float = TONE_ATTACK
+  decay: typing.Optional[float] = None   # None: fades in a straight line
+  vib: float = 0.0                # vibrato: how much the frequency varies...
+  vib_hz: float = 0.0             # ...and how many times per second
+  at: float = 0.0
 
 
 class Noise(typing.NamedTuple):
-    """Smoothed white noise (lp: 1 = harsh, near 0 = dull, like wind)."""
-    secs: float
-    vol: float = NOISE_VOLUME
-    lp: float = NOISE_SMOOTHING
-    decay: float = NOISE_DECAY
-    attack: float = NOISE_ATTACK
-    swell: bool = False             # True: rises and falls (does not fade)
-    at: float = 0.0
+  """Smoothed white noise (lp: 1 = harsh, near 0 = dull, like wind)."""
+  secs: float
+  vol: float = NOISE_VOLUME
+  lp: float = NOISE_SMOOTHING
+  decay: float = NOISE_DECAY
+  attack: float = NOISE_ATTACK
+  swell: bool = False             # True: rises and falls (does not fade)
+  at: float = 0.0
 
 
 class Notes(typing.NamedTuple):
-    """Series of equal notes, one after the other."""
-    freqs: typing.Tuple[float, ...]
-    dur: float
-    wave: str = "sine"
-    vol: float = NOTES_VOLUME
-    gap: float = 0.0                # s of silence between notes
-    at: float = 0.0
+  """Series of equal notes, one after the other."""
+  freqs: typing.Tuple[float, ...]
+  dur: float
+  wave: str = "sine"
+  vol: float = NOTES_VOLUME
+  gap: float = 0.0                # s of silence between notes
+  at: float = 0.0
 
 
 # Referee whistle: high tone with vibrato.
@@ -153,190 +153,190 @@ SOUND_RECIPES = {
 
 
 def _wave(wave, phase):
-    """Value of one sample of the wave at that phase."""
-    if wave == "sine":
-        return math.sin(phase)
-    if wave == "square":
-        v = 1.0 if math.sin(phase) >= 0 else -1.0
-        return v * HALF_LEVEL
-    if wave == "tri":
-        return 2 / math.pi * math.asin(math.sin(phase))
-    v = ((phase / math.pi) % 2) - 1     # saw
+  """Value of one sample of the wave at that phase."""
+  if wave == "sine":
+    return math.sin(phase)
+  if wave == "square":
+    v = 1.0 if math.sin(phase) >= 0 else -1.0
     return v * HALF_LEVEL
+  if wave == "tri":
+    return 2 / math.pi * math.asin(math.sin(phase))
+  v = ((phase / math.pi) % 2) - 1     # saw
+  return v * HALF_LEVEL
 
 
 def mix(*tracks, offsets=None):
-    """Adds the tracks, each one starting at its offset (samples)."""
-    offsets = offsets or [0] * len(tracks)
-    n = max(len(t) + o for t, o in zip(tracks, offsets))
-    out = [0.0] * n
-    for tr, o in zip(tracks, offsets):
-        for i, v in enumerate(tr):
-            out[i + o] += v
-    return out
+  """Adds the tracks, each one starting at its offset (samples)."""
+  offsets = offsets or [0] * len(tracks)
+  n = max(len(t) + o for t, o in zip(tracks, offsets))
+  out = [0.0] * n
+  for tr, o in zip(tracks, offsets):
+    for i, v in enumerate(tr):
+      out[i + o] += v
+  return out
 
 
 class Synth:
-    """Tiny synthesizer that turns the recipes into samples."""
+  """Tiny synthesizer that turns the recipes into samples."""
 
-    def __init__(self, rate):
-        self.rate = rate
-        self.rng = random.Random(NOISE_SEED)
+  def __init__(self, rate):
+    self.rate = rate
+    self.rng = random.Random(NOISE_SEED)
 
-    def n(self, secs):
-        """Samples in that many seconds."""
-        return int(self.rate * secs)
+  def n(self, secs):
+    """Samples in that many seconds."""
+    return int(self.rate * secs)
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def tone(self, secs, f0, f1=None, wave="sine", vol=TONE_VOLUME,
-             attack=TONE_ATTACK, decay=None, vib=0.0, vib_hz=0.0):
-        f1 = f0 if f1 is None else f1
-        n = self.n(secs)
-        out = [0.0] * n
-        phase = 0.0
-        for i in range(n):
-            t = i / n
-            phase += 2 * math.pi * self._frequency(i, t, f0, f1, vib,
-                                                   vib_hz) / self.rate
-            env = min(1.0, i / max(1, self.n(attack)))
-            env *= math.exp(-t * decay) if decay else (1 - t)
-            out[i] = _wave(wave, phase) * env * vol
-        return out
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def tone(self, secs, f0, f1=None, wave="sine", vol=TONE_VOLUME,
+           attack=TONE_ATTACK, decay=None, vib=0.0, vib_hz=0.0):
+    f1 = f0 if f1 is None else f1
+    n = self.n(secs)
+    out = [0.0] * n
+    phase = 0.0
+    for i in range(n):
+      t = i / n
+      phase += 2 * math.pi * self._frequency(i, t, f0, f1, vib,
+                                             vib_hz) / self.rate
+      env = min(1.0, i / max(1, self.n(attack)))
+      env *= math.exp(-t * decay) if decay else (1 - t)
+      out[i] = _wave(wave, phase) * env * vol
+    return out
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def _frequency(self, i, t, f0, f1, vib, vib_hz):
-        f = f0 * (f1 / f0) ** t if f0 > 0 and f1 > 0 else f0
-        if vib:
-            f *= 1 + vib * math.sin(2 * math.pi * vib_hz * i / self.rate)
-        return f
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def _frequency(self, i, t, f0, f1, vib, vib_hz):
+    f = f0 * (f1 / f0) ** t if f0 > 0 and f1 > 0 else f0
+    if vib:
+      f *= 1 + vib * math.sin(2 * math.pi * vib_hz * i / self.rate)
+    return f
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def noise(self, secs, vol=NOISE_VOLUME, lp=NOISE_SMOOTHING,
-              decay=NOISE_DECAY, attack=NOISE_ATTACK, swell=False):
-        n = self.n(secs)
-        out = [0.0] * n
-        y = 0.0
-        for i in range(n):
-            t = i / n
-            y += lp * (self.rng.uniform(-1, 1) - y)
-            env = min(1.0, i / max(1, self.n(attack)))
-            env *= math.sin(math.pi * t) if swell else math.exp(-t * decay)
-            out[i] = y * env * vol
-        return out
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def noise(self, secs, vol=NOISE_VOLUME, lp=NOISE_SMOOTHING,
+            decay=NOISE_DECAY, attack=NOISE_ATTACK, swell=False):
+    n = self.n(secs)
+    out = [0.0] * n
+    y = 0.0
+    for i in range(n):
+      t = i / n
+      y += lp * (self.rng.uniform(-1, 1) - y)
+      env = min(1.0, i / max(1, self.n(attack)))
+      env *= math.sin(math.pi * t) if swell else math.exp(-t * decay)
+      out[i] = y * env * vol
+    return out
 
-    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
-    def seq(self, notes, dur, wave="sine", vol=NOTES_VOLUME, gap=0.0):
-        tracks, offs = [], []
-        for k, f in enumerate(notes):
-            tracks.append(self.tone(dur, f, wave=wave, vol=vol,
-                                    decay=NOTE_DECAY))
-            offs.append(self.n(k * (dur + gap)))
-        return mix(*tracks, offsets=offs)
+  # pylint: disable-next=too-many-arguments,too-many-positional-arguments
+  def seq(self, notes, dur, wave="sine", vol=NOTES_VOLUME, gap=0.0):
+    tracks, offs = [], []
+    for k, f in enumerate(notes):
+      tracks.append(self.tone(dur, f, wave=wave, vol=vol,
+                              decay=NOTE_DECAY))
+      offs.append(self.n(k * (dur + gap)))
+    return mix(*tracks, offsets=offs)
 
-    def layer(self, part):
-        """Samples of one layer of a recipe."""
-        if isinstance(part, Tone):
-            return self.tone(part.secs, part.f0, part.f1, part.wave, part.vol,
-                             part.attack, part.decay, part.vib, part.vib_hz)
-        if isinstance(part, Noise):
-            return self.noise(part.secs, part.vol, part.lp, part.decay,
-                              part.attack, part.swell)
-        return self.seq(part.freqs, part.dur, part.wave, part.vol, part.gap)
+  def layer(self, part):
+    """Samples of one layer of a recipe."""
+    if isinstance(part, Tone):
+      return self.tone(part.secs, part.f0, part.f1, part.wave, part.vol,
+                       part.attack, part.decay, part.vib, part.vib_hz)
+    if isinstance(part, Noise):
+      return self.noise(part.secs, part.vol, part.lp, part.decay,
+                        part.attack, part.swell)
+    return self.seq(part.freqs, part.dur, part.wave, part.vol, part.gap)
 
 
 def build_samples(rate):
-    """{name: samples} of every recipe."""
-    s = Synth(rate)
-    return {name: mix(*[s.layer(part) for part in parts],
-                      offsets=[s.n(part.at) for part in parts])
-            for name, parts in SOUND_RECIPES.items()}
+  """{name: samples} of every recipe."""
+  s = Synth(rate)
+  return {name: mix(*[s.layer(part) for part in parts],
+                    offsets=[s.n(part.at) for part in parts])
+          for name, parts in SOUND_RECIPES.items()}
 
 
 def _load_override(name):
-    for ext in OVERRIDE_EXTENSIONS:
-        path = assets.override_path("sounds", f"{name}.{ext}")
-        if path:
-            try:
-                return pygame.mixer.Sound(path)
-            except pygame.error as exc:
-                log.warning("could not load %s: %s", path, exc)
-    return None
+  for ext in OVERRIDE_EXTENSIONS:
+    path = assets.override_path("sounds", f"{name}.{ext}")
+    if path:
+      try:
+        return pygame.mixer.Sound(path)
+      except pygame.error as exc:
+        log.warning("could not load %s: %s", path, exc)
+  return None
 
 
 def _to_sound(data, channels):
-    peak = max(SILENCE, max(abs(v) for v in data))
-    # Normalizes only if it clips.
-    scale = PCM_PEAK / peak if peak > 1.0 else PCM_PEAK
-    buf = array.array("h")
-    for v in data:
-        buf.extend([int(v * scale)] * channels)
-    return pygame.mixer.Sound(buffer=buf.tobytes())
+  peak = max(SILENCE, max(abs(v) for v in data))
+  # Normalizes only if it clips.
+  scale = PCM_PEAK / peak if peak > 1.0 else PCM_PEAK
+  buf = array.array("h")
+  for v in data:
+    buf.extend([int(v * scale)] * channels)
+  return pygame.mixer.Sound(buffer=buf.tobytes())
 
 
 def _open_mixer():
-    """(frequency, channels) of the mixer, or None if there is no audio."""
-    try:
-        if not pygame.mixer.get_init():
-            pygame.mixer.init(AUDIO_RATE, AUDIO_BITS, AUDIO_CHANNELS,
-                              AUDIO_BUFFER)
-        freq, _, channels = pygame.mixer.get_init()
-        pygame.mixer.set_num_channels(MIXER_CHANNELS)
-    except (pygame.error, TypeError) as exc:
-        log.warning("audio not available, the game goes on in silence: %s",
-                    exc)
-        return None
-    return freq, channels
+  """(frequency, channels) of the mixer, or None if there is no audio."""
+  try:
+    if not pygame.mixer.get_init():
+      pygame.mixer.init(AUDIO_RATE, AUDIO_BITS, AUDIO_CHANNELS,
+                        AUDIO_BUFFER)
+    freq, _, channels = pygame.mixer.get_init()
+    pygame.mixer.set_num_channels(MIXER_CHANNELS)
+  except (pygame.error, TypeError) as exc:
+    log.warning("audio not available, the game goes on in silence: %s",
+                exc)
+    return None
+  return freq, channels
 
 
 class Audio:
-    """Plays the sounds; does nothing when audio is off or missing."""
+  """Plays the sounds; does nothing when audio is off or missing."""
 
-    def __init__(self, enabled=True):
-        self.enabled = False
-        self.muted = False
-        self.sounds = {}
-        self.crowd_channel = None
-        mixer = _open_mixer() if enabled else None
-        if mixer is None:
-            return
-        try:
-            self._create_sounds(*mixer)
-            self.enabled = True
-        except pygame.error as exc:
-            log.warning("could not create the sounds: %s", exc)
+  def __init__(self, enabled=True):
+    self.enabled = False
+    self.muted = False
+    self.sounds = {}
+    self.crowd_channel = None
+    mixer = _open_mixer() if enabled else None
+    if mixer is None:
+      return
+    try:
+      self._create_sounds(*mixer)
+      self.enabled = True
+    except pygame.error as exc:
+      log.warning("could not create the sounds: %s", exc)
 
-    def _create_sounds(self, freq, channels):
-        for name, data in build_samples(freq).items():
-            self.sounds[name] = (_load_override(name)
-                                 or _to_sound(data, channels))
-        for name, volume in SOUND_VOLUMES.items():
-            self.sounds[name].set_volume(volume)
+  def _create_sounds(self, freq, channels):
+    for name, data in build_samples(freq).items():
+      self.sounds[name] = (_load_override(name)
+                           or _to_sound(data, channels))
+    for name, volume in SOUND_VOLUMES.items():
+      self.sounds[name].set_volume(volume)
 
-    def play(self, name, volume=1.0):
-        if not self.enabled or self.muted:
-            return
-        snd = self.sounds.get(name)
-        if snd is None:
-            return
-        ch = snd.play()
-        if ch is not None and volume != 1.0:
-            ch.set_volume(volume)
+  def play(self, name, volume=1.0):
+    if not self.enabled or self.muted:
+      return
+    snd = self.sounds.get(name)
+    if snd is None:
+      return
+    ch = snd.play()
+    if ch is not None and volume != 1.0:
+      ch.set_volume(volume)
 
-    def crowd(self, on):
-        """Starts or fades out the background crowd loop."""
-        if not self.enabled:
-            return
-        if on and not self.muted:
-            if self.crowd_channel is None or not self.crowd_channel.get_busy():
-                self.crowd_channel = self.sounds["crowd"].play(
-                    loops=CROWD_LOOP, fade_ms=CROWD_FADE_IN_MS)
-        elif self.crowd_channel is not None:
-            self.crowd_channel.fadeout(CROWD_FADE_OUT_MS)
-            self.crowd_channel = None
+  def crowd(self, on):
+    """Starts or fades out the background crowd loop."""
+    if not self.enabled:
+      return
+    if on and not self.muted:
+      if self.crowd_channel is None or not self.crowd_channel.get_busy():
+        self.crowd_channel = self.sounds["crowd"].play(
+            loops=CROWD_LOOP, fade_ms=CROWD_FADE_IN_MS)
+    elif self.crowd_channel is not None:
+      self.crowd_channel.fadeout(CROWD_FADE_OUT_MS)
+      self.crowd_channel = None
 
-    def toggle_mute(self):
-        self.muted = not self.muted
-        if self.muted:
-            pygame.mixer.stop()
-            self.crowd_channel = None
-        return self.muted
+  def toggle_mute(self):
+    self.muted = not self.muted
+    if self.muted:
+      pygame.mixer.stop()
+      self.crowd_channel = None
+    return self.muted
