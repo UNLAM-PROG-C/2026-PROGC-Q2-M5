@@ -106,8 +106,7 @@ __global__ void glow_rows(const float *src, float *dst, int w, int h, int r)
     int i = (y * w + k) * CH;
     a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
   }
-  float n = (float)(x1 - x0 + 1);
-  int o = (y * w + x) * CH;
+  float n = (float)(x1 - x0 + 1); int o = (y * w + x) * CH;
   dst[o] = a0 / n; dst[o + 1] = a1 / n; dst[o + 2] = a2 / n;
 }
 
@@ -123,8 +122,7 @@ __global__ void glow_cols(const float *src, float *dst, int w, int h, int r)
     int i = (k * w + x) * CH;
     a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
   }
-  float n = (float)(y1 - y0 + 1);
-  int o = (y * w + x) * CH;
+  float n = (float)(y1 - y0 + 1); int o = (y * w + x) * CH;
   dst[o] = a0 / n; dst[o + 1] = a1 / n; dst[o + 2] = a2 / n;
 }
 
@@ -442,8 +440,7 @@ __global__ void k_invert(const unsigned char *src, unsigned char *dst,
 
 // Brightness and contrast in 0..1: (v - 0.5) * c + 0.5 + b.
 __global__ void k_brightness_contrast(const unsigned char *src,
-                                      unsigned char *dst, int w, int h,
-                                      float brightness, float contrast)
+    unsigned char *dst, int w, int h, float brightness, float contrast)
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
@@ -993,9 +990,8 @@ __device__ float crowd_jump(unsigned int hsh, float t, float boost,
                             int team, int side, const float *cfg)
 {
   float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
-  float amp = cfg[CC_JUMP]
-              * (CROWD_JUMP_LOW + CROWD_JUMP_SPREAD
-                 * (float)((hsh / 7u) % CROWD_FULL) * CROWD_SPREAD);
+  float amp = cfg[CC_JUMP] * (CROWD_JUMP_LOW + CROWD_JUMP_SPREAD
+              * (float)((hsh / 7u) % CROWD_FULL) * CROWD_SPREAD);
   float hz = cfg[CC_HZ];
   if (team == side)
   {  // scoring side
