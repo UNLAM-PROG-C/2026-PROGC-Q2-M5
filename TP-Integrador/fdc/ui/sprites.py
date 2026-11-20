@@ -112,7 +112,10 @@ def _light(color, share, white_share):
 
 
 class CharacterSprites:
-  """Heads, boots, composed players and portraits (all cached)."""
+  """Cache heads, boots, portraits and custom player sprites.
+
+  Player sprites are composed surfaces, not pygame.sprite.Sprite instances.
+  """
 
   def __init__(self):
     self.meta = _read_meta()

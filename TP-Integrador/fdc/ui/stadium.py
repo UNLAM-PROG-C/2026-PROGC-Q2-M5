@@ -81,7 +81,7 @@ STAIRS_EVERY = 128                 # ...and one every 128 px
 STAIRS_W = 8                       # width of the stairs (px)
 STEP_H = 3                         # height of each step (px)
 # --- stands at the final resolution (only the OPTIMIZADO mode sees them) ---
-# Same geometry and colours as the animated crowd of FULL (`k_tribuna`), so
+# Same geometry and colours as the animated crowd of FULL (`k_crowd`), so
 # both modes show the same people instead of blocks of 2 x 2 px.
 CROWD_TOP = config.Gpu.CROWD_TOP            # px: top of the stands
 CROWD_BOTTOM = config.Gpu.CROWD_BOTTOM      # px: its bottom (the wall)
@@ -389,7 +389,7 @@ def _crowd_band(screen):
 
     The whole background is drawn at 640 x 360 and scaled x2, so its people
     end up as 2 x 2 blocks in OPTIMIZADO. This band keeps the same geometry
-    as `k_tribuna` at the final size, so both modes show the same crowd.
+    as `k_crowd` at the final size, so both modes show the same crowd.
     """
   height = CROWD_BOTTOM - CROWD_TOP
   band = pygame.Surface((W, height))

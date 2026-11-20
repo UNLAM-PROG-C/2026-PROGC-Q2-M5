@@ -19,7 +19,7 @@ from fdc import config
 STAGES = ("glow", "composite", "particles", "confetti", "lights", "heat",
           "trail", "histogram", "shock", "fire", "confusion", "confusion_rot",
           "ice", "blackout", "night", "exposure", "crt",
-          "var", "tribuna")
+          "var", "crowd")
 PER_SECOND = 1000.0     # milliseconds in a second
 DECIMALS = 3            # decimals of the stage times
 FPS_DECIMALS = 1        # decimals of the frames per second
@@ -132,7 +132,7 @@ class MeasurementLog:
     """mediciones/demo_<date>_<host>.csv next to the repository (or in the
         user folder when the game runs packaged)."""
     stamp = datetime.datetime.now().strftime(STAMP)
-    return os.path.join(config.MEDICIONES_DIR, CSV_FOLDER,
+    return os.path.join(config.MEASUREMENTS_DIR, CSV_FOLDER,
                         f"{CSV_PREFIX}_{stamp}_{_host()}.csv")
 
   def _ensure_folder(self):

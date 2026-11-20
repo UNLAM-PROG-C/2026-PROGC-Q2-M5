@@ -95,9 +95,9 @@ def _yes(v):
 class FrameLimiter:
   """Limits to N frames per second by SLEEPING until the frame deadline.
 
-    It is used instead of pygame.time.Clock.tick() because on macOS that
-    method oversleeps (about 47 FPS when asking for 60). time.sleep frees
-    the CPU: it is not a busy wait.
+    Like pygame.time.Clock.tick(), it caps FPS, but returns seconds rather
+    than milliseconds. It avoids macOS oversleep (about 47 FPS at 60) and
+    uses time.sleep rather than a busy wait.
     """
 
   def __init__(self, fps, sleep=True):
@@ -322,7 +322,7 @@ class App:
   def _init_prediction(self, options):
     """Online: predict the own player (the menu can turn it off)."""
     enabled = config.Online.PREDICT_ENABLED
-    self.prediction = enabled and not getattr(options, "sin_prediccion",
+    self.prediction = enabled and not getattr(options, "no_prediction",
                                               False)
 
   def _init_profile(self, options):

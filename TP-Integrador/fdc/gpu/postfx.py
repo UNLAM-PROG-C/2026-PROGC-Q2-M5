@@ -59,7 +59,7 @@ _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión
                  "burned": "quemado",
                  "trail": "estela", "crt": "repetición", "var": "VAR"}
 _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
-# Glow with a goal or a power, and its vineta: the histogram applies it at the
+# Glow with a goal or a power, and its vignette: the histogram applies it at the
 # end of the chain, so a frame without halo does not pay an extra pass.
 SPECTACLE_FX = ("ice", "blackout", "confusion", "fire", "night")
 SHOW_VIGNETTE = 0.0     # the glow stage never darkens the corners
@@ -264,7 +264,7 @@ class PostFx:
     side, boost = crowd.scene(self.celebration, self.clock)
     cfg, pal = crowd.params()
     band = surface.subsurface(rect)
-    image = self._timed(crowd.CROWD, self.ops.tribuna, to_array(band),
+    image = self._timed(crowd.CROWD, self.ops.crowd, to_array(band),
                         self.clock, side, boost, cfg, pal)
     to_screen(image, band)
 

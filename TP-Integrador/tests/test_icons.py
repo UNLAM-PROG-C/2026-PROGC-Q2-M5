@@ -10,8 +10,8 @@ import struct
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ICONO = os.path.join(ROOT, "assets", "icono")
-ICONSET = os.path.join(ICONO, "mac", "FutbolDeCabeza.iconset")
+ICON = os.path.join(ROOT, "assets", "icono")
+ICONSET = os.path.join(ICON, "mac", "FutbolDeCabeza.iconset")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 ICONSET_FILES = {
@@ -54,7 +54,7 @@ class IcoTest(unittest.TestCase):
 
   @classmethod
   def setUpClass(cls):
-    with open(os.path.join(ICONO, "icono.ico"), "rb") as handle:
+    with open(os.path.join(ICON, "icono.ico"), "rb") as handle:
       cls.entries = ico_entries(handle.read())
 
   def test_has_every_size(self):
@@ -76,9 +76,9 @@ class PngTest(unittest.TestCase):
   """The PNGs Python uses, and the macOS iconset."""
 
   def test_master_and_window_logo(self):
-    self.assertEqual(png_size_of(os.path.join(ICONO, "logo-1024.png")),
+    self.assertEqual(png_size_of(os.path.join(ICON, "logo-1024.png")),
                      (1024, 1024))
-    self.assertEqual(png_size_of(os.path.join(ICONO, "logo.png")),
+    self.assertEqual(png_size_of(os.path.join(ICON, "logo.png")),
                      (32, 32))
 
   def test_iconset_has_the_ten_files_of_macos(self):

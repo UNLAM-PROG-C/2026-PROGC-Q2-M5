@@ -50,7 +50,7 @@ def kernel_source():
 def c_linkage_source():
   """The source inside `extern "C"`, as PyCUDA's SourceModule compiles it.
 
-    nvcc treats a `.cu` as C++ and mangles the kernel names (`_Z9k_tribuna..`)
+    nvcc treats a `.cu` as C++ and mangles the kernel names (`_Z7k_crowd..`)
     unless they sit in an `extern "C"` block; the driver looks them up by
     their plain name. The fatbin must be built from this text.
     """
@@ -91,14 +91,14 @@ def failure_reason(exc):
   text = " ".join(str(exc).split()) or type(exc).__name__
   reason = f"{type(exc).__name__}: {text}"[:REASON_MAX]
   logging.getLogger("fdc.gpu").warning(
-      "GPU no disponible, se usan los efectos en CPU. Motivo: %s", reason)
+      "GPU unavailable; using CPU effects. Reason: %s", reason)
   return reason
 
 
 def log_backend(mode, device):
   """One log line with the backend the effects run on."""
   logging.getLogger("fdc.gpu").info(
-      "efectos: backend %s (%s)", mode.upper(), device)
+      "Effects backend: %s (%s)", mode.upper(), device)
 
 
 def available():
@@ -198,7 +198,7 @@ class Gpu(primitives.Primitives):
     return self._fns[name]
 
   def _buf(self, name, shape, dtype, host=None):
-    """Device buffer (allocated once per name and shape)."""
+    """Cache a global memory buffer by name, shape and dtype."""
     key = (name, tuple(shape), np.dtype(dtype).str)
     buf = self._buffers.get(key)
     if buf is None:
@@ -208,12 +208,12 @@ class Gpu(primitives.Primitives):
       buf = self.driver.mem_alloc(size)
       self._buffers[key] = buf
     if host is not None:
-      # Step 2: Upload the input (cudaMemcpyHostToDevice).
+      # Step 2: Host-to-device upload (cudaMemcpyHostToDevice).
       self.driver.memcpy_htod(buf, np.ascontiguousarray(host))
     return buf
 
   def _get(self, dev, shape, dtype):
-    """Copies a device buffer back to the host."""
+    """Return a new NumPy array; the device buffer stays in the cache."""
     # Step 1: Allocate host output (malloc), deferred until the readback.
     host = np.empty(shape, dtype=dtype)
     # Step 4: Read the output (cudaMemcpyDeviceToHost).
@@ -226,7 +226,11 @@ class Gpu(primitives.Primitives):
 
   # --------------------------------------------------------------- images
   def blur(self, img, radius):
-    """Separable box blur of an RGB image (radius in pixels)."""
+    """Separable box blur of an RGB image (radius in pixels).
+
+    Both passes run in the same default stream; the second reads the first
+    pass from global memory without a host round trip.
+    """
     h, w = img.shape[:2]
     shape = (h, w, CHANNELS)
     src = self._buf("blur_src", shape, np.uint8, img)
@@ -472,11 +476,12 @@ class Gpu(primitives.Primitives):
                           block=BLOCK)
     return self._get(out, shape, np.uint8)
 
-  # ------------------------------------------------------- primitivas (F1)
+  # Image primitives (F1).
   def _simple(self, kernel, img, *args):
     """The game allocates device buffers once per shape and reuses them.
 
-    The teaching probe instead runs the full allocate-to-free cycle.
+    One thread per pixel writes to a separate output buffer. The cache owns
+    both device buffers; the probe measures explicit allocation and cleanup.
     """
     h, w = img.shape[:2]
     shape = (h, w, CHANNELS)
@@ -514,7 +519,7 @@ class Gpu(primitives.Primitives):
 
   def _gray_roundtrip(self, img, host, buffers, timer):
     src, out = buffers
-    # Step 2: Upload the input (cudaMemcpyHostToDevice).
+    # Step 2: Host-to-device upload (cudaMemcpyHostToDevice).
     timer.measure('upload', self.driver.memcpy_htod, src, img)
     # Step 3: Run the kernel (kernel<<<grid, block>>>).
     timer.measure('kernel', self._launch_gray, self._fn('k_gray'),
@@ -595,10 +600,9 @@ class Gpu(primitives.Primitives):
   def ice(self, img, strength, tint, amount):
     """Ice power: bright edges and blue tint, in two device passes.
 
-        The whole path stays on the board: the edges are normalised with the
-        maximum that `atomicMax` leaves in `ice_top`, so the image travels up
-        and down only once (before it was six round trips).
-        """
+    The same default stream orders both passes: the second reads the edges
+    and the atomicMax result from global memory before the final download.
+    """
     h, w = img.shape[:2]
     shape = (h, w, CHANNELS)
     src = self._buf("ice_src", shape, np.uint8, img)
@@ -683,9 +687,9 @@ class Gpu(primitives.Primitives):
                               block=BLOCK)
     return self._get(out, shape, np.uint8)
 
-  # --------------------------------------- tribuna animada (F11, solo FULL)
-  def tribuna(self, img, t, side, boost, cfg, pal):
-    """Crowd of the stands: seats, people and flags (k_tribuna)."""
+  # Animated crowd (F11, FULL only).
+  def crowd(self, img, t, side, boost, cfg, pal):
+    """Crowd of the stands: seats, people and flags (k_crowd)."""
     h, w = img.shape[:2]
     shape = (h, w, CHANNELS)
     src = self._buf("crowd_src", shape, np.uint8, img)
@@ -694,7 +698,7 @@ class Gpu(primitives.Primitives):
                       np.asarray(cfg, np.float32))
     colours = self._buf("crowd_pal", (CROWD_PAL,), np.float32,
                         np.asarray(pal, np.float32))
-    self._fn("k_tribuna")(src, out, np.int32(w), np.int32(h),
+    self._fn("k_crowd")(src, out, np.int32(w), np.int32(h),
                           np.float32(t), np.int32(side),
                           np.float32(boost), table, colours,
                           grid=self._grid(w, h), block=BLOCK)

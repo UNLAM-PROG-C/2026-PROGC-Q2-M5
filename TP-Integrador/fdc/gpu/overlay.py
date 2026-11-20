@@ -195,7 +195,7 @@ def _kernels(data):
   keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
           "histogram", "shock", "fire", "confusion", "confusion_rot",
           "ice", "blackout", "night", "exposure", "crt",
-          "var", "tribuna")
+          "var", "crowd")
   return [(key, float(data.get(key) or 0.0)) for key in keys
           if (data.get(key) or 0.0) > 0.0]
 

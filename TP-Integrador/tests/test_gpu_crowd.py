@@ -43,7 +43,7 @@ def band():
 def paint(ops, image, t=TIME, side=SIDE, boost=BOOST):
   """Paints the band with one backend and returns the picture."""
   cfg, pal = crowd.params()
-  return ops.tribuna(image, t, side, boost, cfg, pal)
+  return ops.crowd(image, t, side, boost, cfg, pal)
 
 
 def _changed(first, second, columns):

@@ -1,6 +1,6 @@
 """Every kernel the backend asks for exists in the shipped kernels.fatbin.
 
-A fatbin built from the bare `.cu` has C++-mangled names (`_Z9k_tribuna...`)
+A fatbin built from the bare `.cu` has C++-mangled names (`_Z7k_crowd...`)
 and the driver then fails with "named symbol not found" at the first frame
 that uses the kernel. These tests catch that without playing a match.
 """

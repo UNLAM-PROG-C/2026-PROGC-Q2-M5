@@ -110,7 +110,7 @@ class MeasurementsTest(unittest.TestCase):
 
   def test_default_path(self):
     path = metrics.MeasurementLog.default_path()
-    folder = os.path.join(config.MEDICIONES_DIR, metrics.CSV_FOLDER)
+    folder = os.path.join(config.MEASUREMENTS_DIR, metrics.CSV_FOLDER)
     self.assertEqual(os.path.dirname(path), folder)
     self.assertTrue(os.path.basename(path).endswith(".csv"))
 

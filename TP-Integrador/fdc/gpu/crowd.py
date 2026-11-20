@@ -1,6 +1,6 @@
 """Animated crowd of the stands (F11): only in the FULL mode.
 
-The band of the stadium is repainted every frame by `k_tribuna` (or by its
+The band of the stadium is repainted every frame by `k_crowd` (or by its
 numpy version): seats, one person per seat and some flags, all from a hash
 of the seat, so the kernel needs no shared memory and no atomics.
 
@@ -13,7 +13,7 @@ import pygame
 from fdc import config
 
 G = config.Gpu
-CROWD = "tribuna"           # name of the stage in the metrics and the overlay
+CROWD = "crowd"           # name of the stage in the metrics and the overlay
 NO_TEAM = -1                # nobody is celebrating: the stands just move
 NO_BOOST = 0.0              # stands at rest (no goal)
 FULL_BOOST = 1.0            # stands jumping as hard as they can

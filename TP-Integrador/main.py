@@ -46,7 +46,7 @@ COMMAND_LINE = (
                           "choices": ("baja", "media", "alta"),
                           "help": "calidad de los efectos (baja|media|alta)"}),
     (("--sin-prediccion",),
-     {"dest": "sin_prediccion", "action": "store_true",
+     {"dest": "no_prediction", "action": "store_true",
       "help": "online: no predice el jugador propio (si se ve raro con "
               "una conexión mala)"}),
     (("--gpu-cpu",), {"dest": "force_cpu", "action": "store_true",

@@ -717,4 +717,4 @@ def _ensure(path, fallback):
 
 
 LOG_DIR = _ensure(log_dir(), os.path.join(ROOT_DIR, "logs"))
-MEDICIONES_DIR = _ensure(data_dir(), ROOT_DIR)
+MEASUREMENTS_DIR = _ensure(data_dir(), ROOT_DIR)

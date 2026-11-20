@@ -24,7 +24,7 @@ MEAN_AXES = (1, 3)      # block axes of the minimap reshape
 HEAT_FIELDS = 2         # x and y of a recorded point
 GRID_MIN = 1e-6         # smallest cell size (never divide by zero)
 ONE_COUNT = 1           # each point counts once (atomicAdd of 1 in the GPU)
-# --- F11: the crowd of the stands (same numbers as k_tribuna) -------------
+# --- F11: the crowd of the stands (same numbers as k_crowd) -------------
 CROWD_W, CROWD_H, CROWD_JUMP = 0, 1, 2      # seat size and jump (cfg cols)
 CROWD_HZ, CROWD_GOAL_JUMP, CROWD_GOAL_HZ = 3, 4, 5
 CROWD_WAVE, CROWD_FLAG_W, CROWD_FLAG_H = 6, 7, 8
@@ -331,8 +331,8 @@ class Cpu(primitives.Primitives):
         acc[y0:y1, x0:x1] += c
     return _clamp(_rgb(img) + acc)
 
-  # ------------------------------------- tribuna animada (F11, solo FULL)
-  def tribuna(self, img, t, side, boost, cfg, pal):
+  # Animated crowd (F11, FULL only).
+  def crowd(self, img, t, side, boost, cfg, pal):
     """Crowd of the stands: seats, people and flags (numpy version)."""
     return _Crowd(cfg, pal, t, side, boost).paint(img)
 
@@ -395,7 +395,7 @@ def _vignette_of(h, w, amount):
 
 
 class _Crowd:
-  """numpy version of k_tribuna: the stands, painted in place.
+  """numpy version of k_crowd: the stands, painted in place.
 
     The band is a grid of seats of `CROWD_SEAT` px. The steps are the same
     in every frame (they are cached) and every person is written only over

@@ -99,13 +99,13 @@ class WithoutPycudaTest(unittest.TestCase):
 class EffectsOffTest(unittest.TestCase):
   """The explicit "no effects" switch: FDC_EFECTOS=0."""
 
-  def test_fdc_efectos_0_turns_the_chain_off(self):
+  def test_effects_env_switch_turns_the_chain_off(self):
     data = probe(FDC_EFECTOS=0)
     self.assertFalse(data["effects_enabled"])
     self.assertFalse(data["wanted"])
     self.assertIsNone(data["backend"])
 
-  def test_sin_efectos_is_the_same_switch(self):
+  def test_no_effects_flag_is_the_same_switch(self):
     self.assertTrue(helpers.main_options(["--sin-efectos"]).no_gpu)
 
 
