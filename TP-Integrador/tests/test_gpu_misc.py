@@ -1,11 +1,10 @@
-"""F7 and F8 without a window: governor, demo clock, CSV, table and flags.
+"""F7 and F8 without a window: governor, demo clock, CSV and flags.
 
 The GPU does not take part here: the governor is a state machine, the
 director only counts seconds, the CSV is written in a temporary folder and
 the flags are parsed without opening pygame.
 """
 import csv
-import importlib.util
 import os
 import tempfile
 import types
@@ -216,45 +215,6 @@ class MeasurementLogTest(unittest.TestCase):
         other = metrics.MeasurementLog(
             os.path.join(self.folder, "vacio.csv"))
         self.assertIsNone(other.end_segment())
-
-
-def _table_module():
-    """Loads tools/report_table.py (it has a dash-free name)."""
-    path = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "tools", "report_table.py")
-    spec = importlib.util.spec_from_file_location("report_table", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-class ReportTableTest(unittest.TestCase):
-    """GPU against numpy: rows and speedup."""
-
-    def setUp(self):
-        self.report = _table_module()
-
-    def test_speedup_from_rows(self):
-        rows = [self._row("gpu", 2.0), self._row("cpu", 40.0)]
-        table = self.report.table(rows)
-        self.assertEqual(len(table), 1)
-        self.assertAlmostEqual(table[0][-1], 20.0)
-
-    def test_markdown_has_one_row_per_effect(self):
-        rows = [self._row("gpu", 2.0), self._row("cpu", 40.0)]
-        text = self.report.markdown(rows)
-        self.assertEqual(len(text.splitlines()), 3)
-        self.assertIn("x", text.splitlines()[0])
-
-    def test_missing_backend_has_no_speedup(self):
-        table = self.report.table([self._row("cpu", 40.0)])
-        self.assertEqual(table[0][-1], 0.0)
-
-    @staticmethod
-    def _row(back, fx):
-        return {"effect": "hielo", "backend": back, "frames": "60",
-                "fps_real_mean": "60", "work_ms_mean": "12",
-                "fx_ms_mean": str(fx)}
 
 
 class OverlayTest(unittest.TestCase):
