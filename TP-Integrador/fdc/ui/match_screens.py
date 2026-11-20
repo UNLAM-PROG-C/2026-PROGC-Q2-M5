@@ -69,9 +69,11 @@ TEST_COMMANDS = {"f7": (protocol.CMD_DEBUG_POWER, "spawn"),
                  "f12": (protocol.CMD_DEBUG_CRASH, None)}
 TEST_STEPS = {"f5": -1, "f6": 1}   # test mode keys that change the power
 # --- replay and VAR (F5)
-# Below the scoreboard (it ends at 96 px): the sign is drawn over the pitch.
-REPLAY_SIGN_Y = 118                # px: height of the sign on screen
-REPLAY_HINT_Y = 148                # px: below the sign (seconds left)
+# Replay rows start below the scoreboard and leave space for demo signs.
+REPLAY_BOARD_GAP = 4               # px: padding below the board
+# Align the title just below the scoreboard frame.
+REPLAY_SIGN_TOP = render.BOARD_TOP + render.BOARD[1] + REPLAY_BOARD_GAP
+REPLAY_HINT_TOP = 144              # px: top of the replay countdown
 REPLAY_HINT = "  -  S: volver al partido"   # key that skips the replay
 # s left of the replay window (the countdown under the sign).
 REPLAY_COUNTDOWN = "{0} s"
@@ -1020,11 +1022,11 @@ class MatchScreen(screens.Screen):
     if window is None:
       return
     assets.draw_text(surf, REPLAY_SIGNS.get(self._replay_key(), ""),
-                     layout.FONT_LARGE, (layout.CENTER_X, REPLAY_SIGN_Y),
-                     palette.WHITE, outline=palette.INK)
+                     layout.FONT_TEXT, (layout.CENTER_X, REPLAY_SIGN_TOP),
+                     palette.WHITE, anchor="midtop")
     assets.draw_text(surf, self._replay_note(window[1]), layout.FONT_SMALL,
-                     (layout.CENTER_X, REPLAY_HINT_Y), palette.INK,
-                     outline=palette.WHITE)
+                     (layout.CENTER_X, REPLAY_HINT_TOP), palette.INK,
+                     outline=palette.WHITE, anchor="midtop")
 
   def _replay_key(self):
     """Sign on top: the replay, the VAR or its verdict."""

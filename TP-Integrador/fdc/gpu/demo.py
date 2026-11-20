@@ -44,11 +44,7 @@ SEGMENTS = (
 )
 SEGMENT_COUNT = len(SEGMENTS)
 AVATARS = 2               # characters of the demo (the first two)
-LABEL_Y = 96              # px: top of the segment label
-LABEL_NOTE_Y = 34         # px: gap between the label and its note
-HINT_Y = 26               # px: bottom hint line
-BAR_H = 34                # px: height of the bottom bar
-BAR_ALPHA = 170           # opacity of that bar (0-255)
+SIGN_GAP = 6              # px: gap after the replay hint and demo title
 ICE_FORCED = 1.0          # ice strength of its segment (0-1)
 CONFUSION_FORCED = 1.0    # confusion strength of its segment (0-1)
 TRAIL_FORCED = 1.0        # trail strength of its segment (0-1)
@@ -58,6 +54,18 @@ BOT_LEVEL = G.DEMO_BOT_LEVEL
 ONE_SECOND = 1.0          # seconds in a second (demo clocks)
 FIRST_SEGMENT = 0         # index of the first segment
 
+
+
+def _draw_sign(surf, title, note, color):
+  """Stack the demo rows between the replay hint and the goal band."""
+  hint = assets.text(match_screens.REPLAY_HINT, layout.FONT_SMALL)
+  top = match_screens.REPLAY_HINT_TOP + hint.get_height() + SIGN_GAP
+  title_rect = assets.draw_text(surf, title, layout.FONT_LARGE,
+                                (layout.CENTER_X, top), color,
+                                anchor="midtop")
+  assets.draw_text(surf, note, layout.FONT_SMALL,
+                   (layout.CENTER_X, title_rect.bottom + SIGN_GAP),
+                   anchor="midtop")
 
 
 def run(frames=DEFAULT_FRAMES, argv=()):
@@ -425,24 +433,14 @@ class DemoScreen(match_screens.MatchScreen):
 
   def _draw_label(self, surf):
     """Segment name and seconds left, big (it is for a projector)."""
-    assets.draw_text(surf, self.director.label(), layout.FONT_LARGE,
-                     (layout.CENTER_X, LABEL_Y), palette.WHITE,
-                     outline=palette.INK)
     note = (f"{self.director.remaining():.1f} s · Tab: siguiente · "
             f"Esc: salir · F4: GPU/numpy")
-    assets.draw_text(surf, note, layout.FONT_SMALL,
-                     (layout.CENTER_X, LABEL_Y + LABEL_NOTE_Y),
-                     palette.WHITE, outline=palette.INK)
+    _draw_sign(surf, self.director.label(), note, palette.WHITE)
 
   def _draw_finished(self, surf):
     """Sign of the end of the demo (the CSV is already closed)."""
-    assets.draw_text(surf, "FIN DE LA DEMO", layout.FONT_LARGE,
-                     (layout.CENTER_X, LABEL_Y), palette.GOLD,
-                     outline=palette.INK)
-    assets.draw_text(surf, f"Tiempos en {self.measure.path}",
-                     layout.FONT_SMALL,
-                     (layout.CENTER_X, LABEL_Y + LABEL_NOTE_Y),
-                     palette.WHITE, outline=palette.INK)
+    _draw_sign(surf, "FIN DE LA DEMO", f"Tiempos en {self.measure.path}",
+               palette.GOLD)
 
   # ------------------------------------------------------------ data
   def _backend(self):
