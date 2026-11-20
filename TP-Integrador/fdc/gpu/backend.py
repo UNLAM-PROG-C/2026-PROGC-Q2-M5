@@ -153,6 +153,22 @@ def _auto_arch(driver):
   return f"sm_{major}{minor}"
 
 
+def grid_for(width, height):
+  """Round up the grid to cover every pixel with BLOCK threads per block."""
+  return ((width + BLOCK[0] - 1) // BLOCK[0],
+          (height + BLOCK[1] - 1) // BLOCK[1])
+
+
+def _free_buffers(buffers):
+  """Free the input even if freeing the output fails."""
+  try:
+    if len(buffers) > 1:
+      buffers[1].free()
+  finally:
+    if buffers:
+      buffers[0].free()
+
+
 class Gpu(primitives.Primitives):
   """The kernels of `kernels.cu`, wrapped as numpy in / numpy out."""
 
@@ -186,24 +202,27 @@ class Gpu(primitives.Primitives):
     key = (name, tuple(shape), np.dtype(dtype).str)
     buf = self._buffers.get(key)
     if buf is None:
+      # Step 1: Allocate device memory (cudaMalloc); reused by the game.
       size = max(int(np.prod(shape)) * np.dtype(dtype).itemsize,
                  MIN_ALLOC)
       buf = self.driver.mem_alloc(size)
       self._buffers[key] = buf
     if host is not None:
+      # Step 2: Upload the input (cudaMemcpyHostToDevice).
       self.driver.memcpy_htod(buf, np.ascontiguousarray(host))
     return buf
 
   def _get(self, dev, shape, dtype):
     """Copies a device buffer back to the host."""
+    # Step 1: Allocate host output (malloc), deferred until the readback.
     host = np.empty(shape, dtype=dtype)
+    # Step 4: Read the output (cudaMemcpyDeviceToHost).
     self.driver.memcpy_dtoh(host, dev)
     return host
 
   def _grid(self, w, h):
     """2D grid that covers a w x h image with BLOCK threads per block."""
-    return ((w + BLOCK[0] - 1) // BLOCK[0],
-            (h + BLOCK[1] - 1) // BLOCK[1])
+    return grid_for(w, h)
 
   # --------------------------------------------------------------- images
   def blur(self, img, radius):
@@ -455,11 +474,15 @@ class Gpu(primitives.Primitives):
 
   # ------------------------------------------------------- primitivas (F1)
   def _simple(self, kernel, img, *args):
-    """One in, one out image kernel: upload, launch, download."""
+    """The game allocates device buffers once per shape and reuses them.
+
+    The teaching probe instead runs the full allocate-to-free cycle.
+    """
     h, w = img.shape[:2]
     shape = (h, w, CHANNELS)
     src = self._buf(f"{kernel}_src", shape, np.uint8, img)
     out = self._buf(f"{kernel}_out", shape, np.uint8)
+    # Step 3: Run the kernel (kernel<<<grid, block>>>).
     self._fn(kernel)(src, out, np.int32(w), np.int32(h),
                      *[np.float32(a) for a in args],
                      grid=self._grid(w, h), block=BLOCK)
@@ -468,6 +491,42 @@ class Gpu(primitives.Primitives):
   def gray(self, img):
     """Luma in the three channels."""
     return self._simple("k_gray", img)
+
+  def gray_five_steps(self, img, timer):
+    """Teaching probe: run the full cycle instead of reusing game buffers."""
+    img = np.ascontiguousarray(img)
+    timer.sync = self.driver.Context.synchronize
+    buffers = []
+    try:
+      host = timer.measure('reserve', self._gray_buffers, img, buffers)
+      self._gray_roundtrip(img, host, buffers, timer)
+    finally:
+      # Step 5: Release device memory (cudaFree).
+      timer.cleanup(_free_buffers, buffers)
+    return host
+
+  def _gray_buffers(self, img, buffers):
+    # Step 1: Allocate host and device memory (malloc / cudaMalloc).
+    host = np.empty(img.shape, dtype=img.dtype)
+    buffers.append(self.driver.mem_alloc(img.nbytes))
+    buffers.append(self.driver.mem_alloc(host.nbytes))
+    return host
+
+  def _gray_roundtrip(self, img, host, buffers, timer):
+    src, out = buffers
+    # Step 2: Upload the input (cudaMemcpyHostToDevice).
+    timer.measure('upload', self.driver.memcpy_htod, src, img)
+    # Step 3: Run the kernel (kernel<<<grid, block>>>).
+    timer.measure('kernel', self._launch_gray, self._fn('k_gray'),
+                  src, out, img.shape[:2])
+    # Step 4: Read the output (cudaMemcpyDeviceToHost).
+    timer.measure('download', self.driver.memcpy_dtoh, host, out)
+
+  def _launch_gray(self, k_gray, src, out, shape):
+    height, width = shape
+    k_gray(src, out, np.int32(width), np.int32(height), block=BLOCK,
+           grid=grid_for(width, height))
+    self.driver.Context.synchronize()
 
   def invert(self, img):
     """255 - channel."""

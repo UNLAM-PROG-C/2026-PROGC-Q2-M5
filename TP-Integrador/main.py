@@ -78,7 +78,7 @@ COMMAND_LINE = (
                      "help": "driver de SDL_RENDER_DRIVER (ej. software); "
                              "útil por escritorio remoto"}),
     (("--overlay",), {"dest": "overlay", "default": None,
-                      "choices": ("off", "compact", "full"),
+                      "choices": ("off", "compact", "full", "steps"),
                       "help": "overlay de rendimiento (F2 lo cambia en vivo)"}),
     (("--demo",), {"dest": "demo", "action": "store_true",
                    "help": "demo automática de 10 segmentos, sin menús"}),

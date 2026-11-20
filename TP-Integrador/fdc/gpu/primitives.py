@@ -122,9 +122,13 @@ class Primitives:
   """One method per `k_*` kernel of the F1 group."""
   def gray(self, img):
     """Luma in the three channels."""
-    v = _rgb(img) @ np.array([LUMA_R, LUMA_G, LUMA_B], np.float32)
-    u = _to_byte(v)
+    u = self._gray_luma(img)
     return np.stack([u, u, u], axis=-1)
+
+  @staticmethod
+  def _gray_luma(img):
+    v = _rgb(img) @ np.array([LUMA_R, LUMA_G, LUMA_B], np.float32)
+    return _to_byte(v)
 
   def invert(self, img):
     """255 - channel."""

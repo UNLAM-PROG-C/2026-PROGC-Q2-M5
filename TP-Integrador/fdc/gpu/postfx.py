@@ -21,6 +21,7 @@ from fdc.gpu import crowd
 from fdc.gpu import cpu_ref
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
+from fdc.gpu import five_steps
 from fdc.gpu import heatmap
 from fdc.gpu import metrics as gpu_metrics
 from fdc.gpu import particles
@@ -92,6 +93,9 @@ class PostFx:
     self.trail = None
     self.phase = 0.0
     self.lights = _no_lights()
+    self.processed_size = None
+    self.probe = five_steps.FiveStepProbe()
+    self.probe_active = False
 
   def _init_demo(self, options):
     """F7 state: adaptive quality, demo forcing and the overlay."""
@@ -104,7 +108,6 @@ class PostFx:
     self.px = 1.0               # scale of the coordinates (Q1..Q3)
     self.skips = ()             # stages the CPU level leaves out
     self.forced = {}            # FxParams forced by the demo director
-    self.last_ms = {}           # last fx ms of each backend (overlay)
 
   def _init_mode(self, options):
     """Mode chosen by the player, or the default of the backend."""
@@ -220,6 +223,8 @@ class PostFx:
     # (unless the effects are off for the whole game).
     self.enabled = self.allowed and self.quality_mode != quality.OFF
     self.metrics.clear()
+    self.processed_size = None
+    self.probe.invalidate()
     self._reset_backend()       # a fresh governor for the new mode
     return self.quality_mode
 
@@ -296,22 +301,40 @@ class PostFx:
     result, divisor = self._scaled(dt)
     ms = (time.perf_counter() - start) * MS_PER_S
     self.metrics.frame(ms)
-    self.last_ms[self.mode] = ms
     self.governor.frame(ms, dt)
     _paint(result, screen, divisor)
+    self._probe_frame(result)
+
+  def _probe_frame(self, image):
+    size = image.shape[1], image.shape[0]
+    if size != self.processed_size:
+      self.probe.invalidate()
+    self.processed_size = size
+    if self.probe_active:
+      self.probe.maybe_run(self.ops, image)
 
   def _scaled(self, dt):
     """The chain on the full image, or on a 1/4 copy of it (Q1..Q3)."""
     divisor = quality.scale(self.level_index())
-    if divisor <= 1:
-      return self._chain(to_array(self.target), dt), divisor
-    small = pygame.transform.smoothscale(
-        self.target, _small_size(self.target.get_size(), divisor))
+    image = self._work_image(divisor)
     self.px = 1.0 / divisor
     try:
-      return self._chain(to_array(small), dt), divisor
+      return self._chain(image, dt), divisor
     finally:
       self.px = 1.0
+
+  def _work_image(self, divisor):
+    if divisor <= 1:
+      return to_array(self.target)
+    size = _small_size(self.target.get_size(), divisor)
+    return to_array(pygame.transform.smoothscale(self.target, size))
+
+  def steps_info(self):
+    size = self.processed_size if self.enabled else None
+    return self.probe.info(self.ops, size)
+
+  def launch_info(self):
+    return five_steps.geometry(self.processed_size) if self.enabled else {}
 
   def level_index(self):
     """Resolution index: FULL and OPTIMIZADO are fixed, AUTO adapts."""
@@ -597,16 +620,6 @@ class PostFx:
       names.append(_CELEBRATION_NAME)
     return " + ".join(names) if names else "ninguno"
 
-  def other_measurement(self):
-    """Line 6 of the overlay: the last fx ms of the other backend."""
-    mode = "cpu" if self.mode == "gpu" else "gpu"
-    ms = self.last_ms.get(mode)
-    if not ms:
-      return None
-    speedup = self.last_ms.get(self.mode, 0.0)
-    ratio = f" (x{speedup / ms:.0f} vs GPU)" if mode == "cpu" else ""
-    return f"{mode.upper()} fx {ms:.1f} ms{ratio}"
-
   def _powers(self, image, dt):
     """F3/F4 stages, in the fixed order of the spec (5.3)."""
     out = self._ball_trail(image, dt)
@@ -861,7 +874,6 @@ class PostFx:
     data["quality_mode"] = self.quality_mode
     data["quality_name"] = self.quality_mode_name()
     data["active"] = self.active_effects()
-    data["other"] = self.other_measurement()
     data["gpu"] = self.device
     data["reason"] = self.gpu_failure()
     return data

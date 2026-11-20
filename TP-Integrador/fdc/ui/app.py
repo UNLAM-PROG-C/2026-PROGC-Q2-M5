@@ -29,7 +29,6 @@ from fdc import profile as profiles
 from fdc.online import client
 from fdc.online import endpoint
 from fdc.sim import inline
-from fdc.gpu import backend as gpu_backend
 from fdc.gpu import overlay as gpu_overlay
 from fdc.gpu import sysinfo
 from fdc.ui import assets
@@ -135,6 +134,8 @@ class _NoFx:
 
   enabled = False
   night = False
+  probe_active = False
+  processed_size = None
 
   def begin(self, screen, state):
     return screen
@@ -458,6 +459,7 @@ class App:
       self.switch(screens.ErrorScreen(self, err, self.link.error_detail))
 
   def _draw(self):
+    self.postfx.probe_active = self.overlay.mode == gpu_overlay.STEPS
     self.current.draw(self.screen)
     if self.show_debug:
       self.draw_debug(self.screen)
@@ -562,37 +564,31 @@ class App:
   def _overlay_info(self):
     """Everything the overlay shows of this frame."""
     data = self.postfx.summary() if self.postfx else {"mode": "off"}
+    if self.overlay.mode == gpu_overlay.STEPS:
+      steps = getattr(self.postfx, "steps_info", dict)()
+      return {"mode": data["mode"], **steps}
     data["fx_ms"] = data.get("frame", 0.0)
     data["device"] = data.get("gpu", "CPU")
     data.update(self._display_info())
-    data.update(self._launch_info())
+    data.update(getattr(self.postfx, "launch_info", dict)())
     return gpu_overlay.info_of(data)
+
+  def _processed_size(self):
+    if self.postfx and self.postfx.enabled:
+      return getattr(self.postfx, "processed_size", None)
+    return None
 
   def _display_info(self):
     """Frame time, FPS, sizes and remote session of the overlay."""
     width, height = self.screen.get_size()
+    size = self._processed_size()
     return {
         "work_ms": self.work_ms,
         "fps": self.clock.get_fps(),
-        "resolution": (f"{config.LOGICAL_WIDTH}x{config.LOGICAL_HEIGHT}"
-                       if self.postfx and self.postfx.enabled
-                       else "ninguna"),
+        "resolution": f"{size[0]}x{size[1]}" if size else "ninguna",
         "window": f"{width}x{height}",
         "remote": self.remote,
     }
-
-  @staticmethod
-  def _launch_info():
-    """Block, grid, threads and spare threads of the kernels."""
-    block = gpu_backend.BLOCK
-    across = (config.LOGICAL_WIDTH + block[0] - 1) // block[0]
-    down = (config.LOGICAL_HEIGHT + block[1] - 1) // block[1]
-    threads = block[0] * block[1]
-    spare = across * down * threads - config.LOGICAL_WIDTH * \
-        config.LOGICAL_HEIGHT
-    return {"block": f"{block[0]}x{block[1]}",
-            "grid": f"{across}x{down}", "threads": threads,
-            "surplus": spare}
 
   def _night_key(self):
     """N: night mode, but only inside a match (not while typing)."""

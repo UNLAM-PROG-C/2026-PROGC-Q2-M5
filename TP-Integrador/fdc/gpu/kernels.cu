@@ -419,17 +419,24 @@ __global__ void heat_splat(const float *pos, int n, float *heat, int cols,
 // Estas son las operaciones chicas que pide la catedra: un hilo por pixel,
 // indice 2D, chequeo de bordes y solo memoria global.
 
-// Copia el canal gris (luma) a 8 bits: gris, blanco y negro y un solo canal.
+constexpr int kGrayChannels = 3;        // interleaved RGB channels
+constexpr float kGrayRed = 0.299f;     // BT.601 red luma weight
+constexpr float kGrayGreen = 0.587f;   // BT.601 green luma weight
+constexpr float kGrayBlue = 0.114f;    // BT.601 blue luma weight
+constexpr float kGrayRound = 0.5f;    // round to nearest byte
+
+// One thread per pixel; spare threads return before reading global memory.
 __global__ void k_gray(const unsigned char *src, unsigned char *dst,
-                       int w, int h)
+                       int width, int height)
 {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
-  int i = (y * w + x) * CH;
-  float v = 0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2];
-  unsigned char g = (unsigned char)(v + 0.5f);
-  dst[i] = g; dst[i + 1] = g; dst[i + 2] = g;
+  if (x >= width || y >= height) return;
+  int i = (y * width + x) * kGrayChannels;
+  float luma = kGrayRed * src[i] + kGrayGreen * src[i + 1]
+               + kGrayBlue * src[i + 2];
+  unsigned char gray = (unsigned char)(luma + kGrayRound);
+  dst[i] = dst[i + 1] = dst[i + 2] = gray;
 }
 
 // Negativo: 255 - canal.

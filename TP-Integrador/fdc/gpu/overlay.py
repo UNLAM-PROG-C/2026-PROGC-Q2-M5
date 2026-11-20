@@ -3,7 +3,7 @@ fast it runs.
 
 It is a semitransparent black panel at the bottom left with white text of at
 least 22 px (readable from the back of a classroom) and a big GPU/CPU badge.
-`F2` or `--overlay` cycles off -> compact -> full. The texts are rebuilt
+`F2` cycles off -> compact -> full -> steps. The probe is refreshed
 only 4 times per second (config.Gpu.OVERLAY_REFRESH): formatting strings
 every frame would be paid in the very numbers it measures.
 
@@ -17,7 +17,8 @@ from fdc import config
 OFF = "off"
 COMPACT = "compact"
 FULL = "full"
-MODES = (OFF, COMPACT, FULL)
+STEPS = "steps"
+MODES = (OFF, COMPACT, FULL, STEPS)
 TEXT = (255, 255, 255)        # colour of the overlay text
 BACKGROUND = (0, 0, 0)        # colour of the shadow and panel
 GPU_COLOUR = (0x76, 0xB9, 0x00)     # NVIDIA green
@@ -28,14 +29,23 @@ PADDING = 12                        # px of the panel border
 LINE_GAP = 4                        # px between two lines
 MARGIN = 10                         # px between the panel and the screen
 MIN_WIDTH = 520                     # px: narrower panels look broken
+THUMB_X = 280                      # px from the badge to the preview
 TWO_DECIMALS = 2          # decimals of the cached values
 NO_VALUE = "-"
+UNMEASURED = "sin medir"
+WARP_SIZE = 32  # threads per NVIDIA warp
+STEP_LABELS = ("Reservar memoria", "Copiar a la GPU", "Ejecutar el kernel",
+               "Leer el resultado", "Liberar memoria")
+CPU_STEP_LABELS = ("Reservar memoria (CPU)", STEP_LABELS[1],
+                   "Calcular con numpy", *STEP_LABELS[3:])
 
 
 def lines(info, mode=FULL):
   """Text lines of the overlay for an `info` dict (see `info_of`)."""
   if mode == OFF:
     return ()
+  if mode == STEPS:
+    return _steps_lines(info)
   out = [_mode_line(info)]
   out.append(_device_line(info))
   if mode == COMPACT:
@@ -43,10 +53,55 @@ def lines(info, mode=FULL):
   out.append(_window_line(info))
   out.append(_effects_line(info))
   out.append(_kernels_line(info))
-  other = info.get("other")
-  if other:
-    out.append(f"Otro modo (última medición): {other}")
   return out
+
+
+def _steps_lines(info):
+  totals = info.get('totals', {})
+  rows = [f"PASOS · Escala de grises · {_mode_name(info)}",
+          _steps_geometry(info), _steps_threads(info)]
+  rows.extend(_step_rows(info))
+  rows.append(f"Total CPU: {_ms(totals.get('cpu'))} · "
+              f"GPU: {_ms(totals.get('gpu'))}")
+  rows.append(f"Aceleración (CPU/GPU): "
+              f"{info.get('speedup') or UNMEASURED}")
+  return rows
+
+
+def _steps_geometry(info):
+  reference = ' · referencia CUDA' if info.get('mode') == 'cpu' else ''
+  return (f"Procesado: {info.get('resolution', NO_VALUE)}{reference} · "
+          f"grilla {info.get('grid', NO_VALUE)} · "
+          f"bloque {info.get('block', NO_VALUE)}")
+
+
+def _steps_threads(info):
+  return (f"Hilos: {info.get('threads', NO_VALUE)} totales, "
+          f"{info.get('surplus', NO_VALUE)} sobrantes · "
+          f"warp = {WARP_SIZE}")
+
+
+def _step_rows(info):
+  times = info.get('steps', ())
+  labels = CPU_STEP_LABELS if info.get('mode') == 'cpu' else STEP_LABELS
+  values = [('no aplica' if ms is None else _ms(ms)) for ms in times]
+  if not values:
+    values = [NO_VALUE] * len(labels)
+  return [f"{index}. {label}: {value}"
+          for index, (label, value) in enumerate(zip(labels, values), 1)]
+
+
+def _ms(value):
+  return NO_VALUE if value is None else f"{value:.3f} ms"
+
+
+def _with_thumbnail(badge, thumbnail):
+  width = THUMB_X + thumbnail.get_width()
+  height = max(badge.get_height(), thumbnail.get_height())
+  header = pygame.Surface((width, height), pygame.SRCALPHA)
+  header.blit(badge, (0, 0))
+  header.blit(thumbnail, (THUMB_X, 0))
+  return header
 
 
 def _mode_line(info):
@@ -157,9 +212,9 @@ class Overlay:
     self._last = None
 
   def cycle(self):
-    """Next mode: off -> compact -> full -> off."""
+    """Next mode: off -> compact -> full -> steps -> off."""
     self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
-    self._cache = None
+    self._last = None
     return self.mode
 
   def draw(self, surface, info):
@@ -187,6 +242,8 @@ class Overlay:
     """Renders every line; the badge is the first one."""
     rows = [self._render(text) for text in lines(info, self.mode)]
     badge = self._badge(info)
+    if self.mode == STEPS and info.get('thumbnail') is not None:
+      badge = _with_thumbnail(badge, info['thumbnail'])
     return badge, rows
 
   def _badge(self, info):

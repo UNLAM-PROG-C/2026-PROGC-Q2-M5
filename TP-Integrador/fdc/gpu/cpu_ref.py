@@ -139,6 +139,17 @@ class Cpu(primitives.Primitives):
     self.heat_grids = np.zeros((CHANNELS, 1, 1), np.uint32)
     self.heat_max = np.zeros(CHANNELS, np.uint32)
 
+  def gray_five_steps(self, img, timer):
+    """Only host allocation and calculation apply to the numpy path."""
+    # Step 1: Allocate host output (malloc).
+    out = timer.measure('reserve', np.empty, img.shape, img.dtype)
+    # Step 3: Run numpy in place of kernel<<<grid, block>>>.
+    timer.measure('kernel', self._gray_into, img, out)
+    return out
+
+  def _gray_into(self, img, out):
+    out[:] = self._gray_luma(img)[..., None]
+
   def blur(self, img, radius):
     """Separable box blur, with the same 8 bit rounding as the kernel."""
     tmp = np.clip(_box_axis(img, radius, 1), 0, BYTE_MAX).astype(np.uint8)
