@@ -501,7 +501,7 @@ class Gpu(primitives.Primitives):
       host = timer.measure('reserve', self._gray_buffers, img, buffers)
       self._gray_roundtrip(img, host, buffers, timer)
     finally:
-      # Step 5: Release device memory (cudaFree).
+      # Step 5: Free device memory (cudaFree); Python frees the host copy.
       timer.cleanup(_free_buffers, buffers)
     return host
 

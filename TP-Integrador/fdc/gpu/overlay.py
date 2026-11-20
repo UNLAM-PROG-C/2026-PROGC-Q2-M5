@@ -32,10 +32,12 @@ MIN_WIDTH = 520                     # px: narrower panels look broken
 THUMB_X = 280                      # px from the badge to the preview
 TWO_DECIMALS = 2          # decimals of the cached values
 NO_VALUE = "-"
-UNMEASURED = "sin medir"
+UNMEASURED = "sin medir"         # speedup without a paired measurement
 WARP_SIZE = 32  # threads per NVIDIA warp
+# Overlay rows of the five course steps (G1 35-48), GPU and numpy.
 STEP_LABELS = ("Reservar memoria", "Copiar a la GPU", "Ejecutar el kernel",
                "Leer el resultado", "Liberar memoria")
+# numpy has no copies: steps 2, 4 and 5 show "no aplica".
 CPU_STEP_LABELS = ("Reservar memoria (CPU)", STEP_LABELS[1],
                    "Calcular con numpy", *STEP_LABELS[3:])
 
