@@ -9,14 +9,31 @@
 // Unless otherwise noted, w and h describe the output.
 #define CH 3
 
+// Global thread index (blockIdx * blockDim + threadIdx) plus the border
+// check. Each helper returns false when the thread falls outside the data,
+// so the kernel can return early.
+// 2D: one thread per pixel, x is the column and y is the row of a w x h image.
+__device__ bool pixel_coords(int &x, int &y, int w, int h)
+{
+  x = blockIdx.x * blockDim.x + threadIdx.x;
+  y = blockIdx.y * blockDim.y + threadIdx.y;
+  return x < w && y < h;
+}
+
+// 1D: one thread per element, i is the element index in [0, n).
+__device__ bool thread_index(int &i, int n)
+{
+  i = blockIdx.x * blockDim.x + threadIdx.x;
+  return i < n;
+}
+
 // Separable box blur: one thread per pixel in each pass.
 // Horizontal pass: average a radius-r window clipped at the border.
 __global__ void blur_rows(const unsigned char *src, unsigned char *dst,
                           int w, int h, int r)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;  // border check
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - r);
   int x1 = min(w - 1, x + r);
   int a0 = 0, a1 = 0, a2 = 0, n = 0;
@@ -36,9 +53,8 @@ __global__ void blur_rows(const unsigned char *src, unsigned char *dst,
 __global__ void blur_cols(const unsigned char *src, unsigned char *dst,
                           int w, int h, int r)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int y0 = max(0, y - r);
   int y1 = min(h - 1, y + r);
   int a0 = 0, a1 = 0, a2 = 0, n = 0;
@@ -62,9 +78,8 @@ __global__ void blur_cols(const unsigned char *src, unsigned char *dst,
 __global__ void bright_pass(const unsigned char *src, float *dst,
                             int hw, int hh, int w, float threshold)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= hw || y >= hh) return;
+  int x, y;
+  if (!pixel_coords(x, y, hw, hh)) return;
   int i = ((2 * y) * w + 2 * x) * CH;
   float l = (0.299f * src[i] + 0.587f * src[i + 1]
              + 0.114f * src[i + 2]) / 255.0f;
@@ -82,9 +97,8 @@ __global__ void bright_pass(const unsigned char *src, float *dst,
 // Horizontal blur of the float halo buffer.
 __global__ void glow_rows(const float *src, float *dst, int w, int h, int r)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - r), x1 = min(w - 1, x + r);
   float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
   for (int k = x0; k <= x1; ++k)
@@ -100,9 +114,8 @@ __global__ void glow_rows(const float *src, float *dst, int w, int h, int r)
 // Vertical blur of the float halo buffer.
 __global__ void glow_cols(const float *src, float *dst, int w, int h, int r)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int y0 = max(0, y - r), y1 = min(h - 1, y + r);
   float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
   for (int k = y0; k <= y1; ++k)
@@ -121,9 +134,8 @@ __global__ void composite(const unsigned char *base, const float *glow,
                           float exposure, float gamma, float vignette,
                           float glow_strength)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int gx = x / 2 < gw ? x / 2 : gw - 1;
   int gy = y / 2 < gh ? y / 2 : gh - 1;
   int gi = (gy * gw + gx) * CH;
@@ -151,8 +163,8 @@ __global__ void composite(const unsigned char *base, const float *glow,
 __global__ void splat_particles(const float *pos, const float *col, int n,
                                 float *acc, int w, int h, float gain)
 {
-  int p = blockIdx.x * blockDim.x + threadIdx.x;
-  if (p >= n) return;  // border check
+  int p;
+  if (!thread_index(p, n)) return;
   int cx = (int)pos[2 * p];
   int cy = (int)pos[2 * p + 1];
   int r = (int)col[4 * p + 3];
@@ -178,8 +190,8 @@ __global__ void confetti(const float *pos, const float *col, int n,
                          const unsigned char *img, float *acc, int w, int h,
                          float gain)
 {
-  int p = blockIdx.x * blockDim.x + threadIdx.x;
-  if (p >= n) return;  // border check
+  int p;
+  if (!thread_index(p, n)) return;
   int cx = (int)pos[2 * p];
   int cy = (int)pos[2 * p + 1];
   int hw = (int)col[5 * p + 3];  // paper half-width
@@ -203,9 +215,8 @@ __global__ void confetti(const float *pos, const float *col, int n,
 __global__ void add_light(const unsigned char *base, const float *acc,
                           unsigned char *out, int w, int h, float gain)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int k = 0; k < CH; ++k)
   {
@@ -222,9 +233,8 @@ __global__ void k_light_pixels(const unsigned char *src, unsigned char *dst,
                                const float *lights, int n, int w, int h,
                                float gain)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float red = 0.0f, green = 0.0f, blue = 0.0f;
   for (int k = 0; k < n; ++k)
   {
@@ -254,9 +264,8 @@ __global__ void heat_distort(const unsigned char *src, unsigned char *out,
                              int w, int h, float phase, float amp,
                              float period)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int sx = x + (int)(amp * sinf(y / period + phase));
   int sy = y + (int)(amp * 0.5f * cosf(x / period + phase));
   sx = min(max(sx, 0), w - 1);
@@ -270,9 +279,8 @@ __global__ void heat_distort(const unsigned char *src, unsigned char *out,
 __global__ void ripple(const unsigned char *src, unsigned char *out, int w,
                        int h, float phase, float amp, float period)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float dx = x - w * 0.5f, dy = y - h * 0.5f;
   float d = sqrtf(dx * dx + dy * dy);
   float k = amp * sinf(d / period - phase);
@@ -287,9 +295,8 @@ __global__ void ripple(const unsigned char *src, unsigned char *out, int w,
 __global__ void mix_layers(const unsigned char *a, const unsigned char *b,
                            unsigned char *out, int w, int h, float alpha)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int k = 0; k < CH; ++k)
     out[i + k] = (unsigned char)(a[i + k] * (1.0f - alpha)
@@ -300,9 +307,8 @@ __global__ void mix_layers(const unsigned char *a, const unsigned char *b,
 __global__ void trail(const unsigned char *cur, unsigned char *prev,
                       unsigned char *out, int w, int h, float alpha)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int k = 0; k < CH; ++k)
   {
@@ -315,9 +321,8 @@ __global__ void trail(const unsigned char *cur, unsigned char *prev,
 // Use atomics to count luma in 256 bins: threads can share a bin.
 __global__ void luma_hist(const unsigned char *src, int *hist, int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   float l = (0.299f * src[i] + 0.587f * src[i + 1]
              + 0.114f * src[i + 2]);
@@ -331,9 +336,8 @@ __global__ void luma_hist(const unsigned char *src, int *hist, int w, int h)
 __global__ void stretch(const unsigned char *src, unsigned char *out, int w,
                         int h, float lo, float hi, float vignette)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   float span = hi - lo > 1.0f ? hi - lo : 1.0f;
   float cx = (x / (float)w) - 0.5f;
@@ -352,9 +356,8 @@ __global__ void stretch(const unsigned char *src, unsigned char *out, int w,
 __global__ void minimap(const unsigned char *src, float *grid, int w, int h,
                         int cols, int rows)
 {
-  int cx = blockIdx.x * blockDim.x + threadIdx.x;
-  int cy = blockIdx.y * blockDim.y + threadIdx.y;
-  if (cx >= cols || cy >= rows) return;
+  int cx, cy;
+  if (!pixel_coords(cx, cy, cols, rows)) return;
   int bw = w / cols, bh = h / rows;
   int x0 = cx * bw, y0 = cy * bh;
   float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
@@ -379,8 +382,8 @@ __global__ void minimap(const unsigned char *src, float *grid, int w, int h,
 __global__ void heat_colors(const float *heat, unsigned char *out, int n,
                             float max_value)
 {
-  int p = blockIdx.x * blockDim.x + threadIdx.x;
-  if (p >= n) return;
+  int p;
+  if (!thread_index(p, n)) return;
   float v = heat[p] / (max_value > 0.0f ? max_value : 1.0f);
   v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
   // Four-segment ramp computed without lookup tables.
@@ -397,8 +400,8 @@ __global__ void heat_colors(const float *heat, unsigned char *out, int n,
 __global__ void heat_splat(const float *pos, int n, float *heat, int cols,
                            int rows, float amount)
 {
-  int p = blockIdx.x * blockDim.x + threadIdx.x;
-  if (p >= n) return;
+  int p;
+  if (!thread_index(p, n)) return;
   int cx = (int)pos[2 * p], cy = (int)pos[2 * p + 1];
   if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
   atomicAdd(&heat[cy * cols + cx], amount);
@@ -416,9 +419,8 @@ __global__ void heat_splat(const float *pos, int n, float *heat, int cols,
 __global__ void k_gray(const unsigned char *src, unsigned char *dst,
                        int width, int height)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) return;
+  int x, y;
+  if (!pixel_coords(x, y, width, height)) return;
   int i = (y * width + x) * CH;
   float luma = GRAY_RED * src[i] + GRAY_GREEN * src[i + 1]
                + GRAY_BLUE * src[i + 2];
@@ -430,9 +432,8 @@ __global__ void k_gray(const unsigned char *src, unsigned char *dst,
 __global__ void k_invert(const unsigned char *src, unsigned char *dst,
                          int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   dst[i] = 255 - src[i];
   dst[i + 1] = 255 - src[i + 1];
@@ -444,9 +445,8 @@ __global__ void k_brightness_contrast(const unsigned char *src,
                                       unsigned char *dst, int w, int h,
                                       float brightness, float contrast)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int c = 0; c < CH; ++c)
   {
@@ -461,9 +461,8 @@ __global__ void k_brightness_contrast(const unsigned char *src,
 __global__ void k_gain(const unsigned char *src, unsigned char *dst,
                        int w, int h, float gain)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int c = 0; c < CH; ++c)
   {
@@ -477,9 +476,8 @@ __global__ void k_gain(const unsigned char *src, unsigned char *dst,
 __global__ void k_tint(const unsigned char *src, unsigned char *dst,
                        int w, int h, float r, float g, float b)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   dst[i] = (unsigned char)(src[i] * r + 0.5f);
   dst[i + 1] = (unsigned char)(src[i + 1] * g + 0.5f);
@@ -491,9 +489,8 @@ __global__ void k_tint(const unsigned char *src, unsigned char *dst,
 __global__ void k_rotate(const unsigned char *src, unsigned char *dst,
                          int w, int h, float angle)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float cx = (w - 1) * 0.5f, cy = (h - 1) * 0.5f;
   float c = cosf(angle), s = sinf(angle);
   float dx = x - cx, dy = y - cy;
@@ -515,9 +512,8 @@ __global__ void k_rotate(const unsigned char *src, unsigned char *dst,
 __global__ void k_to_gray_f32(const unsigned char *src, float *dst,
                               int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   dst[y * w + x] = (0.299f * src[i] + 0.587f * src[i + 1]
                     + 0.114f * src[i + 2]) / 255.0f;
@@ -526,9 +522,8 @@ __global__ void k_to_gray_f32(const unsigned char *src, float *dst,
 // Sobel gradient magnitude with border pixels repeated by clamping.
 __global__ void k_sobel(const float *gray, float *edges, int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - 1), x1 = min(w - 1, x + 1);
   int y0 = max(0, y - 1), y1 = min(h - 1, y + 1);
   float a = gray[y0 * w + x0], b = gray[y0 * w + x], c = gray[y0 * w + x1];
@@ -543,9 +538,8 @@ __global__ void k_sobel(const float *gray, float *edges, int w, int h)
 __global__ void k_sobel_normalize(const float *edges, unsigned char *dst,
                                   int w, int h, float max_value)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float v = edges[y * w + x] / (max_value > 0.0f ? max_value : 1.0f);
   v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
   int i = (y * w + x) * CH;
@@ -558,9 +552,8 @@ __global__ void k_edge_glow(const unsigned char *src,
                             const unsigned char *edges, unsigned char *dst,
                             int w, int h, float strength)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int c = 0; c < CH; ++c)
   {
@@ -586,9 +579,8 @@ __device__ float ice_gray(const unsigned char *src, int i)
 __global__ void k_ice_edges(const unsigned char *src, float *edges,
                             unsigned int *top, int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - 1), x1 = min(w - 1, x + 1);
   int y0 = max(0, y - 1), y1 = min(h - 1, y + 1);
   float a = ice_gray(src, (y0 * w + x0) * CH);
@@ -611,9 +603,8 @@ __global__ void k_ice_apply(const unsigned char *src, const float *edges,
                             int w, int h, float strength, float tr,
                             float tg, float tb, float amount)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   float max_value = __uint_as_float(top[0]);
   float v = edges[y * w + x] / (max_value > 0.0f ? max_value : 1.0f);
@@ -642,9 +633,8 @@ __global__ void k_spotlights(const unsigned char *src, unsigned char *dst,
                              float ambient, float tr, float tg, float tb,
                              float limit)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float light = ambient;
   for (int k = 0; k < n && k < SPOT_MAX; ++k)
   {
@@ -689,9 +679,8 @@ __global__ void k_heat_distort(const unsigned char *src, unsigned char *dst,
                                int w, int h, float cx, float cy, float rad,
                                float t, float amp)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   float dx = x - cx, dy = y - cy;
   float d = sqrtf(dx * dx + dy * dy);
   int sx = x, sy = y;
@@ -719,9 +708,8 @@ __global__ void k_ripple(const unsigned char *src, unsigned char *dst,
                          int w, int h, float cx, float cy, float radius,
                          float width, float amp, int y_min)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   if (y < y_min)
   {  // leave pixels outside the pitch alone
@@ -757,9 +745,8 @@ __global__ void k_trail_blend(const unsigned char *cur,
                               const unsigned char *prev, unsigned char *dst,
                               int w, int h, float decay)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int c = 0; c < CH; ++c)
   {
@@ -773,9 +760,8 @@ __global__ void k_trail_blend(const unsigned char *cur,
 __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
                             unsigned int *luma_max, int w, int h)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   float l = 0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2];
   unsigned int bin = (unsigned int)(l + 0.5f);  // same rounding as k_gray
@@ -799,9 +785,8 @@ __global__ void k_crt(const unsigned char *src, unsigned char *dst,
                       float vignette, float noise, int rows,
                       float tr, float tg, float tb)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;  // border check
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   float l = (0.299f * src[i] + 0.587f * src[i + 1]
              + 0.114f * src[i + 2]) / 255.0f;
@@ -841,8 +826,8 @@ __global__ void k_heat_accumulate(const float *pts, int n, int channel,
                                   int cols, int rows, float cw, float ch,
                                   unsigned int *grids, unsigned int *maxes)
 {
-  int k = blockIdx.x * blockDim.x + threadIdx.x;
-  if (k >= n) return;
+  int k;
+  if (!thread_index(k, n)) return;
   float cell_w = cw > 0.0f ? cw : HEAT_MIN_CELL;
   float cell_h = ch > 0.0f ? ch : HEAT_MIN_CELL;
   int cx = (int)(pts[k * 2] / cell_w);
@@ -860,9 +845,8 @@ __global__ void k_heat_render(const unsigned char *src, const unsigned int *grid
                               int w, int h, int cols, int rows, int channel,
                               float alpha, float gain)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;  // border check
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   // Convert the pixel center to cell coordinates.
   float cw = (float)w / (float)cols;
   float ch = (float)h / (float)rows;
@@ -1114,9 +1098,8 @@ __global__ void k_crowd(const unsigned char *src, unsigned char *dst,
                           int w, int h, float t, int side, float boost,
                           const float *cfg, const float *pal)
 {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= w || y >= h) return;  // border check
+  int x, y;
+  if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   int row = (int)((float)y / cfg[CC_H]);
   int rows = (int)((float)h / cfg[CC_H]);
