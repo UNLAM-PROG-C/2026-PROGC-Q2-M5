@@ -17,6 +17,7 @@ from fdc import config
 
 G = config.Gpu
 ARENA = config.Arena
+PENULTIMATE = -2           # second to last recorded frame
 REPLAY_KIND = "replay"      # the chain draws this as an old television
 VAR_KIND = "var"            # the chain draws this as a review
 REVIEW = "review"           # VAR stage: the referee is looking at the play
@@ -188,7 +189,7 @@ class ReplayPlayer:
     for index in range(len(self.frames) - 1):
       if self.frames[index + 1][0] >= target:
         return self.frames[index], self.frames[index + 1]
-    return self.frames[-2], self.frames[-1]
+    return self.frames[PENULTIMATE], self.frames[-1]
 
 
 class VarPlayer:

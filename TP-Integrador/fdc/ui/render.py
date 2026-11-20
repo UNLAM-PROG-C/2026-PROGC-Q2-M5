@@ -462,7 +462,7 @@ def _draw_goal_band(surf, col):
   band = pygame.Rect(0, GOAL_BAND_TOP, width, GOAL_BAND_H)
   pygame.draw.rect(surf, palette.INK, band)
   pygame.draw.rect(surf, palette.CREAM,
-                   band.inflate(0, -2 * GOAL_BAND_BORDER))
+                   band.inflate(0, -GOAL_BAND_BORDER - GOAL_BAND_BORDER))
   pygame.draw.rect(surf, col, (0, band.top + GOAL_BAND_BORDER, width,
                                GOAL_STRIPE))
   pygame.draw.rect(surf, col, (0, band.bottom - GOAL_BAND_BORDER
@@ -703,7 +703,8 @@ class MatchRenderer:
                      board.move(layout.SHADOW_OFFSET, layout.SHADOW_OFFSET))
     pygame.draw.rect(surf, palette.STRUCT_DARK, board)
     pygame.draw.rect(surf, palette.INK, board, layout.FRAME_LINE)
-    led_area = board.inflate(-2 * BOARD_INSET, -2 * BOARD_INSET)
+    shrink = -BOARD_INSET - BOARD_INSET
+    led_area = board.inflate(shrink, shrink)
     pygame.draw.rect(surf, palette.LED_BG, led_area)
     return led_area
 

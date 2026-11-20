@@ -94,7 +94,7 @@ def bevel_box(surf, rect, face, border=palette.INK, light=None, dark=None,
   if shadow:
     _blit_shadow(surf, rect, BOX_SHADOW_ALPHA, 2 * b)
   pygame.draw.rect(surf, border, rect)
-  inner = rect.inflate(-2 * b, -2 * b)
+  inner = rect.inflate(-b - b, -b - b)
   pygame.draw.rect(surf, face, inner)
   _draw_bevel(surf, inner, light, dark, b)
   return inner

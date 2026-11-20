@@ -26,8 +26,8 @@ GRID_MIN = 1e-6         # smallest cell size (never divide by zero)
 ONE_COUNT = 1           # each point counts once (atomicAdd of 1 in the GPU)
 # --- F11: the crowd of the stands (same numbers as k_crowd) -------------
 CROWD_W, CROWD_H, CROWD_JUMP = 0, 1, 2      # seat size and jump (cfg cols)
-CROWD_HZ, CROWD_GOAL_JUMP, CROWD_GOAL_HZ = 3, 4, 5
-CROWD_WAVE, CROWD_FLAG_W, CROWD_FLAG_H = 6, 7, 8
+CROWD_HZ, CROWD_GOAL_JUMP, CROWD_GOAL_HZ = 3, 4, 5  # rates
+CROWD_WAVE, CROWD_FLAG_W, CROWD_FLAG_H = 6, 7, 8   # wave and flag size
 CROWD_FILL, CROWD_EVERY = 9, 10             # occupancy and one flag each N
 CROWD_BODY_W, CROWD_BODY_H = 11, 12         # px: shirt of one person
 CROWD_HEAD_R, CROWD_STEP = 13, 14           # head radius and dark step

@@ -300,7 +300,8 @@ def scoreboard(surf, center, width, score_text):
                    box.move(layout.SHADOW_OFFSET, layout.SHADOW_OFFSET))
   pygame.draw.rect(surf, palette.STRUCT_DARK, box)
   pygame.draw.rect(surf, palette.INK, box, layout.FRAME_LINE)
-  led = box.inflate(-2 * SCOREBOARD_INSET, -2 * SCOREBOARD_INSET)
+  shrink = -SCOREBOARD_INSET - SCOREBOARD_INSET
+  led = box.inflate(shrink, shrink)
   pygame.draw.rect(surf, palette.LED_BG, led)
   score = pixelfont.render_led(score_text, SCOREBOARD_LED_SCALE,
                                palette.LED_ON, palette.LED_OFF)

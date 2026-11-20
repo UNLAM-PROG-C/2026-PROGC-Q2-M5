@@ -17,6 +17,7 @@ LUMA_B = 0.114          # luminance of blue
 SOBEL_SCALE = 0.25      # 1/4: the sobel weights add up to 4
 CHANNELS = 3            # interleaved RGB
 BINS = 256              # luminance levels of the histogram
+PAD_END = -2            # end of the sobel window: drops 2 padding rows
 SPOT_MAX = 8            # lamps the spotlight kernel walks per pixel
 HEAT_FREQ_Y = 0.12      # waves per pixel, vertical (fire)
 HEAT_SPEED_Y = 18.0     # rad/s of those waves
@@ -166,9 +167,9 @@ class Primitives:
   def sobel(self, gray):
     """Gradient magnitude of the image (edges)."""
     pad = np.pad(gray, 1, mode="edge")
-    a, b, c = pad[:-2, :-2], pad[:-2, 1:-1], pad[:-2, 2:]
-    d, f = pad[1:-1, :-2], pad[1:-1, 2:]
-    g, hh, k = pad[2:, :-2], pad[2:, 1:-1], pad[2:, 2:]
+    a, b, c = pad[:PAD_END, :PAD_END], pad[:PAD_END, 1:-1], pad[:PAD_END, 2:]
+    d, f = pad[1:-1, :PAD_END], pad[1:-1, 2:]
+    g, hh, k = pad[2:, :PAD_END], pad[2:, 1:-1], pad[2:, 2:]
     gx = (c + 2.0 * f + k) - (a + 2.0 * d + g)
     gy = (g + 2.0 * hh + k) - (a + 2.0 * b + c)
     return np.sqrt(gx * gx + gy * gy) * SOBEL_SCALE
