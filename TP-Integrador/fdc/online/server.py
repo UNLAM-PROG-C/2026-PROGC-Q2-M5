@@ -232,14 +232,24 @@ class GameServer:
       return connection.respond(
           http.HTTPStatus.NOT_FOUND, "El cliente web no está "
           "compilado. Ejecutá: python tools/build_web.py\n")
-    if path.endswith("/"):
-      path += "index.html"
+    path += "index.html" if path.endswith("/") else ""
     target = (self.web_dir / path.lstrip("/")).resolve()
+    if self.web_dir in target.parents and (target / "index.html").is_file():
+      return self._to_folder(target)
     if self.web_dir not in target.parents or not target.is_file():
       return connection.respond(http.HTTPStatus.NOT_FOUND, "No existe.\n")
     return _response(http.HTTPStatus.OK, target.read_bytes(),
                      _content_type(target.name),
                      cache=_cache_control(path))
+
+  def _to_folder(self, folder):
+    """A folder asked without its slash goes to "folder/": the relative
+        links of its index.html only work with the slash. The address comes
+        from the resolved folder, not from the request: it never leaves the
+        site."""
+    location = "/" + folder.relative_to(self.web_dir).as_posix() + "/"
+    return _response(http.HTTPStatus.MOVED_PERMANENTLY, b"",
+                     extra=[("Location", location)])
 
   async def _stats_loop(self):
     """Messages per second for the panel (one per PANEL_REFRESH)."""
