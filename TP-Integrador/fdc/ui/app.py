@@ -474,6 +474,7 @@ class App:
       browser.hide_loading_screen()
 
   def _draw_quality_controls(self):
+    """F10/F1 chips in a match or in Options; the area they cover."""
     if not getattr(self.postfx, "allowed", False):
       return None
     menu = isinstance(self.current, screens.OptionsScreen)

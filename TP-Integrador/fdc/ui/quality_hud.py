@@ -25,16 +25,20 @@ class QualityControls:
     self.expires = 0
 
   def toggle_help(self):
+    """F1: show or hide the extra shortcuts."""
     self.show_help = not self.show_help
 
   def announce(self, mode_name):
+    """Confirm the new mode for NOTICE_MS."""
     self.message = f"Calidad: {mode_name}"
     self.expires = pygame.time.get_ticks() + NOTICE_MS
 
   def notice(self):
+    """The confirmation text while it lasts, else empty."""
     return self.message if pygame.time.get_ticks() < self.expires else ""
 
   def draw(self, surf, demo=False, menu=False):
+    """Draw the chips at the bottom right; return the area they cover."""
     right = surf.get_width() - MARGIN
     bottom = surf.get_height() - (FOOTER_SPACE if menu else MARGIN)
     hint = _chip(surf, HINT, (right, bottom))
@@ -48,6 +52,7 @@ class QualityControls:
 
 
 def _chip(surf, label, bottomright):
+  """One text chip anchored at `bottomright`; return its rect."""
   image = assets.text(label, layout.FONT_SMALL, palette.HUD_TEXT)
   rect = image.get_rect().inflate(2 * PAD_X, 2 * PAD_Y)
   rect.bottomright = bottomright
