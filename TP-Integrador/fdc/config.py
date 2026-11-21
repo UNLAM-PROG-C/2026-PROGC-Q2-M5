@@ -543,7 +543,7 @@ class Gpu:
   DEMO_SHOCK_EVERY = 2.5    # s between forced goal waves (segment 7)
   DEMO_REPLAY_EVERY = 4.5   # s between replays of segment 8 and 9
   MEASURE_WARMUP = 30       # frames dropped at the start of each segment
-  OVERLAY_ALPHA = 190       # opacity of the overlay background (0-255)
+  OVERLAY_ALPHA = 245       # opacity of the overlay background (0-255)
   OVERLAY_FONT = 22         # px: minimum size of the overlay text
   OVERLAY_REFRESH = 0.25    # s between overlay text rebuilds (4 Hz)
   MEASURE_FPS = 1000.0      # milliseconds in a second (capacity of a frame)
