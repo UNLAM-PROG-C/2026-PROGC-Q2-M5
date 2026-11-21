@@ -1,6 +1,6 @@
 # Futbol De Cabeza
 
-**Versión 1.0.2** (2026-11-08). Los zips de Windows (CPU y GPU) y la `.app` de Mac
+**Versión 1.0.3** (2026-11-21). Los zips de Windows (CPU y GPU) y la `.app` de Mac
 se arman con `tools\build_exe.py`, `packaging/mac/build.sh` y `release\NOTAS-RELEASE.md`.
 
 Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas. Todo eso también está **en el navegador**: entrando a la página del juego se elige el modo igual que en la versión de escritorio.
