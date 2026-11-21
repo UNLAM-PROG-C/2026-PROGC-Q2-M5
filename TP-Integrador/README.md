@@ -1,7 +1,10 @@
 # Futbol De Cabeza
 
 **Versión 1.0.3** (2026-11-21). Los zips de Windows (CPU y GPU) y la `.app` de Mac
-se arman con `tools\build_exe.py`, `packaging/mac/build.sh` y `release\NOTAS-RELEASE.md`.
+se arman con `tools/build_exe.py` (Windows, `--mode cpu` o `--mode full`) y
+`packaging/mac/build.sh` (Mac); los dos usan `tools/pyi_rth_stdout.py` y
+`tools/servidor.txt.example`. Los pasos de la publicación están en
+`release/NOTAS-RELEASE.md`, fuera del repositorio.
 
 Juego 2D para dos personas, inspirado en la jugabilidad de *Sports Heads Football*: cabezones con un botín, cancha lateral, saltos, patadas, cabezazos y poderes que se activan cuando la pelota los toca. Estilo **retro en pixel art**, con paleta clara y clásica. Se juega **en el mismo teclado**, **contra la computadora** (Mundialito) u **online** desde dos casas. Todo eso también está **en el navegador**: entrando a la página del juego se elige el modo igual que en la versión de escritorio.
 
@@ -481,6 +484,10 @@ fdc/ui/assets.py          textos, caché y reemplazo de recursos
 fdc/ui/input.py           captura de teclas y contadores de pulsaciones
 tools/import_sprites.py   convierte assets/originals/*.webp en los sprites del juego
 tools/build_web.py        compila el cliente web con pygbag en build/web
+tools/build_exe.py        arma el juego para Windows con PyInstaller (dist/futbol-cpu, dist/futbol-full)
+tools/pyi_rth_stdout.py   hook de PyInstaller: stdout/stderr sin consola (Windows --windowed y Mac)
+tools/servidor.txt.example servidor online por defecto; se copia como servidor.txt al lado del juego
+packaging/mac/           build.sh y FutbolDeCabeza.spec: arman FutbolDeCabeza.app y el zip de Mac
 assets/originals/         sprites originales (uno por personaje, con su botín)
 assets/characters/        cabezas, cuadros del botín y sprites.json (generados por el importador)
 docs/ONLINE.md            modo online: reglas, arquitectura, mensajes y puesta en marcha en la NAS
