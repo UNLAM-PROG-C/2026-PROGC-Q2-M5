@@ -1,6 +1,6 @@
 # Futbol De Cabeza
 
-**Versión 1.0.4** (2026-11-21). Los zips de Windows (CPU y GPU) y la `.app` de Mac
+**Versión 1.0.5** (2026-11-21). Los zips de Windows (CPU y GPU) y la `.app` de Mac
 se arman con `tools/build_exe.py` (Windows, `--mode cpu` o `--mode full`) y
 `packaging/mac/build.sh` (Mac); los dos usan `tools/pyi_rth_stdout.py` y
 `tools/servidor.txt.example`. Los pasos de la publicación están en
