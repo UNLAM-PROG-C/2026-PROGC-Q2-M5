@@ -20,6 +20,7 @@ LEVELS = 3              # gray levels of tolerance
 HIST_LEVELS = 1         # the histogram counts pixels: one bin may move
 WARP_MEAN = 8.0         # mean difference of a warp (it moves pixels)
 GAIN = 1.0              # light weight
+SOFT = 4                # px: the warps are tested on a soft image
 SPOT_CAP = 0.85         # top of the light of the night (k_spotlights)
 SPOT_TOP = int(SPOT_CAP * 255) + 2   # brightest byte a capped light gives
 
@@ -35,6 +36,15 @@ def frame():
   img = rng.integers(0, 256, (H, W, 3), dtype=np.uint8)
   img[10:30, 20:50] = 240
   return img
+
+
+def soften(img):
+  """Box blur of radius SOFT on both axes, so a warp moves smooth colour."""
+  out = img.astype(np.float32)
+  taps = range(-SOFT, SOFT + 1)
+  for axis in (0, 1):
+    out = sum(np.roll(out, tap, axis) for tap in taps) / len(taps)
+  return out.astype(np.uint8)
 
 
 def biggest(a, b):
@@ -56,7 +66,7 @@ class KernelTest(unittest.TestCase):
     cls.gpu = backend.Gpu()
     cls.cpu = cpu_ref.Cpu()
     cls.img = frame()
-    cls.soft = np.repeat(np.repeat(cls.img[::2, ::2], 2, 0), 2, 1)
+    cls.soft = soften(cls.img)
 
   def assertClose(self, ours, ref, limit=LEVELS):
     self.assertLessEqual(biggest(ours, ref), limit)
@@ -173,7 +183,7 @@ class PowerAndNightTest(unittest.TestCase):
     cls.gpu = backend.Gpu()
     cls.cpu = cpu_ref.Cpu()
     cls.img = frame()
-    cls.soft = np.repeat(np.repeat(cls.img[::2, ::2], 2, 0), 2, 1)
+    cls.soft = soften(cls.img)
 
   def assertClose(self, ours, ref, limit=LEVELS):
     self.assertLessEqual(biggest(ours, ref), limit)
