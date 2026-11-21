@@ -28,19 +28,18 @@ py -m pip install -r requirements.txt
 py main.py --demo --calidad full
 ```
 
-- 10 segmentos de `--demo-seconds` (por defecto 10 s): sin efectos, hielo,
-  apagón, confusión, fuego, noche, onda + estela, repetición con look de TV
-  vieja, VAR y mapa de calor. Al terminar se queda en la pantalla `FIN DE LA
-  DEMO` (Esc sale); para que termine sola y devuelva la tabla, correr
-  `py tools\run_demo.py`.
+- 7 segmentos de `--demo-seconds` (por defecto 10 s): sin efectos, hielo,
+  apagón, confusión, fuego, noche con autoexposición y repetición con look de
+  TV vieja. Al terminar se queda en la pantalla `FIN DE LA DEMO` (Esc sale).
 - Semilla fija (`DEMO_SEED = 2026`): mismos goles y mismas jugadas en cada
   máquina. `--seed 7` la cambia.
 - `--demo-backends cpu|gpu|both` (por defecto `both`): con `both` mide el mismo
   segmento primero en GPU y después en numpy, y escribe las dos filas.
-- `--demo-frame-clock`: avanza con 1/60 s fijo en vez del reloj real. Sirve para
-  capturas repetibles (`tools/record_frames.py` lo usa).
+- `--demo-frame-clock`: el director avanza con 1/60 s fijo en vez del reloj
+  real. Para ver los efectos sin el panel, usá `--overlay off`.
 - `F1` muestra la ayuda, `F10` alterna SIN EFECTOS y FULL, `Tab` salta al
   siguiente segmento y `Esc` sale. `F4` alterna CPU/GPU con la cadena activa.
+  **N** alterna la noche durante un partido.
 
 ## Overlay de rendimiento (F2)
 
@@ -75,41 +74,22 @@ GPU/numpy) con todos los CSV de `mediciones/` y la imprime y la guarda.
 ## Benchmark de kernels y capturas
 
 ```powershell
-py tools\bench_gpu.py --reps 20 --blocks        # kernels sueltos, GPU vs numpy
-py tools\record_frames.py                       # frames/frame_NN_*.png
-py tools\pack_colab.py                          # colab_pack.zip para Colab
+py tools\bench_gpu.py --reps 20 --blocks
+py tools\benchmark_cpu_gpu.py
 ```
 
-- `bench_gpu.py` mide `gray`, `sobel`, `glow_composite`, `crt` y `var_look` a
-  1280x720 (y `--resolutions 640x360,1280x720,1920x1080`), escribe
-  `mediciones/bench_<fecha>.csv` e imprime la tabla con el speedup. `--blocks`
-  barre bloques 8x8, 16x16, 32x8, 32x32; `--nsys` intenta `nsys profile`.
-- `record_frames.py` corre la demo con reloj fijo y guarda un PNG por segmento
-  (1280x720, con cartel y overlay) en `frames/`.
-- `pack_colab.py` arma `colab_pack.zip` (fuentes, kernels, herramientas,
-  notebook y frames) y avisa si pasa el límite de subida de Colab.
+`bench_gpu.py` mide gris, halo y CRT. El benchmark por etapas mide `k_gray`,
+`ice` (bordes y aplicación), `k_spotlights`, `k_crt` y `k_luma_hist`, con
+medianas de reserva, subida, cómputo, descarga y liberación. Recompilá el
+fatbin con `py tools\build_kernels.py` si cambió `fdc/gpu/kernels.cu`.
 
-## Notebook / Colab
+Para capturas usá `--demo --calidad full --overlay off`: dejá pasar al menos
+3 s de cada segmento y esperá a que no haya cuenta regresiva ni cartel de
+saque. En fuego buscá la pelota sobre el pasto y cerca de una línea. En hielo
+buscá un jugador cerca de una línea o del círculo central.
 
-`notebooks/gpu_efectos_colab.ipynb`: sube `colab_pack.zip`, lo descomprime,
-instala `pycuda` y corre el benchmark en la GPU de Colab; sirve para comparar
-con la RTX local cuando en la notebook no hay NVIDIA.
-
-## Dos instancias online (GPU + CPU)
-
-`tools/online_two_apps.py` levanta el servidor real en un puerto libre y
-arranca dos clientes de verdad (menús, sala, partido) sin ventana, uno con
-`--backend gpu` y otro con `--backend cpu`. Los dos se dan listos, juegan
-unos segundos con hielo y estela forzados y dejan una captura cada uno.
+La prueba de aislamiento del servidor y de la simulación no necesita GPU:
 
 ```powershell
-py tools\online_two_apps.py --seconds 8 --duration 25
-py -m unittest tests.test_gpu_isolation -v
+py -m unittest discover -s tests -p test_gpu_isolation.py -v
 ```
-
-- Cada cliente imprime `mode`, frames, píxeles que se movió, `fx` medio y
-  máximo, y los efectos activos; termina con `OK` si los dos jugaron.
-- `--shots` cambia la carpeta de las capturas (`frames\` por defecto).
-- La prueba de aislamiento verifica que `fdc/sim`, `fdc/ipc` y `fdc/online`
-  no importan `numpy`, `pygame`, `pycuda` ni `fdc.gpu`, ni en el código ni en
-  un intérprete limpio.

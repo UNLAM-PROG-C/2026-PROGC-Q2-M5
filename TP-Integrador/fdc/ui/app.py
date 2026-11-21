@@ -150,21 +150,8 @@ class _NoFx:
     """No replay without the effects."""
     return None
 
-  def replay_stage(self):
-    """No VAR without the effects."""
-    return None
-
-  def replay_zoom(self):
-    """No zoom without the effects."""
-    return None
-
   def skip(self):
     """Nothing to skip without the effects."""
-    return False
-
-  def heat_overlay(self, surface, channel):
-    """No heat map without the effects."""
-    del surface, channel
     return False
 
   def draw_crowd(self, surface):
@@ -212,9 +199,8 @@ class _NoFx:
   def force(self, **params):
     """The demo cannot force anything without the effects."""
 
-  def begin_replay(self, var=False):
+  def begin_replay(self):
     """No replay without the effects."""
-    del var
     return False
 
   def start_goal_replay(self):

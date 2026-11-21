@@ -12,7 +12,7 @@ from fdc.gpu import backend
 LAUNCHERS = re.compile(
     r"""(?:_fn\(\s*|_simple\(\s*|_warp\(\s*\w+\s*,\s*)["'](\w+)["']""")
 MANGLED = r"_Z\d+%s[A-Z]"
-MIN_KERNELS = 30            # the regex must really find the launches
+MIN_KERNELS = 20            # 23 kernels; detect a broken launch-name regex
 
 
 def used_kernels():

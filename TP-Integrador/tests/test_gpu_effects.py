@@ -19,7 +19,6 @@ from fdc.gpu import metrics
 from fdc.gpu import particles
 from fdc.gpu import postfx
 from fdc.gpu import replay
-from fdc.ui import match_screens
 
 W, H = 64, 48           # size of the test surface
 FRAMES = 3              # frames of the chain in each test
@@ -49,10 +48,9 @@ ICE_STATE = {
                  "left": 1.8, "dur": 2.0}],
 }
 # Frames needed to save two states (one every REPLAY_STEP s) and to end the
-# replay and the VAR (they last REPLAY_DURATION and VAR_DURATION + VAR_CONFIRM).
+# the standalone replay.
 SAVE_FRAMES = int(config.Gpu.REPLAY_STEP / DT) + 2
 REPLAY_FRAMES = int(config.Gpu.REPLAY_DURATION / DT) + 2
-VAR_FRAMES = int((config.Gpu.VAR_DURATION + config.Gpu.VAR_CONFIRM) / DT) + 2
 # F10: the goal celebrates first and only then the replay starts, so these
 # tests draw the celebration before looking at the replay (and the replay
 # itself lasts REPLAY_AFTER_GOAL s more).
@@ -64,7 +62,7 @@ BAR_Y = config.Arena.FLOOR_Y - config.Arena.GOAL_HEIGHT
 GOAL = {"type": protocol.EV_GOAL, "x": 600.0, "y": 300.0, "side": 0}
 CLOSE_GOAL = {"type": protocol.EV_GOAL, "x": MOUTH - 2.0, "y": BAR_Y + 18.0,
               "side": 0}
-# A match being played: the chain records the heat map and the replay.
+# A match state for the replay history.
 PLAY_STATE = {
     "phase": protocol.PHASE_PLAYING, "paused": False, "score": [0, 0],
     "goals": [config.Arena.GOAL_HEIGHT] * 2, "effects": [],
@@ -154,7 +152,6 @@ class ChainTest(unittest.TestCase):
     self.fx.clear()
     pos, _ = self.fx.particles.live()
     self.assertEqual(len(pos), 0)
-    self.assertIsNone(self.fx.trail)
 
   def test_disabled_chain_draws_nothing(self):
     self.fx.enabled = False
@@ -222,38 +219,11 @@ class PowerChainTest(unittest.TestCase):
     return self.fx.summary()
 
   def test_every_power_draws(self):
-    self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
     data = self.run_chain(POWER_STATE)
-    self.assertGreater(data["shock"], 0.0)
     self.assertGreater(data["ice"], 0.0)
     self.assertGreater(data["blackout"], 0.0)
     self.assertGreater(data["confusion"], 0.0)
     self.assertGreater(data["fire"], 0.0)
-
-  def test_trail_needs_a_fast_ball(self):
-    fast = dict(POWER_STATE, effects=[], ball=FAST_BALL)
-    self.assertGreater(self.run_chain(fast)["trail"], 0.0)
-    slow_fx = self._fresh()
-    slow = dict(POWER_STATE, effects=[], ball=SLOW_BALL)
-    self.assertEqual(slow_fx.summary()["trail"], 0.0)
-    slow_fx.state = slow
-    slow_fx.finish(self.screen, DT)
-    self.assertFalse(slow_fx.trail_gate.active)
-
-  def _fresh(self):
-    """A second chain for the tests that need clean timings."""
-    fx = postfx.PostFx(options(), (W, H))
-    fx.ops = cpu_ref.Cpu()
-    fx.enabled = True
-    fx.mode = "cpu"
-    fx.level = "alta"
-    return fx
-
-  def test_goal_event_starts_the_wave(self):
-    self.fx.event({"type": protocol.EV_GOAL, "x": 30.0, "y": 20.0})
-    self.assertEqual(len(self.fx.events), 1)
-    self.run_chain(POWER_STATE, 1)
-    self.assertGreater(self.fx.summary()["shock"], 0.0)
 
   def test_night_and_auto_exposure(self):
     self.fx.night = True
@@ -280,7 +250,7 @@ class PowerChainTest(unittest.TestCase):
 
 
 class ReplayChainTest(unittest.TestCase):
-  """Replay, VAR and heat map inside the chain (F5 and F6)."""
+  """Replay inside the chain."""
 
   def setUp(self):
     pygame.init()
@@ -348,38 +318,13 @@ class ReplayChainTest(unittest.TestCase):
     self.assertIsNone(self.fx.replay_mode())
     self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
 
-  def test_close_goal_goes_to_the_var(self):
+  def test_close_goal_uses_the_same_crt_replay(self):
     self.play(SAVE_FRAMES)
     self.fx.event(CLOSE_GOAL)
     self.play(CELEBRATION_FRAMES)
-    self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
-    self.assertEqual(self.fx.replay_stage(), replay.REVIEW)
-    self.assertEqual(self.fx.replay_zoom(), (600.0, 300.0))
+    self.assertEqual(self.fx.replay_mode(), replay.REPLAY_KIND)
     self.play(2)
-    self.assertTrue(self.fx.metrics.stage["var"])
-
-  def test_the_var_confirms_and_ends(self):
-    self.play(SAVE_FRAMES)
-    self.fx.event(CLOSE_GOAL)
-    self.play(CELEBRATION_FRAMES)
-    self.play(int(config.Gpu.VAR_DURATION / DT) + 2)
-    self.assertEqual(self.fx.replay_stage(), replay.CONFIRMED)
-    self.play(VAR_FRAMES)
-    self.assertIsNone(self.fx.replay_mode())
-
-  def test_force_var_reviews_every_goal(self):
-    self.play(SAVE_FRAMES)
-    self.fx.force_var = True
-    self.fx.event(GOAL)
-    self.play(CELEBRATION_FRAMES)
-    self.assertEqual(self.fx.replay_mode(), replay.VAR_KIND)
-
-  def test_the_forced_wave_does_not_celebrate(self):
-    """The demo forces the shock wave: it is not a goal (F10)."""
-    self.play(SAVE_FRAMES)
-    self.fx.event({"type": protocol.EV_GOAL, "x": 600.0, "y": 300.0})
-    self.assertIsNone(self.fx.celebration)
-    self.assertFalse(self.fx.confetti.alive())
+    self.assertTrue(self.fx.metrics.stage["crt"])
 
   def test_the_s_key_leaves_the_party_and_then_the_replay(self):
     """F10: one key skips the celebration and the replay."""
@@ -397,30 +342,11 @@ class ReplayChainTest(unittest.TestCase):
     self.assertIs(self.fx.view_state(PLAY_STATE), PLAY_STATE)
     self.assertFalse(self.fx.skip())
 
-  def test_heat_map_records_the_play(self):
-    self.play(config.Gpu.HEAT_FLUSH_FRAMES)
-    self.assertGreater(self.fx.heat.recorded, 0)
-    self.assertGreater(int(self.fx.heat.snapshot(self.fx.ops).sum()), 0)
-
-  def test_heat_overlay_paints_the_result(self):
-    self.play(config.Gpu.HEAT_FLUSH_FRAMES)
-    surf = surface()
-    before = np.array(pygame.surfarray.array3d(surf))
-    self.assertTrue(self.fx.heat_overlay(surf, 0))
-    after = np.array(pygame.surfarray.array3d(surf))
-    self.assertFalse(np.array_equal(before, after))
-
-  def test_heat_overlay_off_channel_does_nothing(self):
-    self.play(config.Gpu.HEAT_FLUSH_FRAMES)
-    self.assertFalse(self.fx.heat_overlay(surface(), None))
-
-  def test_clear_forgets_the_replay_and_the_heat(self):
-    self.play(config.Gpu.HEAT_FLUSH_FRAMES)
+  def test_clear_forgets_the_replay(self):
+    self.play(SAVE_FRAMES)
     self.fx.event(GOAL)
     self.fx.clear()
     self.assertIsNone(self.fx.replay_mode())
-    self.assertEqual(float(self.fx.heat.grids.sum()), 0.0)
-    self.assertEqual(self.fx.heat.recorded, 0)
     self.assertEqual(self.fx.history.saved, [])
 
 
@@ -442,12 +368,6 @@ class ArtRulesTest(unittest.TestCase):
     self.assertTrue(np.array_equal(out[:top], self.image[:top]))
     self.assertLessEqual(int(out.max()), FLAT + FLAT_GAIN)
     self.assertGreater(int(out[600:680, 380:420].max()), FLAT)
-
-  def test_shock_leaves_the_stands_still(self):
-    self.fx.fx.shock = (640.0, 620.0, 0.05)
-    out = self.fx._shock(self.image.copy())
-    top = config.Gpu.PITCH_TOP
-    self.assertTrue(np.array_equal(out[:top], self.image[:top]))
 
   def test_night_sky_stays_dark(self):
     out = self.fx._night_sky(self.image.copy())
@@ -498,39 +418,6 @@ class ArtRulesTest(unittest.TestCase):
       dark._night(black)
     self.assertAlmostEqual(self.fx.exposure.gain, dark.exposure.gain,
                            delta=NIGHT_GAIN_DELTA)
-
-
-class ScreenHelpersTest(unittest.TestCase):
-  """Keys, zoom and hint of the screens (F5 and F6), without the app."""
-
-  def setUp(self):
-    pygame.init()
-    pygame.display.set_mode((W, H))
-
-  def test_heat_keys(self):
-    right = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT)
-    left = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT)
-    up = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_UP)
-    self.assertEqual(match_screens.heat_step(right), 1)
-    self.assertEqual(match_screens.heat_step(left), -1)
-    self.assertEqual(match_screens.heat_step(up), 0)
-
-  def test_heat_cycle_goes_round(self):
-    self.assertEqual(match_screens.heat_cycle(None, 1), 0)
-    self.assertEqual(match_screens.heat_cycle(2, 1), None)
-    self.assertEqual(match_screens.heat_cycle(None, -1), 2)
-
-  def test_heat_hint_needs_no_heat(self):
-    surf = pygame.Surface((W, H))
-    match_screens.heat_hint(surf, 0)
-    match_screens.heat_hint(surf, None)
-    self.assertEqual(surf.get_size(), (W, H))
-
-  def test_zoom_keeps_the_size(self):
-    surf = pygame.Surface((W, H))
-    surf.fill((10, 20, 30))
-    match_screens.zoom_around(surf, (0.0, 0.0))
-    self.assertEqual(surf.get_size(), (W, H))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """CPU (numpy) vs GPU benchmark of five representative kernels.
 
-Kernels: k_gray, blur (blur_rows + blur_cols), k_spotlights, k_heat_render
+Cases: k_gray, ice (k_ice_edges + k_ice_apply), k_spotlights, k_crt
 and k_luma_hist (uses atomicAdd). Resolutions: 640x360, 1280x720, 1920x1080.
 
 Each GPU run follows the five steps of the course (reserve, upload, kernel,
@@ -42,18 +42,16 @@ STEPS = ("reserve", "upload", "kernel", "download", "free")
 SEED = 7                         # fixed scene (repeatable)
 BYTE = 256                       # gray levels of the random scene
 CHANNELS = 3                     # RGB
-BLUR_RADIUS = 4                  # px of the box blur
+ICE_ARGS = (0.6, (0.55, 0.85, 1.0), 1.0)   # edge strength, tint, blend
+CRT_FRAME = 5                     # frame index for repeatable noise
+CRT_ROWS = 3                      # rows between scan lines
+CRT_LOOK = (0.9, 0.35, 0.45, 0.1)  # blend, scan, vignette, grain
+CRT_TINT = (0.80, 1.0, 0.85)      # phosphor tint (RGB)
+ICE_DST = 3                       # buffer index of the final ice result
 LAMPS = ((0.3, 0.4, 0.25, 1.0), (0.7, 0.5, 0.3, 0.8))   # x, y, r, power
 AMBIENT = 0.35                   # light of the unlit scene
 LAMP_TINT = (1.0, 0.9, 0.7)      # warm colour of the lamps
 LAMP_CAP = 0.0                   # no brightness limit
-HEAT_COLS = 32                   # cells of the heat map, wide
-HEAT_ROWS = 18                   # cells of the heat map, tall
-HEAT_MAX = 1000                  # largest count of the heat map
-HEAT_ALPHA = 0.6                 # opacity of the heat map
-HEAT_GAIN = 1.0                  # gain of the heat map
-HEAT_CHANNEL = 0                 # channel drawn
-HEAT_DST = 3                     # buffer index of the heat map output
 BINS = 256                       # bins of the luma histogram
 ROUND = 4                        # decimals of the JSON
 FOLDER = os.path.join(ROOT, "mediciones")
@@ -64,13 +62,6 @@ def scene(width, height):
   """Random RGB frame (repeatable)."""
   rng = np.random.default_rng(SEED)
   return rng.integers(0, BYTE, (height, width, CHANNELS), dtype=np.uint8)
-
-
-def heat_grid():
-  """Heat map counts: a ramp, so every cell has a different colour."""
-  grid = np.arange(HEAT_COLS * HEAT_ROWS, dtype=np.uint32) % HEAT_MAX
-  grids = np.tile(grid.reshape(1, HEAT_ROWS, HEAT_COLS), (CHANNELS, 1, 1))
-  return grids, np.full(CHANNELS, HEAT_MAX, np.uint32)
 
 
 def buf(host, up=False, down=False):
@@ -86,13 +77,17 @@ def case_gray(img):
   return bufs, [("k_gray", (0, 1, *size))]
 
 
-def case_blur(img):
-  """blur_rows then blur_cols through a middle buffer."""
+def case_ice(img):
+  """Ice edges and maximum, then the tint in a second launch."""
   h, w = img.shape[:2]
-  args = (np.int32(w), np.int32(h), np.int32(BLUR_RADIUS))
-  bufs = [buf(img, up=True), buf(np.empty_like(img)),
+  size = (np.int32(w), np.int32(h))
+  bufs = [buf(img, up=True), buf(np.empty((h, w), np.float32)),
+          buf(np.zeros(1, np.uint32), up=True),
           buf(np.empty_like(img), down=True)]
-  return bufs, [("blur_rows", (0, 1, *args)), ("blur_cols", (1, 2, *args))]
+  strength, tint, amount = ICE_ARGS
+  params = tuple(map(np.float32, (strength, *tint, amount)))
+  return bufs, [("k_ice_edges", (0, 1, 2, *size)),
+                ("k_ice_apply", (0, 1, 2, ICE_DST, *size, *params))]
 
 
 def lamps_in_pixels(w, h):
@@ -113,16 +108,16 @@ def case_spotlights(img):
   return bufs, [("k_spotlights", (0, 1, np.int32(w), np.int32(h), 2, *tail))]
 
 
-def case_heat_render(img):
-  """k_heat_render: src, grids, maxes, dst."""
+def case_crt(img):
+  """The CRT pass: source, destination and scalar TV settings."""
   h, w = img.shape[:2]
-  grids, maxes = heat_grid()
-  tail = (np.int32(w), np.int32(h), np.int32(HEAT_COLS),
-          np.int32(HEAT_ROWS), np.int32(HEAT_CHANNEL),
-          np.float32(HEAT_ALPHA), np.float32(HEAT_GAIN))
-  bufs = [buf(img, up=True), buf(grids, up=True), buf(maxes, up=True),
-          buf(np.empty_like(img), down=True)]
-  return bufs, [("k_heat_render", (0, 1, 2, HEAT_DST, *tail))]
+  size = (np.int32(w), np.int32(h))
+  look = tuple(map(np.float32, CRT_LOOK))
+  tint = tuple(map(np.float32, CRT_TINT))
+  args = (0, 1, *size, np.int32(CRT_FRAME), *look, np.int32(CRT_ROWS),
+          *tint)
+  return [buf(img, up=True), buf(np.empty_like(img), down=True)], [
+      ("k_crt", args)]
 
 
 def case_luma_hist(img):
@@ -142,18 +137,12 @@ def cpu_spotlights(cpu, img):
                         LAMP_CAP)
 
 
-def cpu_heat_render(cpu, img):
-  """Numpy heat map over the image."""
-  grids, maxes = heat_grid()
-  return cpu.heat_render(img, grids, maxes, HEAT_COLS, HEAT_ROWS,
-                         HEAT_CHANNEL, HEAT_ALPHA, HEAT_GAIN)
-
-
 CASES = (
     ("k_gray", case_gray, lambda cpu, img: cpu.gray(img)),
-    ("blur", case_blur, lambda cpu, img: cpu.blur(img, BLUR_RADIUS)),
+    ("ice", case_ice, lambda cpu, img: cpu.ice(img, *ICE_ARGS)),
     ("k_spotlights", case_spotlights, cpu_spotlights),
-    ("k_heat_render", case_heat_render, cpu_heat_render),
+    ("k_crt", case_crt, lambda cpu, img: cpu.crt(
+        img, CRT_FRAME, *CRT_LOOK, CRT_ROWS, CRT_TINT)),
     ("k_luma_hist", case_luma_hist, lambda cpu, img: cpu.luma_stats(img)),
 )
 

@@ -53,12 +53,6 @@ class FakePostFx:
   def replay_mode(self):
     return replay.REPLAY_KIND if self.can_replay else None
 
-  def replay_stage(self):
-    return None
-
-  def replay_zoom(self):
-    return None
-
   def begin(self, surf, st):
     del st      # the chain draws over the screen
     return surf

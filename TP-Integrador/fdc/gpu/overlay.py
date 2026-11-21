@@ -122,7 +122,6 @@ def _quality_name(info):
       info.get("quality_mode"), "-")
 
 
-
 def _mode_name(info):
   """Readable name of the backend of the effects."""
   if info.get("mode") == "gpu":
@@ -192,10 +191,9 @@ def info_of(postfx_summary, app=None, extra=None):
 
 def _kernels(data):
   """[(stage, ms)] of the stages that ran this frame (mean > 0)."""
-  keys = ("glow", "particles", "confetti", "lights", "heat", "trail",
-          "histogram", "shock", "fire", "confusion", "confusion_rot",
-          "ice", "blackout", "night", "exposure", "crt",
-          "var", "crowd")
+  keys = ("glow", "particles", "confetti", "lights", "heat",
+          "histogram", "fire", "confusion", "confusion_rot",
+          "ice", "blackout", "night", "exposure", "crt", "crowd")
   return [(key, float(data.get(key) or 0.0)) for key in keys
           if (data.get(key) or 0.0) > 0.0]
 

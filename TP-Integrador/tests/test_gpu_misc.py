@@ -20,7 +20,7 @@ DT = 1.0 / config.UI_FPS  # s between frames
 
 
 class DirectorTest(unittest.TestCase):
-  """The demo clock runs the ten segments in order."""
+  """The demo clock runs the seven segments in order."""
 
   def test_all_segments_in_order(self):
     director = demo.DemoDirector(seconds=1.0)
@@ -32,10 +32,12 @@ class DirectorTest(unittest.TestCase):
     self.assertEqual(seen, list(range(len(demo.SEGMENTS))))
 
   def test_names_are_the_ones_of_the_spec(self):
-    names = [name for name, _ in demo.SEGMENTS]
-    self.assertEqual(len(names), 10)
-    self.assertIn("VAR con zoom y cartel", names)
-    self.assertIn("mapa de calor del partido", names)
+    self.assertEqual(demo.SEGMENTS, (
+        ("sin efectos", None), ("hielo", "ice"), ("apagón", "blackout"),
+        ("confusión", "confusion"), ("fuego", "fire"),
+        ("noche + autoexposición", "night"),
+        ("repetición con look de TV vieja", "replay"),
+    ))
 
   def test_frame_clock_is_repeatable(self):
     director = demo.DemoDirector(seconds=0.5, frame_clock=True)
@@ -54,7 +56,7 @@ class DirectorTest(unittest.TestCase):
   def test_label_and_forcing(self):
     director = demo.DemoDirector(seconds=1.0)
     self.assertEqual(director.kind(), None)
-    self.assertIn("EFECTO 1/10", director.label())
+    self.assertIn("EFECTO 1/7", director.label())
     for _ in range(int(config.UI_FPS) + 2):
       director.step(DT, DT)
     self.assertEqual(director.kind(), "ice")

@@ -12,18 +12,11 @@ CHANNELS = 3            # interleaved RGB
 BYTE_MAX = 255.0        # top of the 8 bit range
 BIT_HALF_W = 3          # column of the half width of a paper bit
 BIT_HALF_H = 4          # column of the half height of a paper bit
-HALF = 0.5              # used to build the vignette and the heat ramp
+HALF = 0.5              # used for the heat waves
 LUMA_R, LUMA_G, LUMA_B = 0.299, 0.587, 0.114   # luminance (Rec. 601)
 EPS = 1e-6              # smallest divisor (never divide by zero)
 GLOW_SAT_GAIN = 1.5     # saturated colours glow this much more (white: none)
-RAMP_LOW = 0.25         # heat ramp: where the green reaches the top
-RAMP_MID = 0.75         # heat ramp: where the red starts to go down
-RAMP_SLOPE = 4.0        # heat ramp: slope of the green and red
 SQRT2 = 1.41421356      # diagonal of the unit square (vignette)
-MEAN_AXES = (1, 3)      # block axes of the minimap reshape
-HEAT_FIELDS = 2         # x and y of a recorded point
-GRID_MIN = 1e-6         # smallest cell size (never divide by zero)
-ONE_COUNT = 1           # each point counts once (atomicAdd of 1 in the GPU)
 # --- F11: the crowd of the stands (same numbers as k_crowd) -------------
 CROWD_W, CROWD_H, CROWD_JUMP = 0, 1, 2      # seat size and jump (cfg cols)
 CROWD_HZ, CROWD_GOAL_JUMP, CROWD_GOAL_HZ = 3, 4, 5  # rates
@@ -134,11 +127,6 @@ def _accumulate(img, acc, radius, axis):
 class Cpu(primitives.Primitives):
   """Numpy version of the effects (same methods and shapes as Gpu)."""
 
-  def __init__(self):
-    # Heat map of the match (F6): empty until the first heat_reset.
-    self.heat_grids = np.zeros((CHANNELS, 1, 1), np.uint32)
-    self.heat_max = np.zeros(CHANNELS, np.uint32)
-
   def gray_five_steps(self, img, timer):
     """Only host allocation and calculation apply to the numpy path."""
     # Step 1: Allocate host output (malloc).
@@ -149,12 +137,6 @@ class Cpu(primitives.Primitives):
 
   def _gray_into(self, img, out):
     out[:] = self._gray_luma(img)[..., None]
-
-  def blur(self, img, radius):
-    """Separable box blur, with the same 8 bit rounding as the kernel."""
-    tmp = np.clip(_box_axis(img, radius, 1), 0, BYTE_MAX).astype(np.uint8)
-    out = np.clip(_box_axis(tmp, radius, 0), 0, BYTE_MAX)
-    return out.astype(np.uint8)
 
   def glow(self, img, threshold, radius, passes):
     """Bright pass at half resolution, then `passes` box blurs."""
@@ -213,30 +195,13 @@ class Cpu(primitives.Primitives):
     if x1 > x0 and y1 > y0:
       acc[y0:y1, x0:x1] += (bit[:CHANNELS] - base[y0:y1, x0:x1]) * gain
 
-  def lights(self, img, lights, gain):
-    """Additive spotlights: x, y, radius, power, r, g, b."""
-    h, w = img.shape[:2]
-    acc = np.zeros((h, w, CHANNELS), dtype=np.float32)
-    for light in lights:
-      acc += _light_layer(light, h, w, gain)
-    return _clamp(_rgb(img) + acc)
-
   def heat(self, img, phase, amp, period):
     """Heat waves: each pixel reads from a shifted place."""
-    return _warp(img, "heat", phase, amp, period)
-
-  def ripple(self, img, phase, amp, period):
-    """Concentric waves (the replay screen)."""
-    return _warp(img, "ripple", phase, amp, period)
+    return _heat_warp(img, phase, amp, period)
 
   def mix(self, a, b, alpha):
     """Linear mix: alpha 0 keeps `a`, alpha 1 keeps `b`."""
     return _clamp(_rgb(a) * (1.0 - alpha) + _rgb(b) * alpha)
-
-  def trail(self, cur, prev, alpha):
-    """Blend the previous frame into the current one."""
-    out = _clamp(_rgb(cur) * (1.0 - alpha) + _rgb(prev) * alpha)
-    return out, out.copy()
 
   def histogram(self, img):
     """256 bins of luminance (same scale as the kernel)."""
@@ -257,70 +222,6 @@ class Cpu(primitives.Primitives):
     out *= _vignette(h, w, vignette)[..., None]   # it never goes over 1
     return _clamp(out)
 
-  def minimap(self, img, cols, rows):
-    """Average of each block, as a float grid (rows, cols, 3)."""
-    h, w = img.shape[:2]
-    bw, bh = max(w // cols, 1), max(h // rows, 1)
-    crop = img[:bh * rows, :bw * cols].astype(np.float32)
-    crop = crop.reshape(rows, bh, cols, bw, CHANNELS).mean(axis=MEAN_AXES)
-    return crop / BYTE_MAX
-
-  def heat_colors(self, heat, max_value):
-    """Blue -> green -> yellow -> red ramp over the grid."""
-    v = np.clip(heat / max(max_value, EPS), 0.0, 1.0)
-    r = np.clip((v - HALF) * 2.0, 0.0, 1.0)
-    g = np.where(v < RAMP_LOW, v * RAMP_SLOPE,
-                 np.where(v < RAMP_MID, 1.0, (1.0 - v) * RAMP_SLOPE))
-    b = np.clip((HALF - v) * 2.0, 0.0, 1.0)
-    return _clamp(np.stack([r, g, b], axis=-1))
-
-  def heat_splat(self, pos, heat, amount):
-    """Accumulate points (col, row) into the grid."""
-    rows, cols = heat.shape
-    for x, y in pos:
-      cx, cy = int(x), int(y)
-      if 0 <= cx < cols and 0 <= cy < rows:
-        heat[cy, cx] += amount
-    return heat
-
-  # ------------------------------------------ heat map of the match (F6)
-  def heat_reset(self, cols, rows):
-    """Starts an empty heat map (both buffers live in this object)."""
-    self.heat_grids = np.zeros((CHANNELS, rows, cols), np.uint32)
-    self.heat_max = np.zeros(CHANNELS, np.uint32)
-
-  def heat_accumulate(self, channel, points, cols, rows, cell_w, cell_h):
-    """Adds every (x, y) point of a channel to its cell (atomicAdd)."""
-    pts = np.asarray(points, np.float32).reshape(-1, HEAT_FIELDS)
-    if len(pts) == 0:
-      return
-    cx = (pts[:, 0] / max(cell_w, GRID_MIN)).astype(np.int64)
-    cy = (pts[:, 1] / max(cell_h, GRID_MIN)).astype(np.int64)
-    inside = (cx >= 0) & (cx < cols) & (cy >= 0) & (cy < rows)
-    index = (cy * cols + cx)[inside]
-    flat = self.heat_grids.reshape(CHANNELS, -1)[channel]
-    np.add.at(flat, index, ONE_COUNT)
-    self.heat_max[channel] = flat.max()
-
-  def heat_download(self, cols, rows):
-    """Copy of the grid and of the maximums (the only DtoH in the GPU)."""
-    del cols, rows
-    return self.heat_grids.copy(), self.heat_max.copy()
-
-  def heat_render(self, img, grids, maxes, cols, rows, channel, alpha, gain):
-    """Bilinear read of the grid, ramp and mix over the image."""
-    h, w = img.shape[:2]
-    cell_w, cell_h = w / cols, h / rows
-    xs, ys = _bilinear_index(w, h, cols, rows, cell_w, cell_h)
-    v = _bilinear(_grid_array(grids[channel], rows, cols), xs, ys)
-    top = float(maxes[channel])
-    v = np.clip(v / top, 0.0, 1.0) if top > 0 else np.zeros(v.shape,
-                                                             np.float32)
-    a = alpha * np.minimum(1.0, v * gain)
-    ramp = _heat_ramp(v)
-    out = _rgb(img) * (1.0 - a[..., None]) + ramp * a[..., None]
-    return primitives._to_byte(np.clip(out, 0.0, 1.0))
-
   def _splat(self, img, pos, col, size, gain):
     h, w = img.shape[:2]
     acc = np.zeros((h, w, CHANNELS), dtype=np.float32)
@@ -335,45 +236,6 @@ class Cpu(primitives.Primitives):
   def crowd(self, img, t, side, boost, cfg, pal):
     """Crowd of the stands: seats, people and flags (numpy version)."""
     return _Crowd(cfg, pal, t, side, boost).paint(img)
-
-
-def _bilinear_index(w, h, cols, rows, cell_w, cell_h):
-  """(x0, x1, tx) and (y0, y1, ty) of the bilinear read of the pixels."""
-  fx = (np.arange(w, dtype=np.float32) + HALF) / max(cell_w, GRID_MIN)
-  fy = (np.arange(h, dtype=np.float32) + HALF) / max(cell_h, GRID_MIN)
-  fx = np.clip(fx - HALF, 0.0, cols - 1)
-  fy = np.clip(fy - HALF, 0.0, rows - 1)
-  return _pair(fx, cols), _pair(fy, rows)
-
-
-def _pair(pos, size):
-  """First cell, second cell and weight of the read of every index."""
-  first = pos.astype(np.int32)
-  second = np.minimum(first + 1, size - 1)
-  return first, second, pos - first
-
-
-def _bilinear(grid, xs, ys):
-  """Bilinear read of a (rows, cols) grid with those indexes."""
-  (x0, x1, tx), (y0, y1, ty) = xs, ys
-  left, right = (1.0 - tx)[None, :], tx[None, :]
-  above = left * grid[y0][:, x0] + right * grid[y0][:, x1]
-  below = left * grid[y1][:, x0] + right * grid[y1][:, x1]
-  return (1.0 - ty)[:, None] * above + ty[:, None] * below
-
-
-def _grid_array(grid, rows, cols):
-  """The grid as a (rows, cols) float32 array (flat or already 2D)."""
-  return np.asarray(grid, np.float32).reshape(rows, cols)
-
-
-def _heat_ramp(v):
-  """Blue -> cyan -> yellow -> red ramp of the heat map (three channels)."""
-  red = np.clip((v - HALF) * 2.0, 0.0, 1.0)
-  green = np.where(v < RAMP_LOW, v * RAMP_SLOPE,
-                   np.where(v < RAMP_MID, 1.0, (1.0 - v) * RAMP_SLOPE))
-  blue = np.clip((HALF - v) * 2.0, 0.0, 1.0)
-  return np.stack([red, green, blue], axis=-1).astype(np.float32)
 
 
 def _vignette(h, w, amount):
@@ -688,7 +550,6 @@ def _remember(key, pair):
     _STEP_CACHE.pop(next(iter(_STEP_CACHE)))
 
 
-
 def _crowd_hash(col, row):
   """Same xorshift hash as `crowd_hash` in the kernel (uint32 maths)."""
   hsh = (col.astype(np.uint32) * np.uint32(CROWD_HASH_C)) ^ (
@@ -699,26 +560,12 @@ def _crowd_hash(col, row):
   return hsh
 
 
-def _light_layer(light, h, w, gain):
-  x, y, rad, power, r, g, b = light
-  ys = np.arange(h, dtype=np.float32)[:, None]
-  xs = np.arange(w, dtype=np.float32)[None, :]
-  d2 = ((xs - x) ** 2 + (ys - y) ** 2) / max(rad * rad, 1.0)
-  mask = np.clip(1.0 - d2, 0.0, 1.0) ** 2 * power * gain
-  return np.stack([mask * r, mask * g, mask * b], axis=-1)
-
-
-def _warp(img, kind, phase, amp, period):
+def _heat_warp(img, phase, amp, period):
+  """Sample the scene along the horizontal and vertical heat waves."""
   h, w = img.shape[:2]
   ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-  if kind == "heat":
-    sx = xs + amp * np.sin(ys / period + phase)
-    sy = ys + amp * HALF * np.cos(xs / period + phase)
-  else:
-    dx, dy = xs - w * HALF, ys - h * HALF
-    d = np.sqrt(dx * dx + dy * dy)
-    k = amp * np.sin(d / period - phase)
-    sx, sy = xs + k * dx / (d + 1.0), ys + k * dy / (d + 1.0)
+  sx = xs + amp * np.sin(ys / period + phase)
+  sy = ys + amp * HALF * np.cos(xs / period + phase)
   ix = np.clip(sx.astype(np.int32), 0, w - 1)
   iy = np.clip(sy.astype(np.int32), 0, h - 1)
   return img[iy, ix]

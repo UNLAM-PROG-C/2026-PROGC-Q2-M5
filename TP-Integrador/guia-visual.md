@@ -40,13 +40,15 @@ Valores objetivo de `fdc/config.py` (clase `Gpu`):
 | `GLOW_RADIUS` | 3 | 2 |
 | `EXPOSURE` | 1.08 | 1.0 |
 | `VIGNETTE` | 0.35 | 0.25 |
-| `ICE_STRENGTH` | 0.55 | **0.30** |
-| `ICE_EDGES` | 0.9 | 0.5 |
+| `ICE_STRENGTH` | 0.30 | **0.60** (tinte visible en una miniatura) |
+| `ICE_EDGES` | 0.5 | **1.0** |
 | `HEAT_AMP` | 2.5 | 1.0 (ondas de calor deforman la tribuna entera; dejar solo en Fuego) |
-| `NIGHT_AMBIENT` | 0.15 | 0.25 (se pierde la cancha) |
+| `FIRE_AMP` | 9 | 14 px (la demo también muestra brasas del jugador) |
+| `NIGHT_AMBIENT` | 0.25 | 0.18 (más contraste entre los focos) |
+| `NIGHT_RADIUS` | 420 | 300 px |
 | `CROWD_SHADE_TOP` | 0.62 | 0.5 (tribuna más oscura = cancha primero) |
 | `CROWD_FILL` | 78 | 62 (más grada vacía, menos pared) |
-| `CROWD_SHIRTS` | (0.70,0.42,0.22),(0.62,0.30,0.44) | equivalentes de `#A8683A`,`#9E4D70`: (0.66,0.41,0.23),(0.62,0.30,0.44) con VAR_MIN 0.78 |
+| `CROWD_SHIRTS` | (0.70,0.42,0.22),(0.62,0.30,0.44) | equivalentes de `#A8683A`,`#9E4D70`: (0.66,0.41,0.23),(0.62,0.30,0.44) |
 | `CROWD_FLAGS` | 17 | 28 (menos banderas, más legibles) |
 
 Ronda 3 (valores ya aplicados):
@@ -56,13 +58,10 @@ Ronda 3 (valores ya aplicados):
 | `FREEZE_RADIUS` | 200 | **110** (el foco no llega a la tribuna) |
 | `FREEZE_GAIN` (nueva) | — | **0.22** (foco multiplicativo, tope 0.25) |
 | `ICE_PULSE` | 0.35 | **0.15** |
-| `SHOCK_AMP` | 14 | **4.5** |
-| `SHOCK_WIDTH` | 90 | **50** |
-| `SHOCK_ECHO`, `SHOCK_ECHO_AMP` | 0.62 / 0.55 | **se fueron** (segundo anillo) |
 | `PITCH_TOP` (nueva) | — | **504** (primera fila de césped) |
 
 ## Qué bajar o sacar
 1. Glow en partido normal (ver tabla).
 2. Distorsión de calor sobre la tribuna fuera del poder Fuego.
-3. Tinte de Hielo a 0.30 y bordes a 0.5.
+3. Capturar el hielo lejos del saque y con un jugador cerca de una línea.
 4. Cielo quemado: oscurecer degradé superior.

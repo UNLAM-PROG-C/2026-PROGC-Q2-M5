@@ -94,7 +94,7 @@ class OffTest(unittest.TestCase):
   def test_turning_off_cancels_a_replay(self):
     self.fx.set_quality_mode(FULL)
     self.fx.history.feed({"ball": {}}, 0.0)
-    self.assertTrue(self.fx.begin_replay(var=True))
+    self.assertTrue(self.fx.begin_replay())
     self.fx.set_quality_mode(OFF)
     self.assertIsNone(self.fx.replay_mode())
 

@@ -1,34 +1,27 @@
-"""Replay and VAR of the goals (F5).
+"""Replay of the goals (F5).
 
 The chain keeps the last `config.Gpu.REPLAY_SECONDS` seconds of match states,
-so a goal can be shown again and a close one can be reviewed by the VAR.
+so the play leading to a goal can be shown again.
 Everything here is plain Python (no pygame, no numpy): the rules are tested
 without a window.
 
-Three pieces:
+Two pieces:
   - `StateHistory`: the ring of saved states (one every `REPLAY_STEP` s).
   - `ReplayPlayer`: plays those states again in `REPLAY_DURATION` s,
     interpolating the positions so the movement does not look chopped.
-  - `VarPlayer`: freezes the last frame, says "reviewing" and then confirms.
 """
 import copy
 
 from fdc import config
 
 G = config.Gpu
-ARENA = config.Arena
 PENULTIMATE = -2           # second to last recorded frame
 REPLAY_KIND = "replay"      # the chain draws this as an old television
-VAR_KIND = "var"            # the chain draws this as a review
-REVIEW = "review"           # VAR stage: the referee is looking at the play
-CONFIRMED = "confirmed"     # VAR stage: the goal stands
 MIN_FRAMES = 2              # states needed to interpolate the positions
 MIN_DURATION = 0.001        # s: a replay never lasts zero
 STEP_TOLERANCE = 1e-9       # s: the step is never exact in float sums
 FULL = 1.0                  # end of the progress
-SIDES = (0, 1)              # left and right goal
 POSITION_KEYS = ("x", "y")  # fields interpolated between two states
-NO_GAP = 0.0                # px: the ball touched the bar but went in
 
 
 class StateHistory:
@@ -85,60 +78,6 @@ class StateHistory:
     picked = _window_states(self.saved, center - back, center + forward)
     return picked or self.frames(back)
 
-  def last_state(self):
-    """Newest saved state ({} if there is none)."""
-    return self.saved[-1][1] if self.saved else {}
-
-  def is_close(self, side, ball=None, frames=G.VAR_FRAMES):
-    """True if the goal was doubtful: the ball passed just under the bar.
-
-        The last `frames` states are checked (or the ball of the event, which
-        is the one that went in): close means the ball crossed grazing the
-        crossbar (less than the bar plus the ball under it). The distance to
-        the goal line is not a clue here: at `EV_GOAL` the ball is always on
-        it, so that clause of the spec would flag every goal.
-        """
-    if side not in SIDES:
-      return False
-    recent = self.saved[-frames:]
-    if ball is not None:
-      state = recent[-1][1] if recent else {}
-      return near_bar(state, side, ball[0], ball[1])
-    return any(near_bar(state, side, *ball_xy(state))
-               for _, state in recent)
-
-
-def near_bar(state, side, x, y):
-  """True if the ball went in grazing the crossbar.
-
-    `y` grows downwards: the gap under the bar is `bar_y - y`, and the goal
-    is close when that gap is smaller than the bar plus the ball (the ball
-    touched the bar and went in). The goal line is not a clue: at `EV_GOAL`
-    the ball is always on it.
-    """
-  del x  # the goal line is not a clue (the ball is always on it)
-  height = goal_height(state, side) if side in SIDES else None
-  if height is None:
-    return False
-  radius = float((state.get("ball") or {}).get("r") or 0.0)
-  gap = y - (ARENA.FLOOR_Y - height)      # px under the bar (0 = touching)
-  return NO_GAP <= gap <= ARENA.BAR_THICKNESS + radius
-
-
-def goal_height(state, side):
-  """Height of the crossbar of that goal, or None."""
-  goals = state.get("goals") or ()
-  if side < 0 or side >= len(goals):
-    return None
-  return float(goals[side])
-
-
-def ball_xy(state):
-  """(x, y) of the ball of a state (0, 0 if there is none)."""
-  ball = state.get("ball") or {}
-  return float(ball.get("x") or 0.0), float(ball.get("y") or 0.0)
-
-
 class ReplayPlayer:
   """Plays the saved states again, interpolating the positions."""
 
@@ -159,11 +98,6 @@ class ReplayPlayer:
   def finished(self, now):
     """True when the replay is over."""
     return self.progress(now) >= FULL
-
-  def stage(self, now):
-    """A plain replay has no stage (the VAR has two)."""
-    del now
-    return None
 
   def state_at(self, now):
     """State of the replay at `now` (positions interpolated)."""
@@ -190,34 +124,6 @@ class ReplayPlayer:
       if self.frames[index + 1][0] >= target:
         return self.frames[index], self.frames[index + 1]
     return self.frames[PENULTIMATE], self.frames[-1]
-
-
-class VarPlayer:
-  """Freeze frame of the goal: "reviewing" and then the confirmation."""
-
-  kind = VAR_KIND
-  from_goal = False      # the screen closes it when the window is over
-
-  def __init__(self, state, now, review=G.VAR_DURATION,
-               confirm=G.VAR_CONFIRM):
-    self.state = copy.deepcopy(state) if state else {}
-    self.start = now
-    self.review = review
-    self.confirm = confirm
-    self.duration = review + confirm   # s: the two signs together
-
-  def stage(self, now):
-    """REVIEW while the referee looks, CONFIRMED after that."""
-    return REVIEW if now - self.start < self.review else CONFIRMED
-
-  def finished(self, now):
-    """True when the two signs have been shown."""
-    return now - self.start >= self.review + self.confirm
-
-  def state_at(self, now):
-    """The frozen state (the match clock does not move)."""
-    del now  # the whole idea of the VAR is that time stands still
-    return self.state
 
 
 def _window_states(saved, start, end):

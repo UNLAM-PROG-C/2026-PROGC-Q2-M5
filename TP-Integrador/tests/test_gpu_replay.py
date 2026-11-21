@@ -1,4 +1,4 @@
-"""Replay and VAR of the goals (fdc.gpu.replay).
+"""Replay of the goals (fdc.gpu.replay).
 
 No window and no CUDA: the rules of F5 are pure functions of the saved
 states and the clock, so they are checked here frame by frame.
@@ -16,8 +16,6 @@ ARENA = config.Arena
 STEP = 0.05          # s between the states of these tests
 START = 100.0        # clock of the tests (s)
 BALL_R = 18.0        # px: radius of the ball in these states
-MOUTH = ARENA.GOAL_DEPTH          # x of the mouth of the left goal
-BAR_Y = ARENA.FLOOR_Y - ARENA.GOAL_HEIGHT   # y of the crossbar
 
 
 def state(x=600.0, y=400.0, height=ARENA.GOAL_HEIGHT, playing=True):
@@ -76,46 +74,6 @@ class HistoryTest(unittest.TestCase):
     self.assertIsNone(self.history.last_t)
 
 
-class IsCloseTest(unittest.TestCase):
-  """A goal is close when the ball went in grazing the crossbar."""
-
-  def test_grazing_the_bar(self):
-    self.assertTrue(replay.near_bar(state(), 0, 300.0, BAR_Y + 5.0))
-
-  def test_touching_the_bar(self):
-    self.assertTrue(replay.near_bar(state(), 0, 300.0, BAR_Y))
-
-  def test_completely_under_the_bar(self):
-    self.assertFalse(replay.near_bar(state(), 0, 300.0, 600.0))
-
-  def test_above_the_bar_is_not_a_goal(self):
-    self.assertFalse(replay.near_bar(state(), 0, 300.0, BAR_Y - 5.0))
-
-  def test_short_goal_is_not_close(self):
-    low = state(height=ARENA.GOAL_MIN_HEIGHT)
-    self.assertFalse(replay.near_bar(low, 0, 300.0, BAR_Y + 5.0))
-
-  def test_unknown_side_is_never_close(self):
-    self.assertFalse(replay.near_bar(state(), None, MOUTH, BAR_Y))
-    self.assertFalse(replay.near_bar({}, 0, MOUTH, BAR_Y))
-
-  def test_history_uses_the_ball_of_the_event(self):
-    history = replay.StateHistory(seconds=1.0, step=STEP)
-    for index in range(4):
-      history.feed(state(), index * STEP)
-    self.assertTrue(history.is_close(0, (300.0, BAR_Y + 5.0)))
-    self.assertFalse(history.is_close(0, (300.0, 600.0)))
-
-  def test_history_without_ball_uses_the_saved_state(self):
-    history = replay.StateHistory(seconds=1.0, step=STEP)
-    history.feed(state(y=BAR_Y + 5.0), 0.0)
-    self.assertTrue(history.is_close(0))
-    self.assertFalse(history.is_close(None))
-
-  def test_empty_history_is_not_close(self):
-    self.assertFalse(replay.StateHistory().is_close(0, (MOUTH, BAR_Y)))
-
-
 class ReplayPlayerTest(unittest.TestCase):
   """The replay walks the saved states in REPLAY_DURATION seconds."""
 
@@ -151,33 +109,8 @@ class ReplayPlayerTest(unittest.TestCase):
     player = replay.ReplayPlayer([(START, state(x=70.0))], START)
     self.assertEqual(player.state_at(START + 0.5)["ball"]["x"], 70.0)
 
-  def test_a_replay_has_no_stage(self):
-    self.assertIsNone(self.player.stage(START))
+  def test_replay_kind(self):
     self.assertEqual(self.player.kind, replay.REPLAY_KIND)
-
-
-class VarPlayerTest(unittest.TestCase):
-  """The VAR freezes the frame: reviewing, then the goal stands."""
-
-  def setUp(self):
-    self.frozen = state(x=MOUTH + 2.0, y=500.0)
-    self.player = replay.VarPlayer(self.frozen, START, review=1.0,
-                                   confirm=0.5)
-
-  def test_the_two_stages(self):
-    self.assertEqual(self.player.stage(START), replay.REVIEW)
-    self.assertEqual(self.player.stage(START + 1.0), replay.CONFIRMED)
-
-  def test_it_ends_after_both(self):
-    self.assertFalse(self.player.finished(START + 1.4))
-    self.assertTrue(self.player.finished(START + 1.5))
-
-  def test_the_frame_is_frozen(self):
-    self.frozen["ball"]["x"] = 1.0
-    self.assertEqual(self.player.state_at(START)["ball"]["x"], MOUTH + 2.0)
-
-  def test_kind(self):
-    self.assertEqual(self.player.kind, replay.VAR_KIND)
 
 
 class GoalClipTest(unittest.TestCase):
@@ -209,7 +142,7 @@ class GoalClipTest(unittest.TestCase):
     self.assertGreaterEqual(rules.GOAL_HOLD,
                             G.GOAL_CELEBRATION + G.REPLAY_CLIP)
     self.assertGreaterEqual(rules.GOAL_REPLAY,
-                            G.VAR_DURATION + G.VAR_CONFIRM)
+                            G.REPLAY_CLIP)
 
 
 if __name__ == "__main__":

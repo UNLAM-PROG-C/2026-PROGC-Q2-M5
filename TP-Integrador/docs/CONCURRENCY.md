@@ -16,6 +16,14 @@ Este documento explica **todo lo que corre al mismo tiempo** en el juego: la ver
 
 **¿Se usan hilos?** Sí, pero no son la base del diseño. La interfaz y la simulación **no comparten memoria**: se hablan por **mensajes** en colas acotadas. Por eso no hacen falta locks para proteger datos compartidos, porque no hay datos compartidos. Los hilos que existen tienen una tarea concreta: esperar la red, o hacer de "cinta transportadora" de las colas de `multiprocessing`.
 
+**CUDA opcional (escritorio, modo FULL).** El proceso de interfaz puede dibujar
+los efectos con CUDA o con numpy, sin compartir estado de juego con el proceso de
+simulación. En CUDA, `k_luma_hist` asigna un hilo a cada píxel del césped de
+noche; `atomicAdd` evita perder cuentas cuando varios hilos caen en el mismo
+nivel de luma y `atomicMax` conserva el máximo. La CPU usa la media para ajustar
+la ganancia del próximo cuadro. Estas atómicas protegen memoria del dispositivo,
+no las colas de `multiprocessing` ni el estado del partido.
+
 **En el navegador no hay concurrencia real.** Ahí no se pueden crear procesos ni hilos: todo corre en el hilo de la página, por turnos. Lo que se demuestra en el TP es la versión de escritorio y el servidor.
 
 ---

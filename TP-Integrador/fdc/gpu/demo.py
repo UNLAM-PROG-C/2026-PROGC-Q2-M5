@@ -1,9 +1,9 @@
 """Automatic demo: plays a match without a window and measures the effects.
 
-`tools/demo_gpu.py` calls `run` to compare the loop with the effects on and
-off. `DemoDirector` and `DemoScreen` (F7) are the demo for the university:
-ten segments of ten seconds each, one effect at a time, with a forced seed and
-a CSV of the real frame times. `tools/run_demo.py` runs it headless.
+`run` compares the loop with the effects on and off. `DemoDirector` and
+`DemoScreen` drive the demo for the university: seven segments of ten seconds
+each, one effect at a time, with a fixed seed and a CSV of the frame times.
+`run_demo` runs it headless.
 """
 import os
 import time
@@ -37,23 +37,17 @@ SEGMENTS = (
     ("confusión", "confusion"),
     ("fuego", "fire"),
     ("noche + autoexposición", "night"),
-    ("onda expansiva + estela", "shock"),
     ("repetición con look de TV vieja", "replay"),
-    ("VAR con zoom y cartel", "var"),
-    ("mapa de calor del partido", "heat"),
 )
 SEGMENT_COUNT = len(SEGMENTS)
 AVATARS = 2               # characters of the demo (the first two)
 SIGN_GAP = 6              # px: gap after the replay hint and demo title
 ICE_FORCED = 1.0          # ice strength of its segment (0-1)
 CONFUSION_FORCED = 1.0    # confusion strength of its segment (0-1)
-TRAIL_FORCED = 1.0        # trail strength of its segment (0-1)
 FIRE_RADIUS = 170.0       # px of the hot air of the fire segment
-HEAT_CHANNEL = 0          # the demo shows the heat of the ball
 BOT_LEVEL = G.DEMO_BOT_LEVEL
 ONE_SECOND = 1.0          # seconds in a second (demo clocks)
 FIRST_SEGMENT = 0         # index of the first segment
-
 
 
 def _draw_sign(surf, title, note, color):
@@ -138,7 +132,7 @@ def compare(frames=DEFAULT_FRAMES):
 
 
 class DemoDirector:
-  """Clock of the demo: which of the ten segments is on, and when it ends.
+  """Clock of the demo: which of the seven segments is on, and when it ends.
 
     The time comes from outside (`step(dt, frame_dt)`), so the demo can run
     in real time or with a fixed 1/60 s clock for repeated captures.
@@ -170,15 +164,15 @@ class DemoDirector:
     self.index += 1
 
   def name(self):
-    """Name of the segment ("hielo", "VAR con zoom y cartel"...)."""
+    """Name of the segment ("hielo", "apagón"...)."""
     return SEGMENTS[self.index][0]
 
   def kind(self):
-    """Effect of the segment ('ice', 'var'...) or None for the first."""
+    """Effect of the segment ('ice', 'fire'...) or None for the first."""
     return SEGMENTS[self.index][1]
 
   def label(self):
-    """Big text for the projector: 'EFECTO 3/10: APAGON'."""
+    """Big text for the projector: 'EFECTO 3/7: APAGON'."""
     return (f"EFECTO {self.index + 1}/{SEGMENT_COUNT}: "
             f"{self.name().upper()}")
 
@@ -205,17 +199,22 @@ def _fire_point(state):
           FIRE_RADIUS)
 
 
+def _burned_points(state):
+  """Feet of the first player: origin of the orange embers."""
+  players = (state or {}).get("players") or ()
+  return ((players[0]["x"], players[0]["y"]),) if players else ()
+
+
 FORCED = {
     "ice": {"ice": ICE_FORCED},
     "confusion": {"confusion": CONFUSION_FORCED},
     "blackout": {"blackout": _blackout_points},
-    "fire": {"fire": _fire_point},
-    "shock": {"trail": TRAIL_FORCED},
+    "fire": {"fire": _fire_point, "burned": _burned_points},
 }
 
 
 class DemoScreen(match_screens.MatchScreen):
-  """The match of the demo: two bots, ten segments, one CSV.
+  """The match of the demo: two bots, seven segments, one CSV.
 
     Every segment forces its effect (the match does not have to produce it)
     and the timings of the frame go to a `MeasurementLog`. With both
@@ -234,7 +233,6 @@ class DemoScreen(match_screens.MatchScreen):
     self.bots = [bot.Bot(index, BOT_LEVEL, self.seed + index)
                  for index in range(AVATARS)]
     self._dt = ONE_SECOND / config.UI_FPS
-    self._shock = 0.0
     self._replay = 0.0
 
   def _init_run(self, app, log):
@@ -306,7 +304,6 @@ class DemoScreen(match_screens.MatchScreen):
     self._close_segment()
     self._index = index
     self._apply_effect(self.director.kind())
-    self._shock = 0.0
     self._replay = 0.0
     self.measure.begin_segment(
         index + 1, self.director.name(), self._backend(),
@@ -340,11 +337,8 @@ class DemoScreen(match_screens.MatchScreen):
     return getattr(postfx, "allowed", False) and postfx.full_quality()
 
   def _tick_segment(self, dt):
-    """The per-segment extra: waves and replays every few seconds."""
-    if self.director.kind() == "shock":
-      self._shock = self._periodic(dt, self._shock,
-                                   G.DEMO_SHOCK_EVERY, self._wave)
-    if self.director.kind() in ("replay", "var"):
+    """Repeat the clip every few seconds in the replay segment."""
+    if self.director.kind() == "replay":
       self._replay = self._periodic(dt, self._replay,
                                     G.DEMO_REPLAY_EVERY,
                                     self._replay_once)
@@ -359,17 +353,10 @@ class DemoScreen(match_screens.MatchScreen):
       return 0.0
     return timer
 
-  def _wave(self):
-    """A goal wave in the middle of the pitch (segment 7)."""
-    ball = (self.state or {}).get("ball") or {}
-    self.app.postfx.event({"type": protocol.EV_GOAL,
-                           "x": ball.get("x", 0.0),
-                           "y": ball.get("y", 0.0)})
-
   def _replay_once(self):
-    """Starts a replay or the VAR (segments 8 and 9)."""
+    """Starts a replay in the last segment."""
     if self.app.postfx.replay_mode() is None:
-      self.app.postfx.begin_replay(self.director.kind() == "var")
+      self.app.postfx.begin_replay()
 
   def _finish_pass(self):
     """Ends the pass; with both backends it starts the other one."""
@@ -421,13 +408,11 @@ class DemoScreen(match_screens.MatchScreen):
 
   # ------------------------------------------------------------ drawing
   def draw(self, surf):
-    """The match, the heat overlay of the last segment and the label."""
+    """The match and the segment label."""
     super().draw(surf)
     if self.finished:
       self._draw_finished(surf)
       return
-    if self.director.kind() == "heat" and self.state is not None:
-      self.app.postfx.heat_overlay(surf, HEAT_CHANNEL)
     self._draw_label(surf)
 
   def _draw_label(self, surf):

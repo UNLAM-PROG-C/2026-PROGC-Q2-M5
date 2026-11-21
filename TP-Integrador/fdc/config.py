@@ -449,15 +449,9 @@ class Gpu:
   HEAT_AMP = 1.0          # px: depth of the heat waves (only with Fuego)
   HEAT_PERIOD = 26.0      # px: wavelength of the heat waves
   HEAT_SPEED = 2.4        # rad/s: how fast the waves move
-  RIPPLE_AMP = 5.0        # px: depth of the replay ripple
-  RIPPLE_PERIOD = 46.0    # px: wavelength of the replay ripple
-  TRAIL_ALPHA = 0.35      # s: how much of the previous frame stays
   FREEZE_RADIUS = 110.0   # px: radius of the ice spotlight
   FREEZE_GAIN = 0.22      # 0-1: the ice light multiplies (never adds white)
   BLACKOUT_VEIL = 0.82    # 0-1: how much the blackout darkens
-  # 80 x 45 cells of 16 px: the grid of the spec (one cell per 16 px).
-  HEATMAP_COLS = 80       # cells of the heat map, across
-  HEATMAP_ROWS = 45       # cells of the heat map, down
   REPLAY_SECONDS = 20.0   # s of states kept for the replay
   REPLAY_STEP = 0.25      # s between saved states
   METRICS_FRAMES = 120    # frames averaged by the overlay
@@ -466,25 +460,25 @@ class Gpu:
   FADE_OUT = 0.3          # s of the smooth exit at the end of a power
   HEAD_ABOVE = 65.0       # px above the feet: centre of the head
   ICE_TINT = (0.55, 0.85, 1.0)   # rgb of the ice tint
-  ICE_STRENGTH = 0.30     # weight of the tint on the image (0-1)
-  ICE_EDGES = 0.5         # weight of the bright edges (0-1)
+  ICE_STRENGTH = 0.6     # weight of the tint on the image (0-1)
+  ICE_EDGES = 1.0         # weight of the bright edges (0-1)
   BLACKOUT_AMBIENT = 0.06   # light left far from the heads (0-1)
   BLACKOUT_RADIUS = 150.0   # px: radius of the blackout light
   BLACKOUT_TINT = (1.0, 1.0, 1.0)   # rgb multiplier of the blackout
   CONFUSION_MAX_DEG = 6.0   # degrees of the rotation at full strength
   CONFUSION_SPEED = 2.0     # rad/s of that rotation
   FIRE_RADIUS = 140.0       # px around the ball with hot air
-  FIRE_AMP = 9.0            # px: depth of that distortion
-  # --- F4: night, auto exposure, shock wave, trail -------------------------
+  FIRE_AMP = 14.0            # px: depth of that distortion
+  # --- F4: night and auto exposure -------------------------
   NIGHT_LIGHTS = 6          # spotlights over the pitch at night
   NIGHT_FIRST_X = 160.0     # px: first one
   NIGHT_STEP_X = 192.0      # px between two spotlights
   # y of the lamps: the low edge of the stands, so the beams fall on the
   # grass (with y = 20 they lit the stands and left the pitch flat).
   NIGHT_Y = 470.0           # px: where the lamps hang
-  NIGHT_RADIUS = 420.0      # px: radius of each spotlight
+  NIGHT_RADIUS = 300.0      # px: radius of each spotlight
   NIGHT_POWER = 0.9         # intensity of each spotlight (0-1)
-  NIGHT_AMBIENT = 0.25      # light between the spotlights (0-1)
+  NIGHT_AMBIENT = 0.18      # light between the spotlights (0-1)
   NIGHT_TINT = (1.0, 0.92, 0.80)   # warm rgb of the night lights
   # Top of the light of the night: six lamps together never take a pixel
   # above this share of its day value, so nothing blows out to white
@@ -496,43 +490,24 @@ class Gpu:
   AUTOEXPOSURE_MIN = 0.75       # lowest gain
   AUTOEXPOSURE_MAX = 1.15       # highest gain
   AUTOEXPOSURE_RATE = 0.1       # EMA weight of each frame (0-1)
-  SHOCK_DURATION = 1.2      # s of the goal shock wave
-  SHOCK_RADIUS = 900.0      # px/s: the ring grows this fast
-  SHOCK_WIDTH = 50.0        # px: thickness of the ring
-  SHOCK_AMP = 4.5           # px: displacement when it starts (subtle)
-  TRAIL_MIN_SPEED = 800.0   # px/s: from here the ball leaves a trail
-  TRAIL_OFF_DELAY = 0.25    # s the trail stays after the ball slows down
-  TRAIL_DECAY = 0.55        # share of the previous frame that stays (0-1)
-  # --- F5: replay and VAR (the review of a close goal) ---------------------
+  # --- F5: replay ---------------------
   REPLAY_CLIP = 3.0         # s the whole clip of a goal lasts (F10)
   # s of the net the clip shows after the goal (F10)
   REPLAY_AFTER_GOAL = 0.5
   # s before the goal the clip shows: only the last seconds of the play
   REPLAY_DURATION = REPLAY_CLIP - REPLAY_AFTER_GOAL
-  VAR_DURATION = 2.0        # s of the referee review
-  VAR_CONFIRM = 0.8         # s the "goal stands" sign stays after that
-  VAR_FRAMES = 6            # saved states the review looks back
   CRT_TINT = (0.80, 1.0, 0.85)   # rgb of the old television
   CRT_SCAN = 0.35           # darkening of the scan lines (0-1)
   CRT_VIGNETTE = 0.45       # darkening of the corners (0-1)
   CRT_NOISE = 0.10          # strength of the grain (0-1)
   CRT_AMOUNT = 0.9          # weight of the whole CRT look (0-1)
   CRT_ROWS = 3              # px between two scan lines
-  VAR_TINT = (0.55, 1.0, 0.65)   # green of the review edges
-  VAR_EDGES = 0.9           # weight of those edges over the gray (0-1)
-  VAR_ZOOM = 2.2            # px factor of the zoom of the review
-  # --- F6: heat map (cells of 16 px on the 1280 x 720 pitch) --------------
-  HEAT_FLUSH_FRAMES = 15    # frames between two flushes to the GPU
-  HEAT_FLUSH_POINTS = 256   # points kept in the host buffer at most
-  HEATMAP_ALPHA = 0.55      # weight of the map over the image (0-1)
-  HEATMAP_GAIN = 4.0        # cells over the maximum that saturate the map
   # --- Demo and measurements
   DEMO_SEED = 2026          # first seed of the automatic demo
   DEMO_SECONDS = 10.0       # s of each segment of the demo
   DEMO_BOT_LEVEL = 4        # skill of the two bots of the demo
   DEMO_RESTART_SECONDS = 1.0   # s from whistle to next match
-  DEMO_SHOCK_EVERY = 2.5    # s between forced goal waves (segment 7)
-  DEMO_REPLAY_EVERY = 4.5   # s between replays of segment 8 and 9
+  DEMO_REPLAY_EVERY = 4.5   # s between replays of segment 7
   MEASURE_WARMUP = 30       # frames dropped at the start of each segment
   OVERLAY_ALPHA = 245       # opacity of the overlay background (0-255)
   OVERLAY_FONT = 22         # px: minimum size of the overlay text

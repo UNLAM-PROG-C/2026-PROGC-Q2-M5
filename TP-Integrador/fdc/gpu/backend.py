@@ -30,7 +30,6 @@ REASON_MAX = 160                # characters of the failure shown on screen
 MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
 FALLBACK_CC = (12, 0)           # compute capability if it cannot be read
-POINT_FIELDS = 2                # x and y of one heat map point
 CROWD_CFG = 24                  # parameters of the crowd kernel
 CROWD_PAL = 48                  # colours of the crowd kernel (16 rgb triplets)
 
@@ -225,23 +224,6 @@ class Gpu(primitives.Primitives):
     return grid_for(w, h)
 
   # --------------------------------------------------------------- images
-  def blur(self, img, radius):
-    """Separable box blur of an RGB image (radius in pixels).
-
-    Both passes run in the same default stream; the second reads the first
-    pass from global memory without a host round trip.
-    """
-    h, w = img.shape[:2]
-    shape = (h, w, CHANNELS)
-    src = self._buf("blur_src", shape, np.uint8, img)
-    tmp = self._buf("blur_tmp", shape, np.uint8)
-    out = self._buf("blur_out", shape, np.uint8)
-    grid = self._grid(w, h)
-    size = (np.int32(w), np.int32(h), np.int32(radius))
-    self._fn("blur_rows")(src, tmp, *size, grid=grid, block=BLOCK)
-    self._fn("blur_cols")(tmp, out, *size, grid=grid, block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
   def glow(self, img, threshold, radius, passes):
     """Bright pass at half resolution, then `passes` box blurs."""
     h, w = img.shape[:2]
@@ -325,27 +307,9 @@ class Gpu(primitives.Primitives):
         np.float32(gain),
         grid=((count + BLOCK[0] - 1) // BLOCK[0], 1, 1), block=BLOCK1D)
 
-  def lights(self, img, lights, gain):
-    """Additive spotlights: x, y, radius, power, r, g, b."""
-    h, w = img.shape[:2]
-    if len(lights) == 0:
-      return img.copy()
-    shape = (h, w, CHANNELS)
-    src = self._buf("light_src", shape, np.uint8, img)
-    table = self._buf("light_tab", lights.shape, np.float32, lights)
-    out = self._buf("light_out", shape, np.uint8)
-    self._fn("k_light_pixels")(src, out, table, np.int32(len(lights)),
-                               np.int32(w), np.int32(h), np.float32(gain),
-                               grid=self._grid(w, h), block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
   def heat(self, img, phase, amp, period):
     """Heat waves: each pixel reads from a shifted place."""
     return self._warp(img, "heat_distort", phase, amp, period)
-
-  def ripple(self, img, phase, amp, period):
-    """Concentric waves, used by the replay screen."""
-    return self._warp(img, "ripple", phase, amp, period)
 
   def mix(self, a, b, alpha):
     """Linear mix: alpha 0 keeps `a`, alpha 1 keeps `b`."""
@@ -358,19 +322,6 @@ class Gpu(primitives.Primitives):
                            np.float32(alpha), grid=self._grid(w, h),
                            block=BLOCK)
     return self._get(out, shape, np.uint8)
-
-  def trail(self, cur, prev, alpha):
-    """Blend the previous frame into the current one."""
-    h, w = cur.shape[:2]
-    shape = (h, w, CHANNELS)
-    now = self._buf("trail_cur", shape, np.uint8, cur)
-    before = self._buf("trail_prev", shape, np.uint8, prev)
-    out = self._buf("trail_out", shape, np.uint8)
-    self._fn("trail")(now, before, out, np.int32(w), np.int32(h),
-                      np.float32(alpha), grid=self._grid(w, h),
-                      block=BLOCK)
-    return self._get(out, shape, np.uint8), self._get(before, shape,
-                                                      np.uint8)
 
   # ------------------------------------------------------------ analysis
   def histogram(self, img):
@@ -394,43 +345,6 @@ class Gpu(primitives.Primitives):
                         np.float32(vignette),
                         grid=self._grid(w, h), block=BLOCK)
     return self._get(out, shape, np.uint8)
-
-  def minimap(self, img, cols, rows):
-    """Average of each block, as a float grid (rows, cols, 3)."""
-    h, w = img.shape[:2]
-    src = self._buf("mini_src", (h, w, CHANNELS), np.uint8, img)
-    grid = self._buf("mini_grid", (rows, cols, CHANNELS), np.float32,
-                     np.zeros((rows, cols, CHANNELS), np.float32))
-    self._fn("minimap")(src, grid, np.int32(w), np.int32(h),
-                        np.int32(cols), np.int32(rows),
-                        grid=self._grid(cols, rows), block=BLOCK)
-    return self._get(grid, (rows, cols, CHANNELS), np.float32)
-
-  def heat_colors(self, heat, max_value):
-    """Blue -> green -> yellow -> red ramp over the grid."""
-    rows, cols = heat.shape
-    src = self._buf("heat_in", (rows, cols), np.float32, heat)
-    out = self._buf("heat_out", (rows, cols, CHANNELS), np.uint8)
-    count = int(rows * cols)
-    self._fn("heat_colors")(src, out, np.int32(count),
-                            np.float32(max_value),
-                            grid=((count + BLOCK[0] - 1) // BLOCK[0],
-                                  1, 1), block=BLOCK1D)
-    return self._get(out, (rows, cols, CHANNELS), np.uint8)
-
-  def heat_splat(self, pos, heat, amount):
-    """Accumulate points (col, row) into the grid, in place."""
-    rows, cols = heat.shape
-    grid = self._buf("heat_acc", (rows, cols), np.float32, heat)
-    table = self._buf("heat_pos", pos.shape, np.float32, pos)
-    count = int(len(pos))
-    if count > 0:
-      self._fn("heat_splat")(table, np.int32(count), grid,
-                             np.int32(cols), np.int32(rows),
-                             np.float32(amount),
-                             grid=((count + BLOCK[0] - 1) // BLOCK[0],
-                                   1, 1), block=BLOCK1D)
-    return self._get(grid, (rows, cols), np.float32)
 
   # -------------------------------------------------------------- helpers
   def _warp(self, img, name, phase, amp, period):
@@ -537,11 +451,6 @@ class Gpu(primitives.Primitives):
     """255 - channel."""
     return self._simple("k_invert", img)
 
-  def brightness_contrast(self, img, brightness, contrast):
-    """Brightness and contrast around the mid gray."""
-    return self._simple("k_brightness_contrast", img, brightness,
-                        contrast)
-
   def gain(self, img, gain):
     """Multiplies every channel (night, auto exposure)."""
     return self._simple("k_gain", img, gain)
@@ -553,49 +462,6 @@ class Gpu(primitives.Primitives):
   def rotate(self, img, angle):
     """Rotation around the centre (neighbour sample)."""
     return self._simple("k_rotate", img, angle)
-
-  def to_gray(self, img):
-    """Luma as float 0..1."""
-    h, w = img.shape[:2]
-    shape = (h, w, CHANNELS)
-    src = self._buf("tog_src", shape, np.uint8, img)
-    out = self._buf("tog_out", (h, w), np.float32)
-    self._fn("k_to_gray_f32")(src, out, np.int32(w), np.int32(h),
-                              grid=self._grid(w, h), block=BLOCK)
-    return self._get(out, (h, w), np.float32)
-
-  def sobel(self, gray):
-    """Gradient magnitude (edges)."""
-    h, w = gray.shape[:2]
-    src = self._buf("sob_src", (h, w), np.float32, gray)
-    out = self._buf("sob_out", (h, w), np.float32)
-    self._fn("k_sobel")(src, out, np.int32(w), np.int32(h),
-                        grid=self._grid(w, h), block=BLOCK)
-    return self._get(out, (h, w), np.float32)
-
-  def sobel_normalize(self, edges, max_value=None):
-    """Edges to 0..255 over the whole image."""
-    h, w = edges.shape[:2]
-    top = max_value if max_value else float(edges.max() or 1.0)
-    shape = (h, w, CHANNELS)
-    src = self._buf("sobn_src", (h, w), np.float32, edges)
-    out = self._buf("sobn_out", shape, np.uint8)
-    self._fn("k_sobel_normalize")(src, out, np.int32(w), np.int32(h),
-                                  np.float32(top), grid=self._grid(w, h),
-                                  block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
-  def edge_glow(self, img, edges, strength):
-    """Adds the bright edges to the original image."""
-    h, w = img.shape[:2]
-    shape = (h, w, CHANNELS)
-    src = self._buf("eg_src", shape, np.uint8, img)
-    edg = self._buf("eg_edg", shape, np.uint8, edges)
-    out = self._buf("eg_out", shape, np.uint8)
-    self._fn("k_edge_glow")(src, edg, out, np.int32(w), np.int32(h),
-                            np.float32(strength), grid=self._grid(w, h),
-                            block=BLOCK)
-    return self._get(out, shape, np.uint8)
 
   def ice(self, img, strength, tint, amount):
     """Ice power: bright edges and blue tint, in two device passes.
@@ -659,34 +525,6 @@ class Gpu(primitives.Primitives):
                                block=BLOCK)
     return self._get(out, shape, np.uint8)
 
-  def ripple_ring(self, img, cx, cy, radius, width, amp, y_min=0.0):
-    """Expanding ring of the goal: warp plus bright edge.
-
-        Rows above `y_min` (the stands and the boards) come back untouched.
-        """
-    h, w = img.shape[:2]
-    shape = (h, w, CHANNELS)
-    src = self._buf("ring_src", shape, np.uint8, img)
-    out = self._buf("ring_out", shape, np.uint8)
-    self._fn("k_ripple")(src, out, np.int32(w), np.int32(h),
-                         np.float32(cx), np.float32(cy),
-                         np.float32(radius), np.float32(width),
-                         np.float32(amp), np.int32(int(y_min)),
-                         grid=self._grid(w, h), block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
-  def trail_blend(self, cur, prev, decay):
-    """Maximum of the frame and the decayed previous one (no ghosts)."""
-    h, w = cur.shape[:2]
-    shape = (h, w, CHANNELS)
-    now = self._buf("tbl_cur", shape, np.uint8, cur)
-    before = self._buf("tbl_prev", shape, np.uint8, prev)
-    out = self._buf("tbl_out", shape, np.uint8)
-    self._fn("k_trail_blend")(now, before, out, np.int32(w), np.int32(h),
-                              np.float32(decay), grid=self._grid(w, h),
-                              block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
   # Animated crowd (F11, FULL only).
   def crowd(self, img, t, side, boost, cfg, pal):
     """Crowd of the stands: seats, people and flags (k_crowd)."""
@@ -716,7 +554,7 @@ class Gpu(primitives.Primitives):
     return primitives._stats(self._get(hist, (BINS,), np.uint32),
                              int(self._get(top, (1,), np.uint32)[0]))
 
-  # ----------------------------------------------------- replay and VAR (F5)
+  # ----------------------------------------------------- replay (F5)
   def crt(self, img, frame, amount, scan, vignette, noise, rows, tint):
     """Old television: gray, bands, vignette and grain."""
     h, w = img.shape[:2]
@@ -730,65 +568,3 @@ class Gpu(primitives.Primitives):
                       np.float32(noise), np.int32(rows), red, green, blue,
                       grid=self._grid(w, h), block=BLOCK)
     return self._get(out, shape, np.uint8)
-
-  # ------------------------------------------- heat map of the match (F6)
-  def heat_reset(self, cols, rows):
-    """Starts an empty heat map on the device (no trip to the host)."""
-    shape = (CHANNELS, rows, cols)
-    self._buf("heat_grids", shape, np.uint32,
-              np.zeros(shape, np.uint32))
-    self._buf("heat_max", (CHANNELS,), np.uint32,
-              np.zeros(CHANNELS, np.uint32))
-
-  def heat_accumulate(self, channel, points, cols, rows, cell_w, cell_h):
-    """Adds every (x, y) point of a channel to its cell (atomicAdd)."""
-    pts = np.asarray(points, np.float32).reshape(-1, POINT_FIELDS)
-    if len(pts) == 0:
-      return
-    table = self._point_buffer(pts)
-    grids = self._buf("heat_grids", (CHANNELS, rows, cols), np.uint32)
-    maxes = self._buf("heat_max", (CHANNELS,), np.uint32)
-    blocks = max(1, (len(pts) + BLOCK[0] - 1) // BLOCK[0])
-    self._fn("k_heat_accumulate")(table, np.int32(len(pts)),
-                                  np.int32(channel), np.int32(cols),
-                                  np.int32(rows), np.float32(cell_w),
-                                  np.float32(cell_h), grids, maxes,
-                                  grid=(blocks, 1, 1), block=BLOCK1D)
-
-  def heat_download(self, cols, rows):
-    """Copies the grid and the maximums back (the only DtoH of F6)."""
-    if not any(key[0] == "heat_grids" for key in self._buffers):
-      return (np.zeros((CHANNELS, rows, cols), np.uint32),
-              np.zeros(CHANNELS, np.uint32))
-    grids = self._buf("heat_grids", (CHANNELS, rows, cols), np.uint32)
-    maxes = self._buf("heat_max", (CHANNELS,), np.uint32)
-    return (self._get(grids, (CHANNELS, rows, cols), np.uint32),
-            self._get(maxes, (CHANNELS,), np.uint32))
-
-  def heat_render(self, img, grids, maxes, cols, rows, channel, alpha, gain):
-    """Draws the grid of a channel over the image (ramp and mix)."""
-    shape = img.shape
-    src = self._buf("heat_src", shape, np.uint8, img.reshape(-1))
-    maps = self._heat_map(grids, maxes, rows, cols)
-    out = self._buf("heat_out", shape, np.uint8)
-    self._fn("k_heat_render")(src, *maps, out, np.int32(shape[1]),
-                              np.int32(shape[0]), np.int32(cols),
-                              np.int32(rows), np.int32(channel),
-                              np.float32(alpha), np.float32(gain),
-                              grid=self._grid(shape[1], shape[0]),
-                              block=BLOCK)
-    return self._get(out, shape, np.uint8)
-
-  def _heat_map(self, grids, maxes, rows, cols):
-    """Device copies of the grid of the match and of its maximums."""
-    gbuf = self._buf("heat_g", (CHANNELS, rows, cols), np.uint32,
-                     np.ascontiguousarray(grids, np.uint32))
-    mbuf = self._buf("heat_m", (CHANNELS,), np.uint32,
-                     np.ascontiguousarray(maxes, np.uint32))
-    return gbuf, mbuf
-
-  def _point_buffer(self, pts):
-    """Device table of points (always at least one row)."""
-    shape = (max(len(pts), 1), POINT_FIELDS)
-    host = pts if len(pts) else np.zeros(shape, np.float32)
-    return self._buf("heat_pts", shape, np.float32, host)

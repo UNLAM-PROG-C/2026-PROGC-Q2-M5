@@ -27,49 +27,6 @@ __device__ bool thread_index(int &i, int n)
   return i < n;
 }
 
-// Separable box blur: one thread per pixel in each pass.
-// Horizontal pass: average a radius-r window clipped at the border.
-__global__ void blur_rows(const unsigned char *src, unsigned char *dst,
-                          int w, int h, int r)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int x0 = max(0, x - r);
-  int x1 = min(w - 1, x + r);
-  int a0 = 0, a1 = 0, a2 = 0, n = 0;
-  for (int k = x0; k <= x1; ++k)
-  {
-    int i = (y * w + k) * CH;
-    a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
-    ++n;
-  }
-  int o = (y * w + x) * CH;
-  dst[o] = (unsigned char)(a0 / n);
-  dst[o + 1] = (unsigned char)(a1 / n);
-  dst[o + 2] = (unsigned char)(a2 / n);
-}
-
-// Vertical pass: read the horizontal result from global memory.
-__global__ void blur_cols(const unsigned char *src, unsigned char *dst,
-                          int w, int h, int r)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int y0 = max(0, y - r);
-  int y1 = min(h - 1, y + r);
-  int a0 = 0, a1 = 0, a2 = 0, n = 0;
-  for (int k = y0; k <= y1; ++k)
-  {
-    int i = (k * w + x) * CH;
-    a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
-    ++n;
-  }
-  int o = (y * w + x) * CH;
-  dst[o] = (unsigned char)(a0 / n);
-  dst[o + 1] = (unsigned char)(a1 / n);
-  dst[o + 2] = (unsigned char)(a2 / n);
-}
-
 // Glow: scale the halo by saturation, with a peak gain of 1.
 // White signs and lines produce no halo; saturated sparks and ice do.
 #define GLOW_SAT_GAIN 1.5f
@@ -224,39 +181,6 @@ __global__ void add_light(const unsigned char *base, const float *acc,
   }
 }
 
-// Additive spotlights with radial falloff. Each light stores x, y, radius,
-// intensity, r, g and b. One thread per pixel sums all lights and writes
-// its own result, avoiding the old per-light atomicAdd accumulator.
-__global__ void k_light_pixels(const unsigned char *src, unsigned char *dst,
-                               const float *lights, int n, int w, int h,
-                               float gain)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  float red = 0.0f, green = 0.0f, blue = 0.0f;
-  for (int k = 0; k < n; ++k)
-  {
-    float cx = lights[7 * k], cy = lights[7 * k + 1];
-    float rad = lights[7 * k + 2];
-    float dx = x - cx, dy = y - cy;
-    float d2 = (dx * dx + dy * dy) / (rad * rad);
-    if (d2 >= 1.0f) continue;
-    float fall = (1.0f - d2) * (1.0f - d2) * lights[7 * k + 3] * gain;
-    red += lights[7 * k + 4] * fall;
-    green += lights[7 * k + 5] * fall;
-    blue += lights[7 * k + 6] * fall;
-  }
-  int i = (y * w + x) * CH;
-  float add[3];
-  add[0] = red; add[1] = green; add[2] = blue;
-  for (int c = 0; c < CH; ++c)
-  {
-    float p = src[i + c] / 255.0f + add[c];
-    p = p > 1.0f ? 1.0f : p;
-    dst[i + c] = (unsigned char)(p * 255.0f);
-  }
-}
-
 // Heat waves shift each pixel by sampling elsewhere in the image.
 __global__ void heat_distort(const unsigned char *src, unsigned char *out,
                              int w, int h, float phase, float amp,
@@ -273,22 +197,6 @@ __global__ void heat_distort(const unsigned char *src, unsigned char *out,
   out[i] = src[j]; out[i + 1] = src[j + 1]; out[i + 2] = src[j + 2];
 }
 
-// Concentric waves on the rewind screen.
-__global__ void ripple(const unsigned char *src, unsigned char *out, int w,
-                       int h, float phase, float amp, float period)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  float dx = x - w * 0.5f, dy = y - h * 0.5f;
-  float d = sqrtf(dx * dx + dy * dy);
-  float k = amp * sinf(d / period - phase);
-  int sx = min(max(x + (int)(k * dx / (d + 1.0f)), 0), w - 1);
-  int sy = min(max(y + (int)(k * dy / (d + 1.0f)), 0), h - 1);
-  int i = (y * w + x) * CH;
-  int j = (sy * w + sx) * CH;
-  out[i] = src[j]; out[i + 1] = src[j + 1]; out[i + 2] = src[j + 2];
-}
-
 // Linear blend of two images (alpha 0 = a, alpha 1 = b).
 __global__ void mix_layers(const unsigned char *a, const unsigned char *b,
                            unsigned char *out, int w, int h, float alpha)
@@ -299,21 +207,6 @@ __global__ void mix_layers(const unsigned char *a, const unsigned char *b,
   for (int k = 0; k < CH; ++k)
     out[i + k] = (unsigned char)(a[i + k] * (1.0f - alpha)
                                  + b[i + k] * alpha);
-}
-
-// Trail: leave a faint copy of the previous image in the current one.
-__global__ void trail(const unsigned char *cur, unsigned char *prev,
-                      unsigned char *out, int w, int h, float alpha)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  for (int k = 0; k < CH; ++k)
-  {
-    float p = cur[i + k] * (1.0f - alpha) + prev[i + k] * alpha;
-    out[i + k] = (unsigned char)p;
-    prev[i + k] = out[i + k];
-  }
 }
 
 // Use atomics to count luma in 256 bins: threads can share a bin.
@@ -350,61 +243,6 @@ __global__ void stretch(const unsigned char *src, unsigned char *out, int w,
   }
 }
 
-// Downsample to a small heatmap grid by averaging each block.
-__global__ void minimap(const unsigned char *src, float *grid, int w, int h,
-                        int cols, int rows)
-{
-  int cx, cy;
-  if (!pixel_coords(cx, cy, cols, rows)) return;
-  int bw = w / cols, bh = h / rows;
-  int x0 = cx * bw, y0 = cy * bh;
-  float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-  int n = 0;
-  for (int y = y0; y < min(y0 + bh, h); ++y)
-  {
-    for (int x = x0; x < min(x0 + bw, w); ++x)
-    {
-      int i = (y * w + x) * CH;
-      a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
-      ++n;
-    }
-  }
-  if (n == 0) n = 1;
-  int o = (cy * cols + cx) * CH;
-  grid[o] = a0 / n / 255.0f;
-  grid[o + 1] = a1 / n / 255.0f;
-  grid[o + 2] = a2 / n / 255.0f;
-}
-
-// Heatmap colors: blue (cold), green, yellow, red (hot).
-__global__ void heat_colors(const float *heat, unsigned char *out, int n,
-                            float max_value)
-{
-  int p;
-  if (!thread_index(p, n)) return;
-  float v = heat[p] / (max_value > 0.0f ? max_value : 1.0f);
-  v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-  // Four-segment ramp computed without lookup tables.
-  float r = v < 0.5f ? 0.0f : (v - 0.5f) * 2.0f;
-  float g = v < 0.25f ? v * 4.0f : (v < 0.75f ? 1.0f : (1.0f - v) * 4.0f);
-  float b = v < 0.5f ? (0.5f - v) * 2.0f : 0.0f;
-  int i = p * CH;
-  out[i] = (unsigned char)(r * 255.0f);
-  out[i + 1] = (unsigned char)(g * 255.0f);
-  out[i + 2] = (unsigned char)(b * 255.0f);
-}
-
-// Accumulate player and ball positions in the heatmap grid.
-__global__ void heat_splat(const float *pos, int n, float *heat, int cols,
-                           int rows, float amount)
-{
-  int p;
-  if (!thread_index(p, n)) return;
-  int cx = (int)pos[2 * p], cy = (int)pos[2 * p + 1];
-  if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
-  atomicAdd(&heat[cy * cols + cx], amount);
-}
-
 // F1 image primitives: one thread per pixel, 2D indices, early border
 // checks and global memory buffers.
 
@@ -436,22 +274,6 @@ __global__ void k_invert(const unsigned char *src, unsigned char *dst,
   dst[i] = 255 - src[i];
   dst[i + 1] = 255 - src[i + 1];
   dst[i + 2] = 255 - src[i + 2];
-}
-
-// Brightness and contrast in 0..1: (v - 0.5) * c + 0.5 + b.
-__global__ void k_brightness_contrast(const unsigned char *src,
-    unsigned char *dst, int w, int h, float brightness, float contrast)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  for (int c = 0; c < CH; ++c)
-  {
-    float v = src[i + c] / 255.0f;
-    v = (v - 0.5f) * contrast + 0.5f + brightness;
-    v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-    dst[i + c] = (unsigned char)(v * 255.0f + 0.5f);
-  }
 }
 
 // Gain: multiply each channel for night lighting or auto exposure.
@@ -505,68 +327,13 @@ __global__ void k_rotate(const unsigned char *src, unsigned char *dst,
   dst[o + 2] = src[i + 2];
 }
 
-// Float luma in 0..1 for Sobel and the fine histogram.
-__global__ void k_to_gray_f32(const unsigned char *src, float *dst,
-                              int w, int h)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  dst[y * w + x] = (0.299f * src[i] + 0.587f * src[i + 1]
-                    + 0.114f * src[i + 2]) / 255.0f;
-}
-
-// Sobel gradient magnitude with border pixels repeated by clamping.
-__global__ void k_sobel(const float *gray, float *edges, int w, int h)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int x0 = max(0, x - 1), x1 = min(w - 1, x + 1);
-  int y0 = max(0, y - 1), y1 = min(h - 1, y + 1);
-  float a = gray[y0 * w + x0], b = gray[y0 * w + x], c = gray[y0 * w + x1];
-  float d = gray[y * w + x0],  f = gray[y * w + x1];
-  float g = gray[y1 * w + x0], hh = gray[y1 * w + x], k = gray[y1 * w + x1];
-  float gx = (c + 2.0f * f + k) - (a + 2.0f * d + g);
-  float gy = (g + 2.0f * hh + k) - (a + 2.0f * b + c);
-  edges[y * w + x] = sqrtf(gx * gx + gy * gy) * 0.25f;
-}
-
-// Normalize Sobel magnitudes to 0..255 across the whole image.
-__global__ void k_sobel_normalize(const float *edges, unsigned char *dst,
-                                  int w, int h, float max_value)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  float v = edges[y * w + x] / (max_value > 0.0f ? max_value : 1.0f);
-  v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-  int i = (y * w + x) * CH;
-  unsigned char u = (unsigned char)(v * 255.0f + 0.5f);
-  dst[i] = u; dst[i + 1] = u; dst[i + 2] = u;
-}
-
-// Add normalized Sobel edges to the original image.
-__global__ void k_edge_glow(const unsigned char *src,
-                            const unsigned char *edges, unsigned char *dst,
-                            int w, int h, float strength)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  for (int c = 0; c < CH; ++c)
-  {
-    float v = src[i + c] + edges[i + c] * strength;
-    v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
-    dst[i + c] = (unsigned char)(v + 0.5f);
-  }
-}
-
 // Ice power (F11): two passes, one image upload and one download.
 // k_ice_edges writes Sobel magnitudes in global memory and uses atomicMax
 // for the maximum. Nonnegative float bits sort in the same order as floats.
 // k_ice_apply uses that maximum, adds edges, tints and blends, preserving
 // the rounding of the original standalone passes.
 
-// Luma of one pixel, as in k_to_gray_f32.
+// Normalized luma of one pixel for the ice edges.
 __device__ float ice_gray(const unsigned char *src, int i)
 {
   return (0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2]) /
@@ -697,61 +464,6 @@ __global__ void k_heat_distort(const unsigned char *src, unsigned char *dst,
   dst[i + 2] = src[j + 2];
 }
 
-// Goal shock wave: a growing ring displaces pixels and brightens its edge.
-// Pixels above y_min (stands and signs) stay unchanged.
-#define RIPPLE_PI 3.14159265f  // for the ring sine
-#define RIPPLE_GLOW 60.0f  // peak ring brightness (0..255)
-__global__ void k_ripple(const unsigned char *src, unsigned char *dst,
-                         int w, int h, float cx, float cy, float radius,
-                         float width, float amp, int y_min)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  if (y < y_min)
-  {  // leave pixels outside the pitch alone
-    dst[i] = src[i]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i + 2];
-    return;
-  }
-  float dx = x - cx, dy = y - cy;
-  float d = sqrtf(dx * dx + dy * dy);
-  float k = (d - radius) / (width > 0.0f ? width : 1.0f);
-  int sx = x, sy = y;
-  float glow = 0.0f;
-  if (k > -1.0f && k < 1.0f)
-  {
-    float off = amp * sinf(RIPPLE_PI * k);
-    sx = (int)(x + off * dx / (d + 1.0f));
-    sy = (int)(y + off * dy / (d + 1.0f));
-    glow = RIPPLE_GLOW * (1.0f - fabsf(k));
-  }
-  sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);
-  sy = sy < y_min ? y_min : (sy >= h ? h - 1 : sy);
-  int j = (sy * w + sx) * CH;
-  for (int c = 0; c < CH; ++c)
-  {
-    float v = src[j + c] + glow;
-    v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
-    dst[i + c] = (unsigned char)(v + 0.5f);
-  }
-}
-
-// Ball trail: keep the greater of the current and faded previous values.
-// Taking the maximum instead of an average avoids ghosting.
-__global__ void k_trail_blend(const unsigned char *cur,
-                              const unsigned char *prev, unsigned char *dst,
-                              int w, int h, float decay)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  for (int c = 0; c < CH; ++c)
-  {
-    float v = fmaxf((float)cur[i + c], (float)prev[i + c] * decay);
-    dst[i + c] = (unsigned char)(v + 0.5f);
-  }
-}
-
 // Night luma histogram (F4): atomicAdd for the bins and atomicMax for
 // the peak because threads can update the same global memory locations.
 __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
@@ -767,7 +479,7 @@ __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
 }
 
 // ===========================================================================
-// F5: replay and VAR
+// F5: replay
 // ===========================================================================
 
 // CRT replay: tinted gray, scanlines, vignette and grain. Each thread
@@ -807,79 +519,6 @@ __global__ void k_crt(const unsigned char *src, unsigned char *dst,
     float b = out[c] * 255.0f;
     b = b < 0.0f ? 0.0f : (b > 255.0f ? 255.0f : b);
     dst[i + c] = (unsigned char)(b + 0.5f);
-  }
-}
-
-// ===========================================================================
-// F6: heatmap
-// ===========================================================================
-
-// Minimum cell size in pixels, to avoid division by zero.
-#define HEAT_MIN_CELL 1.0f
-// One thread per point. Border checks discard points outside the pitch.
-// atomicAdd prevents lost updates when points map to the same global
-// memory cell. atomicMax records the highest count using the old count + 1.
-__global__ void k_heat_accumulate(const float *pts, int n, int channel,
-                                  int cols, int rows, float cw, float ch,
-                                  unsigned int *grids, unsigned int *maxes)
-{
-  int k;
-  if (!thread_index(k, n)) return;
-  float cell_w = cw > 0.0f ? cw : HEAT_MIN_CELL;
-  float cell_h = ch > 0.0f ? ch : HEAT_MIN_CELL;
-  int cx = (int)(pts[k * 2] / cell_w);
-  int cy = (int)(pts[k * 2 + 1] / cell_h);
-  if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
-  unsigned int old = atomicAdd(&grids[channel * cols * rows + cy * cols + cx], 1u);
-  atomicMax(&maxes[channel], old + 1u);
-}
-
-// Draw one heatmap channel: bilinear sampling, a blue/cyan/yellow/red
-// ramp and alpha * min(1, v * gain). Normalize with the channel peak
-// from maxes in device memory; no copy back to the host is needed.
-__global__ void k_heat_render(const unsigned char *src, const unsigned int *grids,
-                              const unsigned int *maxes, unsigned char *dst,
-                              int w, int h, int cols, int rows, int channel,
-                              float alpha, float gain)
-{
-  int x, y;
-  if (!pixel_coords(x, y, w, h)) return;
-  // Convert the pixel center to cell coordinates.
-  float cw = (float)w / (float)cols;
-  float ch = (float)h / (float)rows;
-  float fx = ((float)x + 0.5f) / cw - 0.5f;
-  float fy = ((float)y + 0.5f) / ch - 0.5f;
-  fx = fx < 0.0f ? 0.0f : (fx > cols - 1 ? (float)(cols - 1) : fx);
-  fy = fy < 0.0f ? 0.0f : (fy > rows - 1 ? (float)(rows - 1) : fy);
-  int x0 = (int)fx, y0 = (int)fy;
-  int x1 = x0 + 1 < cols ? x0 + 1 : cols - 1;
-  int y1 = y0 + 1 < rows ? y0 + 1 : rows - 1;
-  float tx = fx - x0, ty = fy - y0;
-  const unsigned int *cells = grids + channel * cols * rows;
-  float v00 = (float)cells[y0 * cols + x0], v10 = (float)cells[y0 * cols + x1];
-  float v01 = (float)cells[y1 * cols + x0], v11 = (float)cells[y1 * cols + x1];
-  float v = (1.0f - tx) * (1.0f - ty) * v00 + tx * (1.0f - ty) * v10
-            + (1.0f - tx) * ty * v01 + tx * ty * v11;
-  float top = (float)maxes[channel];
-  v = top > 0.0f ? v / top : 0.0f;
-  v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-  float a = alpha * fminf(1.0f, v * gain);
-  // Heatmap ramp: blue, cyan, yellow, red.
-  float r = (v - 0.5f) * 2.0f;
-  r = r < 0.0f ? 0.0f : (r > 1.0f ? 1.0f : r);
-  float g = v < 0.25f ? v * 4.0f : (v < 0.75f ? 1.0f : (1.0f - v) * 4.0f);
-  float b = (0.5f - v) * 2.0f;
-  b = b < 0.0f ? 0.0f : (b > 1.0f ? 1.0f : b);
-  float ramp[CH];
-  ramp[0] = r; ramp[1] = g; ramp[2] = b;
-  int i = (y * w + x) * CH;
-  for (int c = 0; c < CH; ++c)
-  {
-    float px = (float)src[i + c] / 255.0f;
-    float out = px * (1.0f - a) + ramp[c] * a;
-    out = out * 255.0f;
-    out = out < 0.0f ? 0.0f : (out > 255.0f ? 255.0f : out);
-    dst[i + c] = (unsigned char)(out + 0.5f);
   }
 }
 

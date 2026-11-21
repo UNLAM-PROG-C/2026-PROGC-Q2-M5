@@ -644,15 +644,14 @@ Reglas, catálogo de mensajes y la puesta en marcha en la NAS (Windows, dominio,
 
 ## 13. Demo en la universidad (efectos GPU/numpy)
 
-Instalación en la notebook sin NVIDIA, demo reproducible con `--demo`, overlay de
-rendimiento (F2), CSV de mediciones, benchmark de kernels, capturas y paquete de
-Colab: ver [docs/DEMO.md](docs/DEMO.md).
+Instalación sin NVIDIA, demo reproducible con `--demo`, overlay de rendimiento
+(F2), CSV y benchmark en [docs/DEMO.md](docs/DEMO.md). Los siete segmentos son:
+sin efectos, hielo, apagón, confusión, fuego, noche con autoexposición y
+repetición con look de TV vieja. **N** alterna la noche durante el partido.
 
-Para comprobar que dos instancias juegan online (una con GPU y otra con
-numpy) por WebSocket local, y que el servidor y la simulación no cargan
-`numpy`/`pygame`/`pycuda`:
+Para comprobar que el servidor y la simulación no cargan `numpy`, `pygame`,
+`pycuda` ni la cadena de efectos:
 
 ```powershell
-py tools\online_two_apps.py            # deja una captura por instancia en frames\
-py -m unittest tests.test_gpu_isolation -v
+py -m unittest discover -s tests -p test_gpu_isolation.py -v
 ```

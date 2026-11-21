@@ -24,8 +24,6 @@ HEAT_SPEED_Y = 18.0     # rad/s of those waves
 HEAT_FREQ_X = 0.09      # waves per pixel, horizontal
 HEAT_SPEED_X = 14.0     # rad/s of those waves
 HEAT_LATERAL = 0.4      # the horizontal move is smaller
-RIPPLE_PI = math.pi     # sine of the shock ring
-RIPPLE_GLOW = 60.0      # brightest edge of the ring (0..255)
 P95 = 0.95              # percentile reported by `luma_stats`
 # F5: the old television of the replay (same numbers as k_crt).
 CRT_NOISE_MUL = 2654435761   # multiplier of the noise hash
@@ -69,15 +67,6 @@ def _sample(img, sx, sy):
   ix = np.clip(np.trunc(sx).astype(np.int32), 0, w - 1)
   iy = np.clip(np.trunc(sy).astype(np.int32), 0, h - 1)
   return img[iy, ix]
-
-
-def _ring_sample(img, grid, centre, d, k, inside, amp, y_min):
-  """Image read by the shock ring: the pixels the ring moves, clipped."""
-  xs, ys = grid
-  off = amp * np.sin(RIPPLE_PI * k)
-  sx = xs + np.trunc(off * (xs - centre[0]) / (d + 1.0))
-  sy = np.maximum(ys + np.trunc(off * (ys - centre[1]) / (d + 1.0)), y_min)
-  return _sample(img, np.where(inside, sx, xs), np.where(inside, sy, ys))
 
 
 def _grid_xy(w, h):
@@ -134,12 +123,6 @@ class Primitives:
   def invert(self, img):
     """255 - channel."""
     return (BYTE_MAX - img.astype(np.int16)).astype(np.uint8)
-
-  def brightness_contrast(self, img, brightness, contrast):
-    """(v - 0.5) * contrast + 0.5 + brightness, on 0..1."""
-    v = _rgb(img)
-    return _to_byte(np.clip((v - HALF) * contrast + HALF + brightness,
-                            0.0, 1.0))
 
   def gain(self, img, gain):
     """Multiplies every channel (night, auto exposure)."""
@@ -225,27 +208,6 @@ class Primitives:
     inside = d < rad
     return _sample(img, np.where(inside, sx, xs), np.where(inside, sy, ys))
 
-  def ripple_ring(self, img, cx, cy, radius, width, amp, y_min=0.0):
-    """Expanding ring of the goal: warp plus a bright edge.
-
-        Rows above `y_min` (the stands and the boards) come back untouched.
-        """
-    xs, ys = _grid_xy(img.shape[1], img.shape[0])
-    d = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
-    k = (d - radius) / (width if width > 0 else 1.0)
-    inside = (k > -1.0) & (k < 1.0)
-    v = _ring_sample(img, (xs, ys), (cx, cy), d, k, inside, amp, y_min)
-    glow = np.where(inside, RIPPLE_GLOW * (1.0 - np.abs(k)), 0.0)
-    out = _byte(v + glow[..., None])
-    out[:int(y_min)] = img[:int(y_min)]
-    return out
-
-  def trail_blend(self, cur, prev, decay):
-    """Pixel-wise maximum of the frame and the decayed previous one."""
-    v = np.maximum(cur.astype(np.float32),
-                   prev.astype(np.float32) * decay)
-    return _byte(v)
-
   def luma_stats(self, img):
     """(mean, p95, top) of the 0..255 luma histogram."""
     return _stats(*self._luma_hist(img))
@@ -292,4 +254,3 @@ class Primitives:
     v = self.to_gray(img) * BYTE_MAX + HALF
     bins = np.clip(v.astype(np.int32), 0, BINS - 1)
     return np.bincount(bins.ravel(), minlength=BINS), int(bins.max())
-

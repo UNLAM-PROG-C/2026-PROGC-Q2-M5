@@ -22,7 +22,6 @@ from fdc.gpu import cpu_ref
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
 from fdc.gpu import five_steps
-from fdc.gpu import heatmap
 from fdc.gpu import metrics as gpu_metrics
 from fdc.gpu import particles
 from fdc.gpu import quality
@@ -54,9 +53,8 @@ EMBER_RAISE = 55         # px above the feet where the embers are born
 ICE_COLOUR = (0.55, 0.85, 1.0)       # rgb of the ice power
 # Readable name of each effect for the overlay (line 4).
 _EFFECT_NAMES = {"ice": "hielo", "blackout": "apagón", "confusion": "confusión",
-                 "fire": "fuego", "night": "noche", "shock": "onda",
-                 "burned": "quemado",
-                 "trail": "estela", "crt": "repetición", "var": "VAR"}
+                 "fire": "fuego", "night": "noche", "burned": "quemado",
+                 "crt": "repetición"}
 _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
 # Glow with a goal or a power, and its vignette: the histogram applies it at the
 # end of the chain, so a frame without halo does not pay an extra pass.
@@ -90,7 +88,6 @@ class PostFx:
     self.particles = particles.Field()
     self.target = pygame.Surface(size).convert()
     self.state = None
-    self.trail = None
     self.phase = 0.0
     self.lights = _no_lights()
     self.processed_size = None
@@ -108,19 +105,15 @@ class PostFx:
     self.enabled = self.allowed and self.quality_mode != quality.OFF
 
   def _init_effects(self):
-    """State of the effects (viewer, night, clock, trail, replay, heat)."""
+    """State of the effects, exposure and replay."""
     self.viewer = None          # 0, 1 or None on a shared screen
     self.night = False          # local option (key N)
     self.clock = 0.0            # s of the chain (ages of the effects)
-    self.events = []            # event driven effects (goal wave)
     self.fx = effects_state.FxParams()
     self.exposure = exposure.AutoExposure()
-    self.trail_gate = effects_state.TrailGate()
     self.history = replay.StateHistory()   # saved states (F5)
-    self.player = None          # replay or VAR being drawn (F5)
+    self.player = None          # replay being drawn
     self.frame_no = 0           # frames drawn (grain of the CRT)
-    self.force_var = False      # tests/demo: review every goal
-    self.heat = heatmap.HeatmapRecorder()  # heat map of the match (F6)
     self._init_party()
 
   def _init_party(self):
@@ -156,11 +149,6 @@ class PostFx:
     if not self.chosen_mode:
       self.set_quality_mode(quality.default_for(self.mode))
 
-  def _forget_device(self):
-    """New backend: its buffers are empty, the heat grid must restart."""
-    self.heat.started = False
-    self.heat.dirty = False
-
   def begin(self, screen, state):
     """Surface where the world has to be drawn this frame."""
     self.state = state
@@ -193,7 +181,6 @@ class PostFx:
     self.metrics.clear()
     self.processed_size = None
     self.probe.invalidate()
-    self._forget_device()
     return self.quality_mode
 
   def cycle_quality_mode(self):
@@ -239,28 +226,8 @@ class PostFx:
     to_screen(image, band)
 
   def replay_mode(self):
-    """None, replay.REPLAY_KIND or replay.VAR_KIND (what is on screen)."""
+    """None or replay.REPLAY_KIND (what is on screen)."""
     return None if self.player is None else self.player.kind
-
-  def replay_stage(self):
-    """Stage of the VAR (replay.REVIEW / CONFIRMED), or None."""
-    if self.player is None or self.player.kind != replay.VAR_KIND:
-      return None
-    return self.player.stage(self.clock)
-
-  def replay_zoom(self):
-    """(x, y) the VAR zoom is centred on, or None."""
-    if self.player is None or self.player.kind != replay.VAR_KIND:
-      return None
-    return replay.ball_xy(self.player.state_at(self.clock))
-
-  def heat_overlay(self, surface, channel):
-    """Draws the heat map of a channel over the surface (F6)."""
-    if channel is None or self.ops is None or not self.full_quality():
-      return False
-    image = to_array(surface)
-    to_screen(self.heat.render(self.ops, image, channel), surface)
-    return True
 
   def finish(self, screen, dt):
     """Runs the chain and leaves the result on `screen`."""
@@ -302,22 +269,17 @@ class PostFx:
     self.ops = _make_ops(self.force_cpu, self.reasons)
     self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
     self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
-    self._forget_device()
     self.metrics.clear()
     return self.mode
 
   def clear(self):
-    """New match: nothing left (sparks, trail, replay, heat map)."""
+    """Reset the chain for a new match."""
     self.particles.clear()
-    self.trail = None
     self.lights = _no_lights()
-    self.events = []
     self.fx = effects_state.FxParams()
     self.exposure.reset()
-    self.trail_gate.reset()
     self.history.clear()
     self.player = None
-    self.heat.clear()
     self.celebration = None
     self.confetti.clear()
     self.pending = None
@@ -338,22 +300,16 @@ class PostFx:
       self._touch(x, y, msg.get("speed") or 0.0)
 
   def _goal_event(self, msg):
-    """Sparks, shock wave, celebration and (after it) the replay."""
+    """Sparks, celebration and (after it) the replay."""
     x, y = msg.get("x") or 0.0, msg.get("y") or 0.0
     self.particles.spawn(x, y, SPARK_COLOUR, GOAL_SPARKS)
-    self.events.append(effects_state.EventFx(
-        effects_state.SHOCK_KIND, x, y, self.clock,
-        config.Gpu.SHOCK_DURATION))
     if msg.get("side") is None:
-      return          # the demo forces a wave: no goal, no celebration
+      return
     self.celebration = celebration.Celebration(self.clock, msg)
-    self.pending = {"time": self.clock,
-                    "close": self.history.is_close(msg.get("side"),
-                                                   (x, y)),
-                    "state": self.history.last_state()}
+    self.pending = self.clock
 
   def _start_replay(self):
-    """Replay of a goal, or the VAR when it went in by very little.
+    """Replay of a goal.
 
         It starts after the celebration and shows the goal plus
         `config.Gpu.REPLAY_AFTER_GOAL` seconds of the net. The party is over
@@ -363,16 +319,14 @@ class PostFx:
     self.player = None      # the old clip (if any) is not shown again
     self.celebration = None
     self.confetti.clear()
-    frames = self.history.window(pending["time"]) if pending else []
+    frames = self.history.window(pending) if pending is not None else []
     if frames:
-      self.player = self._replay_player(pending, frames)
+      self.player = self._replay_player(frames)
       # The screen closes the replay when the window of the goal ends.
       self.player.from_goal = True
 
-  def _replay_player(self, pending, frames):
-    """The VAR when the ball grazed the bar, else the clip of the goal."""
-    if pending["close"] or self.force_var:
-      return replay.VarPlayer(pending["state"], self.clock)
+  def _replay_player(self, frames):
+    """Build the clip at the current chain time."""
     span = frames[-1][0] - frames[0][0]
     return replay.ReplayPlayer(frames, self.clock, span)
 
@@ -398,13 +352,12 @@ class PostFx:
     self.particles.update(dt)
     self.confetti.update(dt)
     self._celebrate()
-    self._record_heat()
     if self._advance_player():
-      return self._screened(image)      # replay or VAR: only its look
+      return self._timed("crt", self._crt, image)
     self.fx = self._derive()
     self._spawn_embers(dt)
     self.phase += config.Gpu.HEAT_SPEED * dt
-    return self._flash(self._night(self._stages(image, dt)))
+    return self._flash(self._night(self._stages(image)))
 
   def _flash(self, image):
     """Warm white flash of the first frames of the celebration."""
@@ -416,14 +369,14 @@ class PostFx:
       self.white = np.full(image.shape, WHITE, np.uint8)
     return self.ops.mix(image, self.white, amount)
 
-  def _stages(self, image, dt):
+  def _stages(self, image):
     """Run the full chain in its fixed order."""
     out = self._timed("glow", self._glow, image)
     out = self._timed("particles", self._sparks, out)
     if self.confetti.alive():
       out = self._timed("confetti", self._confetti, out)
     out = self._timed("lights", self._lights, out)
-    out = self._powers(out, dt)
+    out = self._powers(out)
     out = self._timed("heat", self._heat, out)
     return self._timed("histogram", self._contrast, out)
 
@@ -432,12 +385,6 @@ class PostFx:
     if self.player is not None and self.player.finished(self.clock):
       self.player = None
     return self.player is not None
-
-  def _record_heat(self):
-    """Feeds the heat map of the match (F6)."""
-    self.heat.feed(self.state)
-    if self.ops is not None and self.heat.due():
-      self.heat.flush(self.ops)
 
   def _spawn_embers(self, dt):
     """FULL: a small batch of embers over each burnt player."""
@@ -450,12 +397,6 @@ class PostFx:
     for x, y in self.fx.burned:
       self.particles.spawn(x, y - EMBER_RAISE, EMBER_COLOUR, EMBER_COUNT)
 
-  def _screened(self, image):
-    """Replay or VAR: the chain ends with the look of the screen."""
-    if self.player.kind == replay.VAR_KIND:
-      return self._timed("var", self._var_look, image)
-    return self._timed("crt", self._crt, image)
-
   def _crt(self, image):
     """Old television of the replay (k_crt)."""
     gpu = config.Gpu
@@ -463,30 +404,19 @@ class PostFx:
                         gpu.CRT_SCAN, gpu.CRT_VIGNETTE, gpu.CRT_NOISE,
                         gpu.CRT_ROWS, gpu.CRT_TINT)
 
-  def _var_look(self, image):
-    """VAR: gray image with the bright edges in green (spec 5.4)."""
-    gpu = config.Gpu
-    edges = self.ops.sobel(self.ops.to_gray(image))
-    norm = self.ops.sobel_normalize(edges, float(edges.max() or 1.0))
-    tinted = self.ops.tint(norm, gpu.VAR_TINT)
-    return self.ops.edge_glow(self.ops.gray(image), tinted, gpu.VAR_EDGES)
-
   def _derive(self):
     """FxParams of this frame (pure rules, see effects_state)."""
-    self.events = [fx for fx in self.events if fx.alive(self.clock)]
-    fx = effects_state.derive(self.state, self.viewer, self.clock,
-                              self.events, night=self.night)
+    fx = effects_state.derive(self.state, self.viewer, night=self.night)
     return self._forced(fx) if self.forced else fx
 
   def _forced(self, fx):
     """Demo: the director forces the parameters of the segment."""
-    for name in ("ice", "confusion", "trail", "crt"):
+    for name in ("ice", "confusion"):
       if name in self.forced:
         setattr(fx, name, self.forced[name])
-    if "blackout" in self.forced:
-      fx.blackout = self.forced["blackout"](self.state)
-    if "fire" in self.forced:
-      fx.fire = self.forced["fire"](self.state)
+    for name in ("blackout", "fire", "burned"):
+      if name in self.forced:
+        setattr(fx, name, self.forced[name](self.state))
     return fx
 
   def force(self, **params):
@@ -496,22 +426,18 @@ class PostFx:
       return
     self.forced = params
 
-  def begin_replay(self, var=False):
-    """Starts a replay (or the VAR) of the last seconds of real play."""
+  def begin_replay(self):
+    """Starts a replay of the last seconds of real play."""
     if not self.enabled:
       return False
     frames = self.history.window(self.clock)
     if not frames:
       return False
-    if var:
-      self.player = replay.VarPlayer(frames[-1][1], self.clock)
-    else:
-      span = frames[-1][0] - frames[0][0]
-      self.player = replay.ReplayPlayer(frames, self.clock, span)
+    self.player = self._replay_player(frames)
     return True
 
   def start_goal_replay(self):
-    """Starts the replay (or the VAR) of the goal the tally announced.
+    """Starts the replay of the goal the tally announced.
 
         The clip is the one around the goal (not "the last seconds"): the
         screen calls it when the simulation says the replay begins.
@@ -545,52 +471,22 @@ class PostFx:
   def active_effects(self):
     """Readable list of the effects on this frame (overlay line 4)."""
     names = []
-    for name in ("ice", "blackout", "confusion", "fire", "burned",
-                 "night", "shock", "trail", "crt", "var"):
+    for name in ("ice", "blackout", "confusion", "fire", "burned", "night"):
       value = getattr(self.fx, name, None)
       if value not in (None, (), 0, 0.0, False):
         names.append(_EFFECT_NAMES.get(name, name))
+    if self.player is not None:
+      return _EFFECT_NAMES["crt"]
     if self.celebration is not None:
       names.append(_CELEBRATION_NAME)
     return " + ".join(names) if names else "ninguno"
 
-  def _powers(self, image, dt):
+  def _powers(self, image):
     """F3/F4 stages, in the fixed order of the spec (5.3)."""
-    out = self._ball_trail(image, dt)
-    out = self._shock(out)
-    out = self._fire(out)
+    out = self._fire(image)
     out = self._confusion(out)
     out = self._ice(out)
     return self._blackout(out)
-
-  def _ball_trail(self, image, dt):
-    """TRAIL: bright pixels of the fast ball stay a moment (maximum)."""
-    speed = effects_state.ball_speed(self.state or {})
-    if not self.trail_gate.update(speed, dt):
-      self.trail = None
-      return image
-    if self.trail is None or self.trail.shape != image.shape:
-      self.trail = image.copy()
-      return image
-    out = self._timed("trail", self.ops.trail_blend, image, self.trail,
-                      config.Gpu.TRAIL_DECAY)
-    self.trail = image.copy()      # prev <- cur, as the spec asks
-    return out
-
-  def _shock(self, image):
-    """SHOCK: the ring of a goal grows over the pitch and nothing else."""
-    if self.fx.shock is None:
-      return image
-    x, y, age = self.fx.shock
-    gpu = config.Gpu
-    if age >= gpu.SHOCK_DURATION:
-      return image
-    amp = gpu.SHOCK_AMP * self.punch() * (1.0 - age / gpu.SHOCK_DURATION)
-    return self._timed("shock", self.ops.ripple_ring, image,
-                       x, y,
-                       gpu.SHOCK_RADIUS * age,
-                       gpu.SHOCK_WIDTH * self.punch(),
-                       amp, gpu.PITCH_TOP)
 
   def _fire(self, image):
     """FIRE: hot air around the ball."""
@@ -741,11 +637,6 @@ class PostFx:
       return image
     gpu = config.Gpu
     return self.ops.heat(image, self.phase, gpu.HEAT_AMP, gpu.HEAT_PERIOD)
-
-  def _trail(self, image, dt):
-    """Kept for the F2 API: the F4 trail is `_ball_trail`."""
-    del dt
-    return self._ball_trail(image, config.Gpu.TRAIL_MIN_SPEED)
 
   def _contrast(self, image):
     """Histogram stretch and, at the end, the vignette of the guide."""

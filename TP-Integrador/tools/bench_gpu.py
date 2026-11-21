@@ -1,6 +1,6 @@
 """Benchmark of the kernels: resolutions, repetitions and block sizes (F8).
 
-It measures gray, sobel, glow_composite, crt and the VAR look with the GPU
+It measures gray, glow_composite and crt with the GPU
 and with numpy, writes a CSV in the measurements folder and a Markdown
 table, and with --blocks tries the block sizes of the spec (8x8 ... 32x32):
 the ones CUDA rejects (more than 1024 threads or too many registers) are
@@ -42,7 +42,7 @@ FOLDER = os.path.join(ROOT, "mediciones")
 STAMP = "%Y%m%d-%H%M%S"
 CSV_COLUMNS = ("kernel", "backend", "resolution", "block", "ms", "speedup")
 ROUND = 3                        # decimals of the CSV
-STAGES = ("gray", "sobel", "glow_composite", "crt", "var_look")
+STAGES = ("gray", "glow_composite", "crt")
 NSYS = "nsys"
 
 
@@ -68,43 +68,20 @@ def mean_ms(ops, name, *args):
   return (time.perf_counter() - start) * MS_PER_S / REPEAT
 
 
-def var_look(ops, img):
-  """The VAR look: five ops of the chain (spec 5.4)."""
-  edges = ops.sobel(ops.to_gray(img))
-  norm = ops.sobel_normalize(edges, float(edges.max() or 1.0))
-  return ops.edge_glow(ops.gray(img), ops.tint(norm, G.VAR_TINT),
-                       G.VAR_EDGES)
-
-
-def mean_fn(ops, fn, *args):
-  """Mean milliseconds of a Python function of the ops."""
-  backend.sync()
-  fn(ops, *args)
-  backend.sync()
-  start = time.perf_counter()
-  for _ in range(REPEAT):
-    fn(ops, *args)
-  backend.sync()
-  return (time.perf_counter() - start) * MS_PER_S / REPEAT
-
-
 def stage_rows(gpu, cpu, img, size):
   """[(kernel, gpu ms, cpu ms)] of the stages at one resolution."""
-  args = _stage_args(img, cpu)
+  args = _stage_args(img)
   rows = []
-  for name in STAGES[:-1]:
+  for name in STAGES:
     gpu_ms = mean_ms(gpu, name, *args[name]) if gpu else 0.0
     rows.append((name, gpu_ms, mean_ms(cpu, name, *args[name])))
-  gpu_ms = mean_fn(gpu, var_look, img) if gpu else 0.0
-  rows.append(("var_look", gpu_ms, mean_fn(cpu, var_look, img)))
   return [(name, gpu_ms, cpu_ms, size) for name, gpu_ms, cpu_ms in rows]
 
 
-def _stage_args(img, cpu):
+def _stage_args(img):
   """Arguments of each kernel for this image."""
   return {
       "gray": (img,),
-      "sobel": (cpu.to_gray(img),),
       "glow_composite": (img, G.GLOW_THRESHOLD, G.GLOW_RADIUS,
                          G.GLOW_PASSES, (G.EXPOSURE, G.GAMMA, G.VIGNETTE,
                                          G.GLOW_STRENGTH)),

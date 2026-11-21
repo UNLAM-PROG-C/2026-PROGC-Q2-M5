@@ -37,12 +37,22 @@ def _demo_signs(surf):
   screen.director.index = demo.SEGMENTS.index(("hielo", "ice"))
   rows = []
   draw = assets.draw_text
-  with mock.patch.object(screen, "_replay_key", return_value="replay"), \
-       mock.patch.object(assets, "draw_text", side_effect=functools.partial(
-           _record_row, draw, rows)):
+  with mock.patch.object(assets, "draw_text", side_effect=functools.partial(
+      _record_row, draw, rows)):
     screen._draw_replay_sign(surf, GOAL_WINDOW)
     screen._draw_label(surf)
   return rows
+
+
+class DemoEffectsTest(unittest.TestCase):
+  """Forced effects of the playable demo."""
+
+  def test_fire_adds_embers_at_the_first_players_feet(self):
+    player = {"x": 350.0, "y": 640.0}
+    params = demo.FORCED["fire"]
+    self.assertEqual(params["burned"]({"players": [player]}),
+                     ((player["x"], player["y"]),))
+    self.assertEqual(params["burned"](None), ())
 
 
 class DemoSignsTest(unittest.TestCase):
