@@ -53,7 +53,7 @@ def report(effects):
       "mode": effects.mode,
       "device": effects.device,
       "quality_mode": effects.quality_mode_name(),
-      "stage": effects.stage_level() if effects.enabled else None,
+      "stage": effects.summary()["quality"] if effects.enabled else None,
       "pycuda_loaded": pycuda_loaded(),
       "error": effects.error,
   }

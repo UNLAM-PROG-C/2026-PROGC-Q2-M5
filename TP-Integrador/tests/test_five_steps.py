@@ -160,11 +160,11 @@ class FiveStepsTest(unittest.TestCase):
     self.assertEqual(pages, (overlay.COMPACT, overlay.FULL,
                              overlay.STEPS, overlay.OFF))
 
-  def test_scaled_probe_uses_chain_input_size(self):
+  def test_probe_uses_full_chain_input_size(self):
     pygame.display.init()
     pygame.display.set_mode((WIDTH, HEIGHT))
-    options = types.SimpleNamespace(quality_mode=quality.AUTO,
-                                    force_cpu=True, quality='1')
+    options = types.SimpleNamespace(quality_mode=quality.FULL,
+                                    force_cpu=True)
     chain = postfx.PostFx(options, (WIDTH, HEIGHT))
     chain.start()
     chain.probe_active = True
@@ -172,7 +172,7 @@ class FiveStepsTest(unittest.TestCase):
     with mock.patch.object(chain, '_chain', side_effect=lambda img, _dt: img):
       chain.finish(target, 0)
     size = chain.processed_size
-    self.assertNotEqual(size, chain.target.get_size())
+    self.assertEqual(size, chain.target.get_size())
     self.assertEqual(chain.probe.size, size)
 
   @unittest.skipUnless(backend.available(), 'CUDA unavailable')

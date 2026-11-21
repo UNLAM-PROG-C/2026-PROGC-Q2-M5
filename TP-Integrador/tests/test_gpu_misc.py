@@ -1,9 +1,4 @@
-"""F7 and F8 without a window: governor, demo clock, CSV and flags.
-
-The GPU does not take part here: the governor is a state machine, the
-director only counts seconds, the CSV is written in a temporary folder and
-the flags are parsed without opening pygame.
-"""
+"""Demo clock, CSV and flags without a visible window."""
 import csv
 import os
 import tempfile
@@ -18,79 +13,10 @@ from fdc.gpu import backend
 from fdc.gpu import demo
 from fdc.gpu import metrics
 from fdc.gpu import overlay
-from fdc.gpu import quality
 from fdc.gpu import sysinfo
 
 G = config.Gpu
-SLOW = 25.0              # ms of a frame that asks for a lower level
-FAST = 8.0               # ms of a frame that allows a higher level
-NORMAL = 14.0            # ms between the two thresholds
 DT = 1.0 / config.UI_FPS  # s between frames
-DOWN_FRAMES = G.QUALITY_AVG_FRAMES + 1
-UP_FRAMES = G.QUALITY_UP_FRAMES + 1
-WAIT_FRAMES = int(G.QUALITY_MIN_SECONDS / DT) + 1
-
-
-class GovernorTest(unittest.TestCase):
-  """The CPU quality level follows the mean frame time."""
-
-  def test_gpu_never_changes(self):
-    governor = quality.QualityGovernor("auto", "gpu")
-    for _ in range(DOWN_FRAMES):
-      governor.frame(SLOW, DT)
-    self.assertFalse(governor.enabled)
-    self.assertEqual(governor.level, quality.MIN_LEVEL)
-
-  def test_fixed_level_ignores_the_clock(self):
-    governor = quality.QualityGovernor("2", "cpu")
-    for _ in range(DOWN_FRAMES):
-      governor.frame(SLOW, DT)
-    self.assertFalse(governor.enabled)
-    self.assertEqual(governor.level, 2)
-
-  def test_down_with_slow_frames(self):
-    governor = quality.QualityGovernor("auto", "cpu")
-    for _ in range(DOWN_FRAMES):
-      governor.frame(SLOW, DT)
-    self.assertEqual(governor.level, 1)
-
-  def test_down_counts_one_per_change(self):
-    governor = quality.QualityGovernor("auto", "cpu")
-    self._feed(governor, DOWN_FRAMES, SLOW)
-    self.assertEqual(governor.changes, 1)
-
-  def test_wait_between_changes(self):
-    governor = quality.QualityGovernor("auto", "cpu")
-    self._feed(governor, DOWN_FRAMES, SLOW)
-    self._feed(governor, DOWN_FRAMES, SLOW)
-    self.assertEqual(governor.level, 1)      # still waiting
-
-  def test_up_needs_many_fast_frames(self):
-    governor = quality.QualityGovernor("auto", "cpu", level=2)
-    self._feed(governor, WAIT_FRAMES + UP_FRAMES, FAST)
-    self.assertEqual(governor.level, 1)
-
-  def test_normal_frames_do_nothing(self):
-    governor = quality.QualityGovernor("auto", "cpu")
-    self._feed(governor, DOWN_FRAMES * 4, NORMAL)
-    self.assertEqual(governor.level, quality.MIN_LEVEL)
-
-  def test_level_labels_and_scales(self):
-    self.assertEqual([quality.label(index) for index in range(4)],
-                     ["Q0", "Q1", "Q2", "Q3"])
-    self.assertEqual(quality.scale(0), 1)
-    self.assertGreater(quality.scale(3), quality.scale(0))
-
-  def test_level_of_clamps(self):
-    self.assertEqual(quality.level_of("9"), 3)
-    self.assertEqual(quality.level_of("auto", 2), 2)
-    self.assertEqual(quality.level_of("basura"), 0)
-
-  @staticmethod
-  def _feed(governor, frames, milliseconds):
-    """Calls the governor `frames` times with the same frame time."""
-    for _ in range(frames):
-      governor.frame(milliseconds, DT)
 
 
 class DirectorTest(unittest.TestCase):
@@ -248,7 +174,7 @@ class OverlayTest(unittest.TestCase):
 
 
 class FlagsTest(unittest.TestCase):
-  """--window, --block, --quality and --backend without opening a window."""
+  """--window, --block, --calidad and --backend without opening a window."""
 
   def test_window_default_and_custom(self):
     app = _app_class()
@@ -265,12 +191,12 @@ class FlagsTest(unittest.TestCase):
     options = main_module.parse_args(["--demo", "--demo-seconds", "2",
                                       "--demo-backends", "cpu",
                                       "--overlay", "full",
-                                      "--quality", "1",
+                                      "--calidad", "full",
                                       "--backend", "cpu"])
     self.assertTrue(options.demo)
     self.assertEqual(options.demo_seconds, 2.0)
     self.assertEqual(options.overlay, "full")
-    self.assertEqual(options.quality, "1")
+    self.assertEqual(options.quality_mode, "full")
 
   def test_set_block_changes_and_restores(self):
     original = backend.BLOCK

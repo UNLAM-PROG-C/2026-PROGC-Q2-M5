@@ -10,9 +10,8 @@ It leaves dist\\futbol-cpu\\ with futbol-cpu.exe (no Python needed), the
 assets, jugar-cpu.bat and servidor.txt.example. That folder can be copied to
 another Windows computer as it is.
 
-A new variant (for example the OPTIMIZADO mode of the interface) is one more
-entry in MODES: name suffix, extra data files, hidden imports and excluded
-modules. Everything else is the same command.
+A new build variant is one more entry in MODES: name suffix, extra data
+files, hidden imports and excluded modules.
 """
 import argparse
 import os

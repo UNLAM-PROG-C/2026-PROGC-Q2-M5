@@ -2,6 +2,8 @@
 
 INK = (43, 45, 66)            # dark outlines and texts
 INK_SOFT = (84, 90, 120)      # secondary texts, hints
+HUD_BACKGROUND = (35, 37, 47) # #23252F: shortcut chips
+HUD_TEXT = (246, 231, 193)    # #F6E7C1: text on the HUD chips
 WHITE = (255, 255, 255)       # pure white (texts on dark, highlights)
 CREAM = (255, 248, 231)       # panels
 CREAM_DARK = (236, 222, 190)  # shaded panels, disabled buttons

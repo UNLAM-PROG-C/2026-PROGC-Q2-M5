@@ -117,7 +117,7 @@ def _mode_line(info):
 
 
 def _quality_name(info):
-  """Quality mode of the chain: FULL, OPTIMIZADO, AUTO or '-'."""
+  """User-facing quality mode of the chain."""
   return info.get("quality_name") or config.Gpu.MODE_NAMES.get(
       info.get("quality_mode"), "-")
 
@@ -219,7 +219,7 @@ class Overlay:
     self._last = None
     return self.mode
 
-  def draw(self, surface, info):
+  def draw(self, surface, info, avoid=None):
     """Paints the panel (it is rebuilt at most 4 times per second)."""
     if self.mode == OFF:
       return
@@ -227,7 +227,7 @@ class Overlay:
     if key != self._last:
       self._cache = self._build(info)
       self._last = key
-    self._paint(surface, self._cache)
+    self._paint(surface, self._cache, avoid)
 
   def _flatten(self, info):
     """Hashable view of the numbers that the panel shows."""
@@ -269,13 +269,15 @@ class Overlay:
     line.blit(front, (0, 0))
     return line
 
-  def _paint(self, surface, cache):
+  def _paint(self, surface, cache, avoid):
     """Blits the background, the badge and the lines, bottom left."""
     if not cache:
       return
     panel = self._panel(cache)
-    surface.blit(panel, (MARGIN, surface.get_height() - panel.get_height()
-                         - MARGIN))
+    rect = panel.get_rect(bottomleft=(MARGIN, surface.get_height() - MARGIN))
+    if avoid is not None and rect.colliderect(avoid):
+      rect.bottom = avoid.top - MARGIN
+    surface.blit(panel, rect)
 
   def _panel(self, cache):
     """Panel surface with the badge and every line already drawn."""

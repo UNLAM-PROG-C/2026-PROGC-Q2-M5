@@ -29,7 +29,7 @@ Regla: 2 colores de equipo + neutros fríos oscuros + césped. Nada más saturad
 - Hielo: tinte parejo, pero el foco **multiplica** (nunca suma blanco) y la pelota y el rival siempre con contraste pleno.
 - Jugador quemado (1.0.2): se oscurece un poco (tinte `#966E5A` por multiplicación, nunca glow) y lleva el ícono de llama con los segundos que le quedan. En FULL, además, salen **pocas brasas chicas** (2 px a 4 px) desde los pies: nada que sature ni tape al jugador.
 - Cielo blanco quemado = prohibido (distrae y rompe el contraste del HUD). De noche el cielo conserva el ambiente: no toma la ganancia de la autoexposición.
-- OPTIMIZADO se ve tan nítido como FULL: corre a resolución completa y sólo se saltea las etapas caras. Prohibido volver a estirar una imagen chica (bloques de 2 px).
+- Ambos modos dibujan a resolución completa. SIN EFECTOS deja el render original de pygame; FULL aplica el postproceso completo.
 
 Valores objetivo de `fdc/config.py` (clase `Gpu`):
 
@@ -60,11 +60,9 @@ Ronda 3 (valores ya aplicados):
 | `SHOCK_WIDTH` | 90 | **50** |
 | `SHOCK_ECHO`, `SHOCK_ECHO_AMP` | 0.62 / 0.55 | **se fueron** (segundo anillo) |
 | `PITCH_TOP` (nueva) | — | **504** (primera fila de césped) |
-| `OPTIMIZED_LEVEL` | 3 (imagen 1/4) | **0** (resolución completa) |
 
 ## Qué bajar o sacar
 1. Glow en partido normal (ver tabla).
 2. Distorsión de calor sobre la tribuna fuera del poder Fuego.
 3. Tinte de Hielo a 0.30 y bordes a 0.5.
 4. Cielo quemado: oscurecer degradé superior.
-5. Optimizado-CPU: la tribuna pixelada rosada (`mejoras-opt-00.png`) no sigue la paleta: usar los mismos hex de arriba y quitar el resplandor blanco/rosa del centro.

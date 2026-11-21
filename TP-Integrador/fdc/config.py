@@ -45,7 +45,7 @@ FULLSCREEN_KEY = "f11"
 MUTE_KEY = "m"
 GPU_TOGGLE_KEY = "f4"       # F4: effects GPU <-> numpy, without restarting
 OVERLAY_KEY = "f2"          # F2: performance overlay off -> compact -> full
-QUALITY_KEY = "f10"         # F10: quality mode FULL <-> OPTIMIZADO <-> AUTO
+QUALITY_KEY = "f10"         # F10: toggle the effects chain
 NIGHT_KEY = "n"             # F8 is "give power to P1" in --test mode
 # Test mode keys (only active with --test).
 TEST_PREV_POWER_KEY = "f5"
@@ -428,8 +428,6 @@ class Gpu:
   """Knobs of the post-processing chain (CUDA when there is a GPU)."""
   # FDC_GPU=0 means "do not use CUDA": the chain runs on the CPU (numpy).
   ENABLED = os.environ.get("FDC_GPU", "1") != "0"
-  QUALITY = os.environ.get("FDC_GPU_QUALITY", "media")   # baja|media|alta
-  QUALITIES = ("baja", "media", "alta")   # from the cheapest to the richest
   GLOW_THRESHOLD = 0.85   # from this luma (0-1) a pixel glows
   GLOW_RADIUS = 2         # px of the halo blur
   GLOW_PASSES = 2         # box blurs of the halo
@@ -528,14 +526,7 @@ class Gpu:
   HEAT_FLUSH_POINTS = 256   # points kept in the host buffer at most
   HEATMAP_ALPHA = 0.55      # weight of the map over the image (0-1)
   HEATMAP_GAIN = 4.0        # cells over the maximum that saturate the map
-  # --- F7: adaptive quality (CPU only), demo and measurements ---------------
-  QUALITY_DOWN_MS = 18.0    # mean frame ms above this: one level down
-  QUALITY_UP_MS = 11.0      # mean frame ms below this: it may go up
-  QUALITY_AVG_FRAMES = 30   # frames averaged by the governor
-  QUALITY_UP_FRAMES = 120   # frames below QUALITY_UP_MS needed to go up
-  QUALITY_MIN_SECONDS = 3.0   # s between two level changes
-  QUALITY_LEVELS = ("Q0", "Q1", "Q2", "Q3")   # richest to cheapest
-  QUALITY_SCALES = (1, 2, 4, 4)   # image divisor of each level
+  # --- Demo and measurements
   DEMO_SEED = 2026          # first seed of the automatic demo
   DEMO_SECONDS = 10.0       # s of each segment of the demo
   DEMO_BOT_LEVEL = 4        # skill of the two bots of the demo
@@ -562,26 +553,12 @@ class Gpu:
   CONFETTI_GAIN = 1.0       # 0-1: opacity of the paper over the image
   CONFETTI_FLASH = 0.30     # 0-1: white flash right after the goal
   CONFETTI_FLASH_TIME = 0.18   # s the flash takes to fade out
-  # --- F11: quality modes of the projector demo ---------------------------
-  # full: everything at full resolution, no governor (it may stutter);
-  # optimizado: only the cheap stage, no crowd, 4x smaller image;
-  # auto: the governor of the notebook decides (the F7 behaviour).
-  QUALITY_MODE = os.environ.get("FDC_QUALITY_MODE", "full")
-  MODES = ("full", "optimizado", "sin-efectos", "auto")
-  MODE_NAMES = {"full": "FULL", "optimizado": "OPTIMIZADO",
-                "sin-efectos": "SIN EFECTOS", "auto": "AUTO"}
-  MODE_STAGE = {"full": "alta", "optimizado": "baja"}   # level of LEVELS
-  FULL_PUNCH = 1.6          # powers this much stronger in FULL (1.0 = as F4)
-  FULL_PARTICLES = 1.5       # sparks this much brighter in FULL
-  # Strength of the powers per mode (see `PostFx.punch`).
-  MODE_PUNCH = {"full": FULL_PUNCH, "optimizado": 0.45, "auto": 1.0,
-                "sin-efectos": 0.0}
-  # Gain of the sparks per mode (see `PostFx._sparks`).
-  MODE_PARTICLES = {"full": FULL_PARTICLES, "optimizado": 0.30, "auto": 1.0,
-                    "sin-efectos": 0.0}
-  OPTIMIZED_LEVEL = 0       # index of QUALITY_LEVELS: full resolution; only
-  #                           the cheap stage runs, so OPT stays sharp
-  CROWD_MODE = "full"       # only here the stands are animated
+  # F10: alternate between the full-resolution chain and plain pygame.
+  MODES = ("full", "sin-efectos")
+  MODE_NAMES = {"full": "FULL", "sin-efectos": "SIN EFECTOS"}
+  FULL_PUNCH = 1.6          # power effect strength multiplier in FULL
+  FULL_PARTICLES = 1.5      # spark brightness multiplier in FULL
+
   CROWD_PUNCH = 1.6         # extra strength of the crowd on a goal
   # --- F11: crowd of the stands (a kernel per pixel, FULL only) ----------
   CROWD_TOP = 112           # px: top of the stands

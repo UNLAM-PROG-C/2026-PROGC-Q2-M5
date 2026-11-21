@@ -43,7 +43,6 @@ TOUCH_SPEED = 120.0     # px/s: from this impact a touch makes sparks
 GOAL_SPARKS = 40        # sparks of a goal
 BOMB_SPARKS = 26        # sparks of an explosion
 TOUCH_SPARKS = 10       # sparks of a kick or a bounce
-COORD_COLUMNS = 3                   # x, y and radius of a light
 SPARK_COLOUR = (1.0, 0.85, 0.55)     # rgb of the sparks
 FIRE_COLOUR = (1.0, 0.45, 0.15)      # rgb of the fire power
 # Embers of a burnt player (the fire power of 1.0.2): small and few, so the
@@ -64,7 +63,7 @@ _CELEBRATION_NAME = "festejo"   # the party of a goal (F10)
 SPECTACLE_FX = ("ice", "blackout", "confusion", "fire", "night")
 SHOW_VIGNETTE = 0.0     # the glow stage never darkens the corners
 # Breathing of the powers (F11): the three numbers the formula needs.
-PULSE_ONE = 1.0         # no breathing (OPTIMIZADO and AUTO)
+PULSE_ONE = 1.0         # no breathing
 PULSE_HALF = 0.5        # the sine goes between -PULSE_HALF and +PULSE_HALF
 PULSE_ZERO = 0.0        # an amount of zero means "no breathing"
 
@@ -76,13 +75,14 @@ class PostFx:
     self.mode = "cpu"
     self.allowed = _wanted(options)
     self.enabled = self.allowed
-    self.level, self.force_cpu = _choices(options)
+    self.force_cpu = bool(getattr(options, "force_cpu", False))
     self.ops, self.error = None, None
     self.reasons = []            # why the GPU was not used (screen)
     self.device = "CPU"          # set again when the backend starts
     self._init_buffers(size)
     self._init_effects()
-    self._init_demo(options)
+    self._init_mode(options)
+    self.forced = {}            # FxParams forced by the demo director
 
   def _init_buffers(self, size):
     """Metrics, particles, target surface and the effect buffers."""
@@ -97,25 +97,13 @@ class PostFx:
     self.probe = five_steps.FiveStepProbe()
     self.probe_active = False
 
-  def _init_demo(self, options):
-    """F7 state: adaptive quality, demo forcing and the overlay."""
-    self.options = options
-    self.quality_option = getattr(options, "quality", None)
-    self._init_mode(options)
-    self.governor = quality.QualityGovernor(self.quality_option, "cpu")
-    if self.quality_mode != quality.AUTO:
-      self.governor.enabled = False    # FULL and OPTIMIZADO never adapt
-    self.px = 1.0               # scale of the coordinates (Q1..Q3)
-    self.skips = ()             # stages the CPU level leaves out
-    self.forced = {}            # FxParams forced by the demo director
-
   def _init_mode(self, options):
     """Mode chosen by the player, or the default of the backend."""
     # Without a choice the mode follows the backend (see start()): the
     # chain starts as FULL and then takes the default of the backend.
     chosen = getattr(options, "quality_mode", None)
     self.chosen_mode = chosen is not None
-    self.quality_mode = quality.mode_of(chosen or config.Gpu.QUALITY_MODE)
+    self.quality_mode = quality.mode_of(chosen)
     # "sin-efectos": the chain stays off (plain pygame render).
     self.enabled = self.allowed and self.quality_mode != quality.OFF
 
@@ -157,7 +145,6 @@ class PostFx:
     self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
     backend.log_backend(self.mode, self.device)
     self._apply_default_mode()
-    self._reset_backend()
 
   def _apply_default_mode(self):
     """Without a mode chosen by the player: FULL on the GPU, none on
@@ -168,21 +155,6 @@ class PostFx:
         """
     if not self.chosen_mode:
       self.set_quality_mode(quality.default_for(self.mode))
-
-  def _reset_backend(self):
-    """Governor, buffers and demo rule for the backend just built."""
-    self.governor = quality.QualityGovernor(self.quality_option, self.mode)
-    # F11: only AUTO adapts. FULL keeps the quality it was asked for and
-    # OPTIMIZADO is already the cheap mode, so neither one moves.
-    if self.quality_mode != quality.AUTO:
-      self.governor.enabled = False
-    self._forget_device()
-    forced = self.quality_option not in (None, quality.AUTO)
-    # The demo is a measurement: it keeps the level the user asked for.
-    # Without --quality the CPU may still adapt, so the university demo
-    # stays fluid on a notebook without NVIDIA.
-    if getattr(self.options, "demo", False) and forced:
-      self.governor.enabled = False
 
   def _forget_device(self):
     """New backend: its buffers are empty, the heat grid must restart."""
@@ -208,38 +180,36 @@ class PostFx:
     return self.player.state_at(self.clock)
 
   # ------------------------------------------------------- quality modes
-  def policy(self):
-    """What the quality mode draws now (see `fdc.gpu.quality`)."""
-    return quality.policy(self.quality_mode, self.governor.level)
-
   def quality_mode_name(self):
-    """FULL / OPTIMIZADO / "SIN EFECTOS" / AUTO, for the overlay."""
-    return quality.name_of(self.quality_mode)
+    """The current mode name for the overlay."""
+    return quality.name_of(self.quality_mode if self.allowed else quality.OFF)
 
   def set_quality_mode(self, mode):
     """Changes the mode (key F10, options menu): returns the new one."""
     self.quality_mode = quality.mode_of(mode)
-    # "sin-efectos" turns the chain off; the other modes turn it back on
-    # (unless the effects are off for the whole game).
-    self.enabled = self.allowed and self.quality_mode != quality.OFF
+    self.enabled = self.allowed and self.full_quality()
+    if not self.enabled:
+      self.clear()
     self.metrics.clear()
     self.processed_size = None
     self.probe.invalidate()
-    self._reset_backend()       # a fresh governor for the new mode
+    self._forget_device()
     return self.quality_mode
 
   def cycle_quality_mode(self):
-    """Next quality mode: full -> optimizado -> "sin-efectos" -> auto."""
+    """Alternate between the effects chain and the plain render."""
+    if not self.allowed:
+      return None
     self.chosen_mode = True     # F10 and the menu are a choice
     return self.set_quality_mode(quality.next_mode(self.quality_mode))
 
   def punch(self):
-    """Strength of the powers: everything in FULL, little in OPTIMIZADO."""
-    return self.policy().punch
+    """Power effect strength: zero without the chain."""
+    return config.Gpu.FULL_PUNCH if self.full_quality() else 0.0
 
   def full_quality(self):
     """True in FULL: the extra animation of the powers (F11)."""
-    return self.policy().name == quality.FULL
+    return self.quality_mode == quality.FULL
 
   def _pulse(self, amount):
     """FULL only: the effect breathes (a 0-1 multiplier of its strength)."""
@@ -252,7 +222,7 @@ class PostFx:
   def standing_crowd(self):
     """True if the stands have to be animated this frame."""
     return bool(self.enabled and self.ops is not None
-                and self.policy().crowd)
+                and self.full_quality())
 
   def draw_crowd(self, surface):
     """Repaints the band of the stands of `surface` (before the world)."""
@@ -286,7 +256,7 @@ class PostFx:
 
   def heat_overlay(self, surface, channel):
     """Draws the heat map of a channel over the surface (F6)."""
-    if channel is None or self.ops is None:
+    if channel is None or self.ops is None or not self.full_quality():
       return False
     image = to_array(surface)
     to_screen(self.heat.render(self.ops, image, channel), surface)
@@ -298,11 +268,10 @@ class PostFx:
       self.metrics.skip()
       return
     start = time.perf_counter()
-    result, divisor = self._scaled(dt)
+    result = self._chain(to_array(self.target), dt)
     ms = (time.perf_counter() - start) * MS_PER_S
     self.metrics.frame(ms)
-    self.governor.frame(ms, dt)
-    _paint(result, screen, divisor)
+    to_screen(result, screen)
     self._probe_frame(result)
 
   def _probe_frame(self, image):
@@ -313,22 +282,6 @@ class PostFx:
     if self.probe_active:
       self.probe.maybe_run(self.ops, image)
 
-  def _scaled(self, dt):
-    """The chain on the full image, or on a 1/4 copy of it (Q1..Q3)."""
-    divisor = quality.scale(self.level_index())
-    image = self._work_image(divisor)
-    self.px = 1.0 / divisor
-    try:
-      return self._chain(image, dt), divisor
-    finally:
-      self.px = 1.0
-
-  def _work_image(self, divisor):
-    if divisor <= 1:
-      return to_array(self.target)
-    size = _small_size(self.target.get_size(), divisor)
-    return to_array(pygame.transform.smoothscale(self.target, size))
-
   def steps_info(self):
     size = self.processed_size if self.enabled else None
     return self.probe.info(self.ops, size)
@@ -336,24 +289,9 @@ class PostFx:
   def launch_info(self):
     return five_steps.geometry(self.processed_size) if self.enabled else {}
 
-  def level_index(self):
-    """Resolution index: FULL and OPTIMIZADO are fixed, AUTO adapts."""
-    if self.quality_mode != quality.AUTO:
-      return self.policy().scale
-    return 0 if self.mode != quality.CPU else self.governor.level
-
-  def stage_level(self):
-    """Level of LEVELS the chain runs (the mode decides in F11)."""
-    stage = self.policy().stage
-    if stage:
-      return stage
-    order = config.Gpu.QUALITIES      # from the cheapest to the richest
-    return order[min(len(order) - 1 - self.governor.level,
-                     len(order) - 1)]
-
   def quality_label(self):
-    """'Q0'..'Q3', for the overlay and the CSV."""
-    return quality.label(self.level_index())
+    """Fixed full-resolution label for the overlay and CSV."""
+    return quality.FULL_RESOLUTION
 
   def toggle(self):
     """Switches between the GPU and the numpy version (F4 key)."""
@@ -364,7 +302,7 @@ class PostFx:
     self.ops = _make_ops(self.force_cpu, self.reasons)
     self.mode = "gpu" if isinstance(self.ops, backend.Gpu) else "cpu"
     self.device = (backend.device_name() if self.mode == "gpu" else "CPU")
-    self._reset_backend()       # the governor of the new backend
+    self._forget_device()
     self.metrics.clear()
     return self.mode
 
@@ -387,6 +325,8 @@ class PostFx:
   # ---------------------------------------------------------------- events
   def event(self, msg):
     """Sparks for the events the simulation sends (cosmetic only)."""
+    if not self.allowed or not self.full_quality():
+      return
     kind = msg.get("type")
     x, y = msg.get("x"), msg.get("y")
     if kind == protocol.EV_GOAL:
@@ -455,7 +395,6 @@ class PostFx:
   def _chain(self, image, dt):
     self.clock += dt
     self.frame_no += 1
-    self.skips = self.policy().skips
     self.particles.update(dt)
     self.confetti.update(dt)
     self._celebrate()
@@ -478,18 +417,15 @@ class PostFx:
     return self.ops.mix(image, self.white, amount)
 
   def _stages(self, image, dt):
-    """The stages of the fixed order (spec 5.3) plus the extras."""
-    stages = quality.stages(self.stage_level())
-    out = image
-    if quality.GLOW in stages and quality.GLOW not in self.skips:
-      out = self._timed("glow", self._glow, image)
+    """Run the full chain in its fixed order."""
+    out = self._timed("glow", self._glow, image)
     out = self._timed("particles", self._sparks, out)
-    if self.confetti.alive() and "confetti" not in self.skips:
+    if self.confetti.alive():
       out = self._timed("confetti", self._confetti, out)
-    if quality.LIGHTS in stages and quality.LIGHTS not in self.skips:
-      out = self._timed("lights", self._lights, out)
+    out = self._timed("lights", self._lights, out)
     out = self._powers(out, dt)
-    return self._extras(out, dt, stages)
+    out = self._timed("heat", self._heat, out)
+    return self._timed("histogram", self._contrast, out)
 
   def _advance_player(self):
     """Drops the replay when it is over; True while one is drawn."""
@@ -517,11 +453,7 @@ class PostFx:
   def _screened(self, image):
     """Replay or VAR: the chain ends with the look of the screen."""
     if self.player.kind == replay.VAR_KIND:
-      if "crt" in self.skips:
-        return image
       return self._timed("var", self._var_look, image)
-    if "crt" in self.skips:
-      return image
     return self._timed("crt", self._crt, image)
 
   def _crt(self, image):
@@ -566,6 +498,8 @@ class PostFx:
 
   def begin_replay(self, var=False):
     """Starts a replay (or the VAR) of the last seconds of real play."""
+    if not self.enabled:
+      return False
     frames = self.history.window(self.clock)
     if not frames:
       return False
@@ -632,7 +566,7 @@ class PostFx:
   def _ball_trail(self, image, dt):
     """TRAIL: bright pixels of the fast ball stay a moment (maximum)."""
     speed = effects_state.ball_speed(self.state or {})
-    if quality.TRAIL in self.skips or not self.trail_gate.update(speed, dt):
+    if not self.trail_gate.update(speed, dt):
       self.trail = None
       return image
     if self.trail is None or self.trail.shape != image.shape:
@@ -653,10 +587,10 @@ class PostFx:
       return image
     amp = gpu.SHOCK_AMP * self.punch() * (1.0 - age / gpu.SHOCK_DURATION)
     return self._timed("shock", self.ops.ripple_ring, image,
-                       x * self.px, y * self.px,
-                       gpu.SHOCK_RADIUS * age * self.px,
-                       gpu.SHOCK_WIDTH * self.punch() * self.px,
-                       amp, gpu.PITCH_TOP * self.px)
+                       x, y,
+                       gpu.SHOCK_RADIUS * age,
+                       gpu.SHOCK_WIDTH * self.punch(),
+                       amp, gpu.PITCH_TOP)
 
   def _fire(self, image):
     """FIRE: hot air around the ball."""
@@ -664,7 +598,7 @@ class PostFx:
       return image
     x, y, radius = self.fx.fire
     return self._timed("fire", self.ops.heat_distort, image,
-                       x * self.px, y * self.px, radius * self.px,
+                       x, y, radius,
                        self.clock, config.Gpu.FIRE_AMP * self.punch())
 
   def _confusion(self, image):
@@ -701,7 +635,7 @@ class PostFx:
     ambient = config.Gpu.BLACKOUT_AMBIENT * self._pulse(
         config.Gpu.BLACKOUT_PULSE)
     return self._timed("blackout", self.ops.spotlights, image,
-                       self._scaled_lights(lights), ambient,
+                       lights, ambient,
                        config.Gpu.BLACKOUT_TINT, NO_LIGHT_CAP)
 
   def _night(self, image):
@@ -710,8 +644,7 @@ class PostFx:
       self.exposure.reset()
       return image
     gpu = config.Gpu
-    lights = self._scaled_lights(self._sweeping(effects_state
-                                                .night_lights()))
+    lights = self._sweeping(effects_state.night_lights())
     out = self._timed("night", self.ops.spotlights, image, lights,
                       gpu.NIGHT_AMBIENT, gpu.NIGHT_TINT,
                       gpu.NIGHT_LIGHT_MAX)
@@ -719,7 +652,7 @@ class PostFx:
 
   def _night_sky(self, image):
     """NIGHT: the sky keeps the ambient light (exposure burnt it)."""
-    rows = int(config.Gpu.CROWD_TOP * self.px)
+    rows = config.Gpu.CROWD_TOP
     image[:rows] = self.ops.tint(image[:rows], NIGHT_SKY)
     return image
 
@@ -733,7 +666,7 @@ class PostFx:
     if self.exposure.gain != 1.0:
       image = self._timed("exposure", self.ops.gain, image,
                           self.exposure.gain)
-    top = int(config.Gpu.PITCH_TOP * self.px)
+    top = config.Gpu.PITCH_TOP
     grass = image[top:] if 0 < top < image.shape[0] else image
     self.exposure.update(self.ops.luma_stats(grass)[0])
     return image
@@ -749,17 +682,6 @@ class PostFx:
                                             * gpu.NIGHT_SWEEP_HZ + phase)
     return moved
 
-
-  def _extras(self, image, dt, stages):
-    """The expensive stages (only in the 'alta' level)."""
-    del dt  # the trail moved to `_powers` (F4)
-    out = image
-    if quality.HEAT in stages and quality.HEAT not in self.skips:
-      out = self._timed("heat", self._heat, out)
-    if (quality.HISTOGRAM in stages
-            and quality.HISTOGRAM not in self.skips):
-      out = self._timed("histogram", self._contrast, out)
-    return out
 
   def _glow(self, image):
     """Halo: barely there in a normal frame, strong on a goal or a power."""
@@ -785,13 +707,13 @@ class PostFx:
     pos, col = self.particles.live()
     if len(pos) == 0:
       return image
-    gain = config.Gpu.PARTICLE_GAIN * self.policy().particles
-    return self.ops.particles(image, self._scaled_points(pos), col, gain)
+    gain = config.Gpu.PARTICLE_GAIN * config.Gpu.FULL_PARTICLES
+    return self.ops.particles(image, pos, col, gain)
 
   def _confetti(self, image):
     """Paper bits of the goal celebration (the `confetti` kernel)."""
     pos, col = self.confetti.live()
-    return self.ops.confetti(image, self._scaled_points(pos), col,
+    return self.ops.confetti(image, pos, col,
                              config.Gpu.CONFETTI_GAIN)
 
   def _lights(self, image):
@@ -801,7 +723,7 @@ class PostFx:
         above the boards are left out, so no light vein crosses the crowd.
         """
     top = min(image.shape[0], self._pitch_row())
-    lamps = self._scaled_lights(self._light_table())
+    lamps = self._light_table()
     if len(lamps) == 0 or top >= image.shape[0]:
       return image
     lamps[:, 1] -= top            # measured from the top of the grass
@@ -811,7 +733,7 @@ class PostFx:
 
   def _pitch_row(self):
     """First row of grass in the image of the chain."""
-    return int(config.Gpu.PITCH_TOP * self.px)
+    return config.Gpu.PITCH_TOP
 
   def _heat(self, image):
     """Heat waves: only with the Fuego power (the stands stay still)."""
@@ -845,20 +767,6 @@ class PostFx:
     return (np.array(rows, np.float32) if rows
             else _no_lights())
 
-  def _scaled_lights(self, table):
-    """Light table with the coordinates and radii of the small image."""
-    if self.px == 1.0:
-      return table
-    scaled = np.array(table, np.float32)
-    if scaled.size == 0:
-      return table
-    scaled[:, :COORD_COLUMNS] *= self.px
-    return scaled
-
-  def _scaled_points(self, points):
-    """Particle positions in the coordinates of the small image."""
-    return points if self.px == 1.0 else points * self.px
-
   def _timed(self, name, fn, *args):
     start = time.perf_counter()
     out = fn(*args)
@@ -869,7 +777,7 @@ class PostFx:
     """Numbers for the overlay and the measurement script."""
     data = self.metrics.summary()
     data["mode"] = self.mode if self.enabled else "off"
-    data["quality"] = self.stage_level()
+    data["quality"] = quality.FULL_STAGE if self.enabled else "-"
     data["quality_level"] = self.quality_label()
     data["quality_mode"] = self.quality_mode
     data["quality_name"] = self.quality_mode_name()
@@ -883,13 +791,6 @@ class PostFx:
     if self.mode == "gpu" or not self.reasons:
       return None
     return self.reasons[-1]
-
-
-def _choices(options):
-  """Quality level and whether the numpy version was forced."""
-  return (getattr(options, "gpu_quality", None) or config.Gpu.QUALITY,
-          bool(getattr(options, "force_cpu", False)))
-
 
 
 def _wanted(options):
@@ -949,21 +850,6 @@ def to_array(surface):
 def to_screen(image, surface):
   """numpy RGB (h, w, 3) -> pygame surface."""
   pygame.surfarray.blit_array(surface, np.transpose(image, (1, 0, 2)))
-
-
-def _small_size(size, divisor):
-  """(w, h) of the small image the chain runs on (Q1..Q3)."""
-  width, height = size
-  return (max(1, width // divisor), max(1, height // divisor))
-
-
-def _paint(image, screen, divisor):
-  """Leaves the result on the screen, stretching it if it is small."""
-  if divisor <= 1:
-    to_screen(image, screen)
-    return
-  small = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
-  screen.blit(pygame.transform.smoothscale(small, screen.get_size()), (0, 0))
 
 
 def _levels(hist, total, clip=None):

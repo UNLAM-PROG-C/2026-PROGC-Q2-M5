@@ -18,7 +18,6 @@ from fdc.gpu import cpu_ref
 from fdc.gpu import metrics
 from fdc.gpu import particles
 from fdc.gpu import postfx
-from fdc.gpu import quality
 from fdc.gpu import replay
 from fdc.ui import match_screens
 
@@ -91,7 +90,7 @@ POWER_STATE = {
 
 def options(**extra):
   """The attributes the interface reads from the command line."""
-  base = {"no_gpu": False, "gpu_quality": "media", "web": False}
+  base = {"no_gpu": False, "quality_mode": "full", "web": False}
   base.update(extra)
   return types.SimpleNamespace(**base)
 
@@ -135,12 +134,6 @@ class ChainTest(unittest.TestCase):
     self.assertEqual(data["mode"], "cpu")
     self.assertEqual(data["frames"], FRAMES)
     self.assertGreater(data["frame"], 0.0)
-
-  def test_every_quality_level_runs(self):
-    for level in config.Gpu.QUALITIES:
-      self.fx.level = level
-      self.run_chain(1)
-    self.assertTrue(self.fx.metrics.frames)
 
   def test_events_make_particles(self):
     msg = {"type": protocol.EV_TOUCH, "x": 20.0, "y": 20.0,
@@ -208,24 +201,6 @@ class MetricsTest(unittest.TestCase):
     self.assertAlmostEqual(data.fps(), 100.0)
 
 
-class QualityTest(unittest.TestCase):
-  """Levels and their stages."""
-
-  def test_stages_grow_with_the_level(self):
-    low = quality.stages("baja")
-    high = quality.stages("alta")
-    self.assertLess(len(low), len(high))
-    self.assertIn(quality.GLOW, high)
-
-  def test_unknown_level_is_media(self):
-    self.assertEqual(quality.stages("inexistente"),
-                     quality.stages("media"))
-
-  def test_downgrade(self):
-    self.assertEqual(quality.downgrade("alta"), "media")
-    self.assertEqual(quality.downgrade("baja"), "baja")
-
-
 class PowerChainTest(unittest.TestCase):
   """F3/F4 through the whole chain, on the numpy backend."""
 
@@ -236,7 +211,6 @@ class PowerChainTest(unittest.TestCase):
     self.fx.ops = cpu_ref.Cpu()
     self.fx.enabled = True
     self.fx.mode = "cpu"
-    self.fx.level = "alta"
     self.screen = pygame.Surface((W, H))
 
   def run_chain(self, state, frames=FRAMES):

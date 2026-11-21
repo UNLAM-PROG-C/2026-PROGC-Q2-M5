@@ -244,7 +244,7 @@ class DemoScreen(match_screens.MatchScreen):
                                  getattr(app.options, "demo_frame_clock",
                                          False))
     self.passes = _passes(app.options)
-    self.compare = len(self.passes) > 1     # two passes: same quality
+
     self.pass_index = 0
     self.finished = False
     self.measure = log or gpu_metrics.MeasurementLog(
@@ -335,8 +335,9 @@ class DemoScreen(match_screens.MatchScreen):
         postfx.force(**params)
 
   def _chain_wanted(self):
-    """Whether the effects can run at all in this machine."""
-    return getattr(self.app.postfx, "mode", "off") != "off"
+    """The demo must not override the user's quality choice."""
+    postfx = self.app.postfx
+    return getattr(postfx, "allowed", False) and postfx.full_quality()
 
   def _tick_segment(self, dt):
     """The per-segment extra: waves and replays every few seconds."""
@@ -393,8 +394,6 @@ class DemoScreen(match_screens.MatchScreen):
     """F4-like switch: GPU <-> numpy, without restarting the game."""
     if self.app.postfx.mode != target and self.app.postfx.mode != "off":
       self.app.postfx.toggle()
-    if self.compare:
-      self.app.postfx.governor.enabled = False
 
   # ------------------------------------------------------------ events
   def on_match_over(self):

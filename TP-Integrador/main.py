@@ -42,9 +42,6 @@ COMMAND_LINE = (
      {"dest": "no_gpu", "action": "store_true",
       "help": "apaga los efectos (igual que FDC_EFECTOS=0): el juego "
               "queda igual que antes"}),
-    (("--gpu-quality",), {"dest": "gpu_quality", "default": None,
-                          "choices": ("baja", "media", "alta"),
-                          "help": "calidad de los efectos (baja|media|alta)"}),
     (("--sin-prediccion",),
      {"dest": "no_prediction", "action": "store_true",
       "help": "online: no predice el jugador propio (si se ve raro con "
@@ -52,19 +49,11 @@ COMMAND_LINE = (
     (("--gpu-cpu",), {"dest": "force_cpu", "action": "store_true",
                       "help": "efectos con la versión numpy (para comparar "
                               "contra la GPU)"}),
-    (("--quality",), {"dest": "quality", "default": "auto",
-                      "choices": ("auto", "0", "1", "2", "3"),
-                      "help": "calidad de los efectos: auto (baja el nivel "
-                              "sola en CPU) o Q0..Q3 fija"}),
     (("--calidad",), {"dest": "quality_mode", "default": None,
-                      "choices": ("full", "optimizado", "sin-efectos", "off",
-                                  "auto"),
-                      "help": "modo de calidad: full (todo, sin gobernador), "
-                              "optimizado (liviano, anda fluido en CPU), "
-                              "sin-efectos (render pygame pelado; también "
-                              "'off'), auto (el gobernador decide) o nada "
-                              "(por defecto: full con GPU y sin-efectos con "
-                              "CPU)"}),
+                      "choices": (*config.Gpu.MODES, "off"),
+                      "help": "full: todos los efectos; sin-efectos (u "
+                              "off): sin postproceso. Por defecto: full "
+                              "con GPU, sin-efectos con CPU"}),
     (("--backend",), {"dest": "backend", "default": "auto",
                       "choices": ("auto", "gpu", "cpu"),
                       "help": "backend de los efectos (auto|gpu|cpu)"}),

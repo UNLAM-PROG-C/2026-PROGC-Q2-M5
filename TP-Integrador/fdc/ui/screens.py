@@ -591,17 +591,9 @@ class MultiplayerMenuScreen(SubMenuScreen):
 
 
 class OptionsScreen(SubMenuScreen):
-  """Video options: the quality mode of the effects (F11).
-
-    FULL draws everything (the crowd, the strong powers) and may stutter on
-    a notebook without NVIDIA; OPTIMIZADO is the smooth version; AUTO leaves
-    the resolution to the governor. The first button cycles the mode and its
-    label shows the one in use, so the state is always on screen.
-    """
+  """Video options: toggle the full effects chain."""
   TITLE = "OPCIONES"
-  SUBTITLE = ("FULL: todos los efectos (pesado).  OPTIMIZADO: liviano.  "
-              "SIN EFECTOS: pygame pelado (por defecto en CPU).  AUTO: "
-              "baja la calidad sola en CPU.")
+  SUBTITLE = "FULL: todos los efectos.  SIN EFECTOS: más fluido en CPU."
 
   def __init__(self, app):
     super().__init__(app, [("", self.cycle), ("Volver", self.back)])
@@ -612,12 +604,12 @@ class OptionsScreen(SubMenuScreen):
     self.menu.items[0] = (f"CALIDAD: {self.mode_name()}", self.cycle)
 
   def mode_name(self):
-    """The name of the mode in use (FULL, OPTIMIZADO, AUTO)."""
+    """The name of the active mode."""
     return self.app.postfx.quality_mode_name()
 
   def cycle(self):
     """Next mode of the chain (F10 does the same inside a match)."""
-    self.app.postfx.cycle_quality_mode()
+    self.app.cycle_quality()
     self.refresh()
 
   def update(self, dt):

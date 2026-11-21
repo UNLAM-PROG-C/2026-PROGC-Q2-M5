@@ -2,9 +2,8 @@
 
 The Mac, the notebooks of the demo and the "Windows CPU" exe have no CUDA,
 and there FULL has to show the effects with the numpy backend (slower but
-complete); OPTIMIZADO is the light version. `FDC_GPU=0` must not turn the
-chain off: the "no effects" mode is explicit (`FDC_EFECTOS=0` or
-"--sin-efectos").
+complete). `FDC_GPU=0` only disables CUDA. `FDC_EFECTOS=0` or
+`--sin-efectos` disables the chain entirely.
 
 Every case runs in a fresh interpreter (tests/check_effects_env.py), so the
 variables are read the way the game reads them at start up.
@@ -22,7 +21,7 @@ from fdc.gpu import demo
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(PROJECT, "tests", "check_effects_env.py")
 HIDDEN = ("FDC_GPU", "FDC_EFECTOS", "FDC_TEST_NO_PYCUDA",
-          "FDC_TEST_QUALITY", "FDC_GPU_QUALITY")
+          "FDC_TEST_QUALITY")
 TIMEOUT = 180           # s for the fresh interpreter
 NO_PYCUDA = "1"         # hides PyCUDA, like a machine without NVIDIA
 
@@ -48,7 +47,6 @@ class FdcGpuMeansCudaTest(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
     cls.full = probe(FDC_GPU=0)
-    cls.optimized = probe(FDC_GPU=0, FDC_TEST_QUALITY="optimizado")
 
   def test_full_keeps_the_effects(self):
     self.assertTrue(self.full["wanted"])
@@ -63,13 +61,8 @@ class FdcGpuMeansCudaTest(unittest.TestCase):
   def test_full_keeps_the_richest_stage(self):
     self.assertEqual(self.full["stage"], "alta")
 
-  def test_optimized_keeps_the_effects(self):
-    self.assertTrue(self.optimized["wanted"])
-    self.assertEqual(self.optimized["stage"], "baja")
-
   def test_pycuda_is_never_imported(self):
     self.assertFalse(self.full["pycuda_loaded"])
-    self.assertFalse(self.optimized["pycuda_loaded"])
 
   def test_no_error_reported(self):
     self.assertIsNone(self.full["error"])

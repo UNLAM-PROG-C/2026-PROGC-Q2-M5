@@ -64,7 +64,7 @@ TIERS = ((56, 112), (116, 176), (180, 232))
 TIER_RAIL = 4                      # rail over each stand (height, px)
 SEAT_ROW = 6                       # height of each row of seats (px)
 # Shirts of the crowd: the muted tones of the animated stands (guia-visual).
-# Skin and hair come from the same table, so OPTIMIZADO and FULL match.
+# Skin and hair come from the same table in both renders.
 CROWD_COLORS = [tuple(round(channel * 255) for channel in shirt)
                 for shirt in config.Gpu.CROWD_SHIRTS]
 SKIN_TONES = [tuple(round(channel * 255) for channel in skin)
@@ -80,7 +80,7 @@ STAIRS_X0 = 64                     # first stairs (px)...
 STAIRS_EVERY = 128                 # ...and one every 128 px
 STAIRS_W = 8                       # width of the stairs (px)
 STEP_H = 3                         # height of each step (px)
-# --- stands at the final resolution (only the OPTIMIZADO mode sees them) ---
+# --- static stands at the final resolution ---
 # Same geometry and colours as the animated crowd of FULL (`k_crowd`), so
 # both modes show the same people instead of blocks of 2 x 2 px.
 CROWD_TOP = config.Gpu.CROWD_TOP            # px: top of the stands
@@ -366,7 +366,7 @@ def build_background():
   if custom is not None:
     return pygame.transform.scale(custom, (W, H)).convert()
   big = retro.scale_px(_paint_stadium())
-  _crowd_band(big)          # OPTIMIZADO: the stands at final resolution
+  _crowd_band(big)          # Static stands at the final resolution.
   return big.convert()
 
 
@@ -388,7 +388,7 @@ def _crowd_band(screen):
   """Stands at one pixel per pixel (the animated crowd covers them in FULL).
 
     The whole background is drawn at 640 x 360 and scaled x2, so its people
-    end up as 2 x 2 blocks in OPTIMIZADO. This band keeps the same geometry
+    end up as 2 x 2 blocks. This band keeps the same geometry
     as `k_crowd` at the final size, so both modes show the same crowd.
     """
   height = CROWD_BOTTOM - CROWD_TOP

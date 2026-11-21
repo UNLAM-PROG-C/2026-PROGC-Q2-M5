@@ -84,7 +84,7 @@ class DemoGpuTest(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
     demo.headless()
-    cls.data = demo.run(FRAMES, ["--gpu-quality", "media"])
+    cls.data = demo.run(FRAMES, ["--calidad", "full"])
 
   def test_gpu_mode(self):
     self.assertEqual(self.data["mode"], "gpu")

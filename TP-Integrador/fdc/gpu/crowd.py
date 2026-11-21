@@ -6,7 +6,7 @@ of the seat, so the kernel needs no shared memory and no atomics.
 
 On the CPU this is the most expensive stage of the chain and that is on
 purpose: it is what makes a notebook without NVIDIA stutter in FULL and run
-smooth in OPTIMIZADO. On the GPU it is one more measured kernel.
+smooth without the effects. On the GPU it is one more measured kernel.
 """
 import pygame
 

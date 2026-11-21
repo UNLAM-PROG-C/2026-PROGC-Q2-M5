@@ -19,13 +19,13 @@ py -m pip install -r requirements.txt
 - `instalar-gpu.bat` agrega `requirements-gpu.txt` (pycuda, numpy con CUDA).
 - Si el `Activate.ps1` está bloqueado: `Set-ExecutionPolicy -Scope Process Bypass`.
 - **Notebook sin NVIDIA:** no hace falta tocar nada. `--backend auto` detecta que
-  no hay CUDA y corre con numpy; el overlay muestra `CPU` y el nivel de calidad
-  (Q0..Q3) que elija solo. La demo también corre así: `py main.py --demo`.
+  no hay CUDA y arranca SIN EFECTOS. Para ver todos los efectos con numpy,
+  usá `--calidad full`.
 
 ## Demo automática (`--demo`)
 
 ```powershell
-py main.py --demo
+py main.py --demo --calidad full
 ```
 
 - 10 segmentos de `--demo-seconds` (por defecto 10 s): sin efectos, hielo,
@@ -39,12 +39,13 @@ py main.py --demo
   segmento primero en GPU y después en numpy, y escribe las dos filas.
 - `--demo-frame-clock`: avanza con 1/60 s fijo en vez del reloj real. Sirve para
   capturas repetibles (`tools/record_frames.py` lo usa).
-- `Tab` salta al segmento siguiente, `Espacio` pausa, `Esc` sale.
+- `F1` muestra la ayuda, `F10` alterna SIN EFECTOS y FULL, `Tab` salta al
+  siguiente segmento y `Esc` sale. `F4` alterna CPU/GPU con la cadena activa.
 
 ## Overlay de rendimiento (F2)
 
-`F2` cicla `apagado → compacto → completo`. También `--overlay off|compact|full`
-y `--demo` arranca en `full`.
+`F2` cicla `apagado → compacto → completo → pasos CUDA`. También
+`--overlay off|compact|full|steps`; `--demo` arranca con el panel completo.
 
 Muestra: backend (`GPU (CUDA)` o `CPU`), FPS reales y capacidad
 (`1000 / work_ms`), bloque/grilla/hilos/sobrantes, resolución procesada y de
@@ -64,7 +65,7 @@ Cada segmento deja una fila con backend, efecto, resolución, FPS, `work_ms`
 `--measure-frames` (una fila por cuadro).
 
 ```powershell
-py main.py --demo --measure-csv mediciones/demo_universidad.csv
+py main.py --demo --calidad full --measure-csv mediciones/demo_universidad.csv
 py tools\report_table.py
 ```
 

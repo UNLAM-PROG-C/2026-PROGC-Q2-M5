@@ -1,11 +1,4 @@
-"""The quality modes of F11: FULL, OPTIMIZADO, "SIN EFECTOS" and AUTO.
-
-The demo of the defence needs explicit modes: FULL draws everything at
-full resolution and never lowers the quality by itself (it may stutter on a
-notebook without NVIDIA), OPTIMIZADO leaves only the cheap stage and runs
-smooth on the CPU, "SIN EFECTOS" draws the plain pygame render (the CPU/Mac
-case) and AUTO is the adaptive governor of F7.
-"""
+"""Desktop quality modes: flags, defaults and rendering."""
 import types
 import unittest
 
@@ -13,53 +6,51 @@ import unittest
 import helpers  # pylint: disable=unused-import
 import pygame
 
+import driver
 import main as main_module
 from fdc import config
 from fdc.gpu import cpu_ref
 from fdc.gpu import postfx
 from fdc.gpu import quality
+from fdc.ui import screens
 
 W, H = 64, 48           # size of the test surface
 FRAMES = 6              # frames of the chain in each test
 DT = 1 / 60.0           # s between frames
-SLOW = 900.0            # ms: a frame that would push any governor down
-HEAVY = (quality.GLOW, quality.LIGHTS, quality.HEAT, quality.TRAIL,
-         quality.HISTOGRAM)
-OPTIMIZED_ONLY = (quality.PARTICLES,)   # the only stage of OPTIMIZADO
 FULL = quality.FULL
-OPTIMIZED = quality.OPTIMIZED
 OFF = quality.OFF
-AUTO = quality.AUTO
 
 
 def options(**extra):
   """The attributes the interface reads from the command line."""
-  base = {"no_gpu": False, "gpu_quality": "media", "web": False,
+  base = {"no_gpu": False, "web": False,
           "quality_mode": FULL}
   base.update(extra)
   return types.SimpleNamespace(**base)
 
 
-class ModesTest(unittest.TestCase):
-  """The four modes of the card and FULL as the default."""
+def start_on_cpu(mode):
+  pygame.display.init()
+  pygame.display.set_mode((W, H))
+  fx = postfx.PostFx(options(quality_mode=mode, force_cpu=True), (W, H))
+  fx.start()
+  return fx
 
-  def test_four_modes(self):
-    self.assertEqual(config.Gpu.MODES, (FULL, OPTIMIZED, OFF, AUTO))
+
+class ModesTest(unittest.TestCase):
+  """The two quality modes and their display names."""
+
+  def test_two_modes(self):
+    self.assertEqual(config.Gpu.MODES, (FULL, OFF))
     self.assertEqual(quality.DEFAULT_MODE, FULL)
-    self.assertEqual(config.Gpu.QUALITY_MODE, FULL)
 
   def test_cycle_order(self):
-    self.assertEqual(quality.next_mode(FULL), OPTIMIZED)
-    self.assertEqual(quality.next_mode(OPTIMIZED), OFF)
-    self.assertEqual(quality.next_mode(OFF), AUTO)
-    self.assertEqual(quality.next_mode(AUTO), FULL)
+    self.assertEqual(quality.next_mode(FULL), OFF)
+    self.assertEqual(quality.next_mode(OFF), FULL)
 
   def test_names_of_the_overlay(self):
     self.assertEqual(quality.name_of(FULL), "FULL")
-    self.assertEqual(quality.name_of(OPTIMIZED), "OPTIMIZADO")
     self.assertEqual(quality.name_of(OFF), "SIN EFECTOS")
-    self.assertEqual(quality.name_of(AUTO), "AUTO")
-    self.assertEqual(config.Gpu.MODE_NAMES[OPTIMIZED], "OPTIMIZADO")
 
   def test_off_aliases(self):
     self.assertEqual(quality.mode_of("off"), OFF)
@@ -100,6 +91,13 @@ class OffTest(unittest.TestCase):
     self.fx.set_quality_mode(OFF)
     self.assertFalse(self.fx.enabled)
 
+  def test_turning_off_cancels_a_replay(self):
+    self.fx.set_quality_mode(FULL)
+    self.fx.history.feed({"ball": {}}, 0.0)
+    self.assertTrue(self.fx.begin_replay(var=True))
+    self.fx.set_quality_mode(OFF)
+    self.assertIsNone(self.fx.replay_mode())
+
   def test_no_gpu_stays_off_even_in_full(self):
     fx = postfx.PostFx(options(no_gpu=True, quality_mode=FULL), (W, H))
     fx.set_quality_mode(FULL)
@@ -126,102 +124,30 @@ class FullTest(unittest.TestCase):
       self.fx.finish(screen, DT)
     return screen
 
-  def test_full_never_lowers_the_quality(self):
-    for _ in range(FRAMES * 4):        # the governor would drop by now
-      self.fx.governor.frame(SLOW, DT)
+  def test_full_renders_at_full_resolution(self):
     self.run_chain()
-    self.assertEqual(self.fx.stage_level(), "alta")
-    self.assertEqual(self.fx.level_index(), quality.MIN_LEVEL)
-    self.assertEqual(self.fx.policy().skips, ())
-    self.assertEqual(self.fx.governor.changes, 0)
+    self.assertEqual(self.fx.summary()["quality"], "alta")
+    self.assertEqual(self.fx.quality_label(), "Q0")
+    self.assertEqual(self.fx.processed_size, (W, H))
     self.assertTrue(self.fx.full_quality())
 
   def test_full_draws_the_heavy_stages(self):
     self.run_chain()
     data = self.fx.summary()
-    for stage in (quality.GLOW, quality.LIGHTS):
+    for stage in ("glow", "lights", "heat", "histogram", "particles"):
       self.assertIn(stage, data)
     self.assertEqual(data["quality_name"], "FULL")
 
   def test_full_draws_the_crowd(self):
-    self.assertTrue(self.fx.policy().crowd)
     self.assertTrue(self.fx.standing_crowd())
 
   def test_full_has_the_extra_strength(self):
     self.assertEqual(self.fx.punch(), config.Gpu.FULL_PUNCH)
-    self.assertEqual(self.fx.policy().particles,
-                     config.Gpu.FULL_PARTICLES)
     self.assertGreater(self.fx.punch(), 1.0)
 
 
-class OptimizedTest(unittest.TestCase):
-  """OPTIMIZADO leaves only the cheap stage, small and without the crowd."""
-
-  def setUp(self):
-    pygame.init()
-    pygame.display.set_mode((W, H))
-    self.fx = postfx.PostFx(options(quality_mode=OPTIMIZED), (W, H))
-    self.fx.ops = cpu_ref.Cpu()
-    self.fx.enabled = True
-    self.fx.mode = "cpu"
-
-  def test_only_the_cheap_stage(self):
-    policy = self.fx.policy()
-    self.assertEqual(quality.stages(policy.stage), OPTIMIZED_ONLY)
-    for stage in HEAVY + (quality.LIGHTS, "crt", "var", "confetti"):
-      self.assertIn(stage, policy.skips)
-
-  def test_sharp_and_no_crowd(self):
-    """OPTIMIZADO keeps the full resolution: the crowd is not blocky."""
-    self.assertEqual(self.fx.level_index(), config.Gpu.OPTIMIZED_LEVEL)
-    self.assertFalse(self.fx.policy().crowd)
-    self.assertFalse(self.fx.standing_crowd())
-    self.assertEqual(quality.scale(self.fx.level_index()), 1)
-
-  def test_weak_powers(self):
-    self.assertLess(self.fx.punch(), 1.0)
-    self.assertLess(self.fx.policy().particles, 1.0)
-
-  def test_chain_runs_only_the_cheap_stage(self):
-    screen = pygame.Surface((W, H))
-    for _ in range(FRAMES):
-      target = self.fx.begin(screen, {})
-      target.fill((20, 30, 40))
-      self.fx.finish(screen, DT)
-    data = self.fx.summary()
-    for stage in HEAVY:
-      self.assertEqual(data[stage], 0.0)
-    self.assertGreater(data["particles"], 0.0)
-    self.assertEqual(screen.get_size(), (W, H))
-    self.assertEqual(data["quality_name"], "OPTIMIZADO")
-
-
-class AutoTest(unittest.TestCase):
-  """AUTO is the governor of F7: on the CPU it drops when it cannot."""
-
-  def setUp(self):
-    pygame.init()
-    pygame.display.set_mode((W, H))
-    self.fx = postfx.PostFx(options(quality_mode=AUTO), (W, H))
-    self.fx.ops = cpu_ref.Cpu()
-    self.fx.enabled = True
-    self.fx.mode = "cpu"
-
-  def test_auto_still_has_the_governor(self):
-    self.assertTrue(self.fx.policy().governor)
-    self.assertFalse(self.fx.policy().crowd)
-
-  def test_auto_drops_with_slow_frames(self):
-    start = self.fx.governor.level
-    for _ in range(config.Gpu.QUALITY_AVG_FRAMES * 2):
-      self.fx.governor.frame(SLOW, DT)
-    self.assertGreater(self.fx.governor.changes, 0)
-    self.assertGreater(self.fx.governor.level, start)
-    self.assertIn(self.fx.stage_level(), config.Gpu.QUALITIES)
-
-
 class SwitchTest(unittest.TestCase):
-  """The F10 key and the options menu move between the four modes."""
+  """The F10 key and the options menu move between the two modes."""
 
   def setUp(self):
     pygame.init()
@@ -234,31 +160,50 @@ class SwitchTest(unittest.TestCase):
   def test_f10_cycles_the_modes(self):
     self.assertEqual(self.fx.quality_mode_name(), "FULL")
     self.fx.cycle_quality_mode()
-    self.assertEqual(self.fx.quality_mode, OPTIMIZED)
-    self.fx.cycle_quality_mode()
     self.assertEqual(self.fx.quality_mode, OFF)
-    self.fx.cycle_quality_mode()
-    self.assertEqual(self.fx.quality_mode, AUTO)
     self.fx.cycle_quality_mode()
     self.assertEqual(self.fx.quality_mode, FULL)
 
-  def test_switching_forgets_the_governor(self):
-    self.fx.set_quality_mode(AUTO)
-    for _ in range(config.Gpu.QUALITY_AVG_FRAMES * 2):
-      self.fx.governor.frame(SLOW, DT)
-    self.assertGreater(self.fx.governor.level, quality.MIN_LEVEL)
-    self.fx.set_quality_mode(FULL)
-    self.assertEqual(self.fx.governor.level, quality.MIN_LEVEL)
-    self.assertEqual(self.fx.summary()["quality_mode"], FULL)
+
+class QualityControlsTest(unittest.TestCase):
+  def setUp(self):
+    self.app = driver.make_app(web=True, quality_mode=OFF)
+    self.addCleanup(self.app.shutdown)
+    self.menu = screens.OptionsScreen(self.app)
+    self.app.switch(self.menu)
+
+  def test_f10_announces_the_new_mode(self):
+    self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F10))
+    self.assertEqual(self.app.postfx.quality_mode, FULL)
+    self.assertIn("FULL", self.app.quality_controls.notice())
+
+  def test_menu_announces_the_new_mode(self):
+    self.menu.cycle()
+    self.assertEqual(self.app.postfx.quality_mode, FULL)
+    self.assertIn("FULL", self.app.quality_controls.notice())
+
+  def test_f1_toggles_help(self):
+    keydown = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F1)
+    self.app.handle_event(keydown)
+    self.assertTrue(self.app.quality_controls.show_help)
+    self.app.handle_event(keydown)
+    self.assertFalse(self.app.quality_controls.show_help)
 
 
 class CliTest(unittest.TestCase):
   """`--calidad` chooses the mode (F10 also does it inside a match)."""
 
+  def test_rejects_invalid_quality_modes(self):
+    for value in ("auto", "unknown"):
+      with self.subTest(value=value):
+        with self.assertRaises(SystemExit) as error:
+          main_module.parse_args(["--calidad", value])
+        self.assertEqual(error.exception.code, 2)
+
   def test_flag_sets_the_mode(self):
     options = main_module.parse_args(["--no-audio", "--calidad",
-                                      "optimizado"])
-    self.assertEqual(options.quality_mode, "optimizado")
+                                      "full"])
+    self.assertEqual(options.quality_mode, "full")
 
   def test_no_effects_flag(self):
     for value in ("sin-efectos", "off"):
@@ -277,9 +222,7 @@ class DefaultByBackendTest(unittest.TestCase):
     starting in FULL. A mode chosen by the player (flag, F10, menu) wins."""
 
   def chain(self, mode):
-    fx = postfx.PostFx(options(quality_mode=mode), (W, H))
-    fx.start()
-    return fx
+    return start_on_cpu(mode)
 
   def test_the_cpu_without_a_choice_starts_without_effects(self):
     fx = self.chain(None)
@@ -304,7 +247,7 @@ class DefaultByBackendTest(unittest.TestCase):
     self.assertTrue(fx.chosen_mode)
     self.assertEqual((fx.quality_mode, fx.enabled), (FULL, True))
 
-  def test_a_chosen_mode_survives_the_backend_fallback(self):
+  def test_a_chosen_mode_works_on_forced_cpu(self):
     """FULL can still be asked for with the numpy backend."""
     fx = self.chain(FULL)
     self.assertEqual(fx.mode, quality.CPU)
@@ -323,9 +266,7 @@ class EmberTest(unittest.TestCase):
     modes leave them out (there the pygame render shows the burn)."""
 
   def chain(self, mode):
-    fx = postfx.PostFx(options(quality_mode=mode), (W, H))
-    fx.start()
-    return fx
+    return start_on_cpu(mode)
 
   def live(self, fx):
     """Sparks alive in the pool of the chain."""
@@ -345,8 +286,8 @@ class EmberTest(unittest.TestCase):
     fx._spawn_embers(postfx.EMBER_EVERY * 3)
     self.assertEqual(self.live(fx), 0)
 
-  def test_optimizado_leaves_the_embers_out(self):
-    fx = self.chain(OPTIMIZED)
+  def test_off_leaves_the_embers_out(self):
+    fx = self.chain(OFF)
     fx.fx.burned = ((10.0, 20.0),)
     # pylint: disable-next=protected-access
     fx._spawn_embers(postfx.EMBER_EVERY)

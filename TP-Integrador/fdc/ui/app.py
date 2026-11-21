@@ -37,10 +37,12 @@ from fdc.ui import browser
 from fdc.ui import fx
 from fdc.ui import input as ui_input
 from fdc.ui import layout
+from fdc.ui import match_screens
 from fdc.ui import online_screens
 from fdc.ui import palette
 from fdc.ui import pixelfont
 from fdc.ui import profile_screen
+from fdc.ui import quality_hud
 from fdc.ui import screens
 from fdc.ui import sprites
 from fdc.ui import stadium
@@ -179,7 +181,7 @@ class _NoFx:
 
   def quality_mode_name(self):
     """No quality mode without the effects."""
-    return "-"
+    return "SIN EFECTOS"
 
   def finish(self, screen, dt):
     """Nothing to do."""
@@ -463,12 +465,22 @@ class App:
     self.current.draw(self.screen)
     if self.show_debug:
       self.draw_debug(self.screen)
-    self.overlay.draw(self.screen, self._overlay_info())
+    controls = self._draw_quality_controls()
+    self.overlay.draw(self.screen, self._overlay_info(), avoid=controls)
     self._draw_gpu_notice(self.screen)
     pygame.display.flip()
     if self.web and not self.first_frame_shown:
       self.first_frame_shown = True
       browser.hide_loading_screen()
+
+  def _draw_quality_controls(self):
+    if not getattr(self.postfx, "allowed", False):
+      return None
+    menu = isinstance(self.current, screens.OptionsScreen)
+    if menu or isinstance(self.current, match_screens.MatchScreen):
+      demo = not menu and getattr(self.options, "demo", False)
+      return self.quality_controls.draw(self.screen, demo=demo, menu=menu)
+    return None
 
   def _draw_gpu_notice(self, surf):
     """Banner for the first seconds: why the effects run on the CPU."""
@@ -526,10 +538,11 @@ class App:
         self.keys[config.DEBUG_PANEL_KEY]: self._toggle_panel,
         self.keys[config.GPU_TOGGLE_KEY]: self.postfx.toggle,
         self.keys[config.OVERLAY_KEY]: self._overlay_key,
-        self.keys[config.QUALITY_KEY]: self._quality_key,
+        self.keys[config.QUALITY_KEY]: self.cycle_quality,
         self.keys[config.NIGHT_KEY]: self._night_key,
         self.keys[config.FULLSCREEN_KEY]: self._fullscreen_key,
         self.keys[config.MUTE_KEY]: self.audio.toggle_mute,
+        pygame.K_F1: self.quality_controls.toggle_help,
     }
 
   def _toggle_panel(self):
@@ -548,6 +561,7 @@ class App:
     """Remote session and overlay of this run (F7)."""
     self.remote = sysinfo.is_remote_session()
     self.overlay = gpu_overlay.Overlay(self._overlay_mode())
+    self.quality_controls = quality_hud.QualityControls()
     self.notice_left = NOTICE_TIME   # s left of the "no GPU" banner
 
   def _overlay_key(self):
@@ -555,10 +569,11 @@ class App:
     self.overlay.cycle()
     return True
 
-  def _quality_key(self):
-    """F10: next quality mode (FULL -> OPTIMIZADO -> AUTO)."""
+  def cycle_quality(self):
+    """Switch quality and confirm the choice from either input path."""
     if self.postfx.cycle_quality_mode() is None:
       return False
+    self.quality_controls.announce(self.postfx.quality_mode_name())
     return True
 
   def _overlay_info(self):

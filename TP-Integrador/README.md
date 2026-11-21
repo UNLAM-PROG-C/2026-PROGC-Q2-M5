@@ -30,15 +30,11 @@ Los efectos GPU son opcionales: sin placa NVIDIA el juego corre igual con la
 versión numpy (`--backend auto` lo detecta solo) y el overlay de `F2` dice
 `CPU`. En la PC de Alejandro, Python se llama con `py` (no está en el PATH).
 
-**Sin CUDA los efectos siguen.** `FDC_GPU=0` (o `--backend cpu`) sólo apaga
-CUDA: la cadena se hace con numpy y **FULL se ve completo** (tribuna animada,
-luces, partículas), más lento; `OPTIMIZADO` es la versión liviana y `AUTO`
-baja el nivel sólo si no llega. Para apagar los efectos hay que pedirlo:
-`--sin-efectos` o `FDC_EFECTOS=0` (`--no-gpu` sigue valiendo como alias).
-En esta PC, con el backend numpy a 1280x720 (`py tools\bench_calidades.py`,
-180 cuadros por modo): FULL ≈ 10 fps y OPTIMIZADO ≈ 140 fps; en una Mac o una
-notebook sin NVIDIA FULL queda en el orden de 8 a 20 fps y la tribuna igual se
-ve. Para quien necesita fluidez sin placa, OPTIMIZADO o AUTO.
+**Podés usar FULL sin CUDA.** `FDC_GPU=0` o `--backend cpu` sólo desactiva
+CUDA. La CPU arranca SIN EFECTOS, pero con `--calidad full` o F10 podés usar
+numpy para ver la cadena completa (tribuna animada, luces y partículas),
+a menor velocidad. `--sin-efectos` o `FDC_EFECTOS=0` bloquea el postproceso
+para toda la sesión (`--no-gpu` sigue valiendo como alias).
 
 **Notebook o PC sin NVIDIA (modo CPU).** Nada de CUDA ni de Visual Studio:
 
@@ -52,7 +48,7 @@ py main.py
 
 Sin activar el entorno alcanza con `.\instalar-cpu.bat` (crea el venv e
 instala) y después `.\jugar.bat`. Para la demo de la facultad:
-`py main.py --demo` o `.\demo.bat`.
+`py main.py --demo --calidad full`.
 
 **PC con GPU NVIDIA (efectos en CUDA).** Además de lo anterior hace falta
 `pycuda`, el `nvcc` y un compilador de C++ (ver [INSTALACION.md](INSTALACION.md)):
@@ -81,22 +77,15 @@ driver NVIDIA, sin `nvcc` ni CUDA Toolkit. El fatbin se regenera con
 | `py main.py --backend cpu` | Fuerza numpy (para comparar en la misma PC) |
 | `py main.py --backend cpu --calidad full` | Sin CUDA y con todos los efectos por CPU |
 | `py main.py --sin-efectos` | Sin efectos (el juego original; `--no-gpu` sigue valiendo) |
-| `py main.py --demo` | Demo automática de 10 efectos, GPU y CPU |
-| `py tools\bench_calidades.py` | fps de FULL, OPTIMIZADO y AUTO con el backend CPU |
-| `py tools\captura_cpu_full.py` | Un cuadro de FULL por CPU en `capturas\cpu-full.png` |
-| `py tools\run_demo.py` | La misma demo sin ventana: tabla + CSV y termina sola |
+| `py main.py --demo --calidad full` | Demo automática de efectos, GPU y CPU |
 | `py -m unittest discover -s tests` | Suite completa (tests de kernels se saltean sin CUDA) |
 
-**FULL, OPTIMIZADO o SIN EFECTOS.** El modo se elige con `--calidad
-full|optimizado|sin-efectos|auto` (también vale `off`; en el juego, **F10**
-recorre FULL → OPTIMIZADO → SIN EFECTOS → AUTO y F2 dice si va por GPU o
-CPU). FULL muestra todos los efectos (también sin CUDA, con numpy, más
-lento), OPTIMIZADO es la versión liviana y **SIN EFECTOS** juega el render de
-pygame pelado, sin postproceso (lo más liviano en CPU y en la Mac). **Por
-defecto, sin elegir nada:** FULL cuando el juego corre en la GPU y SIN
-EFECTOS cuando cae a CPU (el zip de CPU y la app de Mac). Lo que elija el
-jugador —`--calidad`, F10, el menú de opciones o una preferencia guardada—
-manda sobre ese valor.
+**SIN EFECTOS y FULL.** Elegí con `--calidad full` o `--calidad sin-efectos`
+(alias `off`), F10 o el menú de opciones. Por defecto: FULL si CUDA está
+disponible y SIN EFECTOS en CPU. El HUD y el menú muestran F10 y confirman
+el cambio durante tres segundos. **F1** muestra la ayuda: **F2** recorre las
+vistas de rendimiento (incluidos los pasos CUDA), **F4** alterna CPU/GPU en
+FULL y, en la demo, **Tab** avanza un segmento y **Esc** sale.
 
 Opciones útiles:
 
