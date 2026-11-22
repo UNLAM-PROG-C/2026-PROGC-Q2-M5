@@ -1,9 +1,10 @@
 """Powers: pickups, timed effects and bombs.
 
 Implemented rules (see also README):
-* At most one pickup at a time; new ones wait for SPAWN_INTERVAL seconds of
-  effective play. A pickup disappears after 8 s if the ball does not touch
-  it. Half of them appear on the floor, half at lob height.
+* At most one pickup at a time; it appears every 5-7 s of effective play
+  (2.5-3.5 s with SPAWN_RATE) and disappears after 8 s if the ball does not
+  touch it. Half of them appear on the floor, half at lob height.
+* VISUAL_POWER_SHARE of the pickups bring a power with a FULL effect.
 * Receiver = last player who touched the ball. Without a last touch,
   personal powers are NOT consumed (the ball goes through); global ones are.
 * Effects are stored in a dictionary keyed by (target, property):
@@ -109,12 +110,21 @@ class PowerManager:
     self._next_id += 1
     return self._next_id
 
+  def _roll_spawn(self):
+    return self.rng.uniform(RULES.SPAWN_MIN, RULES.SPAWN_MAX)
+
+  def _roll_power(self):
+    """A power with a FULL effect with VISUAL_POWER_SHARE, else another."""
+    visual = self.rng.random() < RULES.VISUAL_POWER_SHARE
+    return self.rng.choice(config.VISUAL_POWER_IDS if visual
+                           else config.PLAIN_POWER_IDS)
+
   def clear(self):
     """Clears effects, pickup and bombs (after a goal or a restart)."""
     self.effects = {}
     self.pickup = None
     self.bombs = []
-    self.spawn_timer = RULES.SPAWN_INTERVAL
+    self.spawn_timer = self._roll_spawn()
 
   # ------------------------------------------------------------- timers
   def update(self, dt, match, events):
@@ -162,9 +172,8 @@ class PowerManager:
     if pos is None:
       self.spawn_timer = SPAWN_RETRY
     else:
-      power = self.rng.choice(config.POWER_IDS)
-      self.place_pickup(power, pos, events)
-      self.spawn_timer = RULES.SPAWN_INTERVAL
+      self.place_pickup(self._roll_power(), pos, events)
+      self.spawn_timer = self._roll_spawn()
 
   def place_pickup(self, power, pos, events):
     self.pickup = Pickup(self._new_id(), power, pos[0], pos[1])

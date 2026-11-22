@@ -168,10 +168,15 @@ class SpawnTest(unittest.TestCase):
   def test_spawn_interval_single_pickup_and_ttl(self):
     m = quiet_match(seed=3, spawn_powers=True)
     m.ball.y = 120.0   # far from any object, without touching it
+    # pylint: disable-next=protected-access
+    m.powers.spawn_timer = m.powers._roll_spawn()
+    self.assertTrue(RULES.SPAWN_MIN <= m.powers.spawn_timer
+                    <= RULES.SPAWN_MAX)
     seen, first_at = self.watch_spawns(m)
     self.assertGreaterEqual(seen, 2)
     assert first_at is not None
-    self.assertAlmostEqual(first_at, RULES.SPAWN_INTERVAL, delta=DT)
+    self.assertTrue(RULES.SPAWN_MIN - 0.1 <= first_at
+                    <= RULES.SPAWN_MAX + 0.1)
 
   def watch_spawns(self, m):
     """20 s with the ball held up high: (spawns, time of the first)."""
@@ -219,7 +224,7 @@ def positions(m, p, seconds):
 
 class SpawnHeightTest(unittest.TestCase):
   """1.0.2: half of the pickups on the floor, half between the floor
-    and 180 px, with a named interval between pickups."""
+    and 180 px, and one every 2.5-3.5 s of play."""
 
   ROLLS = 4000            # pickups rolled to measure the share
   SHARE_TOL = 0.05        # the share of the floor must be 0.5 more or less
@@ -256,9 +261,23 @@ class SpawnHeightTest(unittest.TestCase):
     self.assertEqual(powers.position_is_free(
         ARENA.WIDTH / 2, RULES.SPAWN_FLOOR_Y, quiet_match()), True)
 
-  def test_spawn_interval_is_clamped_to_four_seconds(self):
+  def test_one_pickup_every_two_and_a_half_to_three_and_a_half_s(self):
+    self.assertAlmostEqual(RULES.SPAWN_MIN, 2.5)
+    self.assertAlmostEqual(RULES.SPAWN_MAX, 3.5)
     rng = random.Random(7)
-    self.assertAlmostEqual(powers.PowerManager(rng).spawn_timer, 4.0)
+    timers = [powers.PowerManager(rng).spawn_timer for _ in range(200)]
+    self.assertGreaterEqual(min(timers), RULES.SPAWN_MIN)
+    self.assertLessEqual(max(timers), RULES.SPAWN_MAX)
+    self.assertLess(abs(sum(timers) / len(timers) - 3.0), 0.2)
+
+  def test_most_pickups_bring_a_power_with_a_full_effect(self):
+    manager = powers.PowerManager(random.Random(20261122))
+    # pylint: disable-next=protected-access
+    rolls = [manager._roll_power() for _ in range(self.ROLLS)]
+    visual = [p for p in rolls if p in config.VISUAL_POWER_IDS]
+    self.assertAlmostEqual(len(visual) / self.ROLLS,
+                           RULES.VISUAL_POWER_SHARE, delta=self.SHARE_TOL)
+    self.assertEqual(set(rolls), set(config.POWER_IDS))
 
 
 def hold_right_and_press(m, i):

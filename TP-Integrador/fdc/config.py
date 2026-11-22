@@ -186,7 +186,16 @@ class MatchRules:
 # ---------------------------------------------------------------------------
 class PowerRules:
   """When and where the powers appear, and how strong they are."""
-  SPAWN_INTERVAL = 4.0       # s of play; halved range hits the 4 s floor
+  # Powers appear more often than in v1 (they were barely seen in a match):
+  # the two times below are divided by SPAWN_RATE, so 2.5 s - 3.5 s.
+  SPAWN_BASE = (5.0, 7.0)    # s between pickups at SPAWN_RATE = 1
+  SPAWN_RATE = 2.0           # how many times more often than the base
+  SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
+  SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
+  # Share of the pickups that bring a power with a FULL effect (ice,
+  # blackout, confusion, fire). A uniform draw gave 5 of 20: one effect
+  # every 1.5 min in a bot match (1.0.6 measurement).
+  VISUAL_POWER_SHARE = 0.75
   # s: a pickup lasts if the ball does not touch it (2 s more than before:
   # they disappeared before anyone could reach them)
   PICKUP_TTL = 8.0
@@ -302,6 +311,10 @@ POWERS = (
              "mueve 2 s. Si nadie la toca, se apaga a los 6 s."),
 )
 POWER_IDS = tuple(p.id for p in POWERS)
+# Properties of the powers that have a post-processing effect in FULL.
+VISUAL_PROPS = ("frozen", "blackout", "confusion", "fire")
+VISUAL_POWER_IDS = tuple(p.id for p in POWERS if p.prop in VISUAL_PROPS)
+PLAIN_POWER_IDS = tuple(p.id for p in POWERS if p.prop not in VISUAL_PROPS)
 POWERS_BY_ID = {p.id: p for p in POWERS}
 # Targets that need a last touch (someone who receives the power).
 PERSONAL_TARGETS = ("self", "rival", "rival_goal")

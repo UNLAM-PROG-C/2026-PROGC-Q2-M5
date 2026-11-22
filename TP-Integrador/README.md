@@ -1,6 +1,6 @@
 # Futbol De Cabeza
 
-**Versión del código: 1.0.6.** Los zips de Windows (CPU y GPU) y la `.app` de Mac
+**Versión 1.0.6** (2026-11-22). Los zips de Windows (CPU y GPU) y la `.app` de Mac
 se arman con `tools/build_exe.py` (Windows, `--mode cpu` o `--mode full`) y
 `packaging/mac/build.sh` (Mac); los dos usan `tools/pyi_rth_stdout.py` y
 `tools/servidor.txt.example`. Los pasos de la publicación están en
@@ -200,7 +200,7 @@ El detalle está en [docs/ONLINE.md](docs/ONLINE.md).
 
 ## 4. Poderes
 
-- **Aparición:** intervalo de **4 s de juego efectivo**, nunca más de un objeto a la vez. Si el anterior sigue en cancha, el siguiente espera. Aparece en una posición alcanzable, fuera de los arcos y sin tocar travesaños ni jugadores. **La mitad aparece al ras del piso** (a la altura del centro de la pelota rodando) y la otra mitad entre el piso y unos 180 px.
+- **Aparición:** un objeto flotante cada **2,5 a 3,5 s de juego efectivo**, nunca más de uno a la vez. **3 de cada 4 traen un poder con efecto visual en FULL** (hielo, apagón, confusión o fuego). Aparece en una posición alcanzable, fuera de los arcos y sin tocar travesaños ni jugadores. **La mitad aparece al ras del piso** (a la altura del centro de la pelota rodando) y la otra mitad entre el piso y unos 180 px.
 - **Duración del objeto:** si nadie lo recoge, desaparece a los **8 s**.
 - **Activación:** sólo cuando lo toca **la pelota**. Cada objeto se consume una única vez.
 - **Receptor:** el último jugador que tocó la pelota (con cabeza, cuerpo o patada). Si todavía no hubo un toque válido, los poderes personales **no se consumen** (la pelota lo atraviesa) y los globales sí.
@@ -362,7 +362,7 @@ Son 108 pruebas y tardan unos 100 s. Usan `unittest`; las del online necesitan a
 |---|---|
 | `test_protocol.py` | Contadores de pulsaciones (compactación sin pérdidas), filtro de partido y `seq`, deduplicación de eventos |
 | `test_match.py` | Gol válido y un solo gol por ingreso, gol con un jugador escondido dentro del arco, pararse sobre la cabeza del rival y caerse si se corre, subirse al travesaño desde una cabeza, salto desde el piso sin tocar el travesaño, cruce parcial, pelota sobre el travesaño, pelota que se achica sobre la línea, sin atravesar travesaños ni cabezas a velocidad máxima, velocidad máxima, choques entre jugadores, último toque (incluye contactos simultáneos), una patada por pulsación, recuperación, sin doble salto, reloj congelado en pausa, cuentas regresivas y celebración, final con empate o victoria, y un partido completo con entradas aleatorias que verifica invariantes en cada paso |
-| `test_powers.py` | Poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, intervalo de 4 s con la mitad al ras del piso y vencimiento a 8 s, confusión, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
+| `test_powers.py` | Poderes, receptor y rival, sin último toque, expiración que vuelve a la base, reemplazo, renovación, convivencia, pausa que congela todo, aparición cada 2,5 a 3,5 s (3 de cada 4 con efecto visual) con la mitad al ras del piso y vencimiento a 8 s, confusión, congelado, lesión, tamaño gradual, bombas sin cambiar el último toque, jugador liberado sin teletransporte |
 | `test_fire.py` | El poder de fuego en la simulación: el primer toque quema 2 s (no camina, no salta, no patea), apaga la pelota, el segundo toque no hace nada, a los 6 s se apaga sola y la quemadura viaja en el estado |
 | `test_process.py` | **Procesos reales:** READY desde otro pid y sin pygame, iniciar, pausar (reloj congelado en los latidos), continuar, reiniciar (sólo se aceptan estados del partido nuevo, sin efectos), eventos de partidos anteriores, watchdog, cierre ordenado (`bye`, código 0), fallo informado, proceso muerto detectado, sin huérfanos si la interfaz muere, órdenes de prueba rechazadas sin `--test` |
 | `test_lobby.py` | Salas del online (lógica pura, sin red): nombres repetidos con etiquetas distintas (y la misma etiqueta para el mismo perfil), sala libre o con contraseña, lista con creador, máximo 2, elegir personaje, lados automáticos, revancha y desconexión |
