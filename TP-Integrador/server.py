@@ -5,7 +5,7 @@ Usage:
     .venv/bin/python server.py --port 9000
     .venv/bin/python server.py --duration 20   # short matches (tests)
 
-It serves the game page (build/web, see tools/build_web.py) and the
+It serves the downloads page (landing/) and the
 WebSocket /ws on the same port. See docs/ONLINE.md.
 """
 import multiprocessing

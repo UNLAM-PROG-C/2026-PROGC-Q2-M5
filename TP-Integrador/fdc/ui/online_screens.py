@@ -1,4 +1,4 @@
-"""Online mode screens (desktop and browser version).
+"""Online mode screens.
 
 Flow: user name -> room list -> (create room) -> room: choose a character
 and "ready" -> match -> result -> rematch / change character / leave.
@@ -268,10 +268,6 @@ class OnlineHomeScreen(OnlineScreen):
     self.retry_rect.center = self.RETRY_CENTER
     self.hover = False
     self.failed = None
-    saved = client.saved_session()
-    if saved and self.net.status == client.IDLE:
-      # The page was reloaded: back to its room and match.
-      self.net.token = saved[1]
     self.connect()
 
   def connect(self):
@@ -346,9 +342,8 @@ class OnlineHomeScreen(OnlineScreen):
     inner = screens.panel(surf, info)
     lines = [(CONTROLS_HELP, palette.INK),
              ("Cada persona juega desde su casa; el servidor sortea los "
-              "lados al empezar.", palette.INK_SOFT)]
-    if not self.app.web:
-      lines.append((f"Servidor: {self.net.url}", palette.INK_SOFT))
+              "lados al empezar.", palette.INK_SOFT),
+             (f"Servidor: {self.net.url}", palette.INK_SOFT)]
     for (text, color), y in zip(lines, self.INFO_LINE_Y):
       assets.draw_text(surf, text, layout.FONT_SMALL,
                        (layout.CENTER_X, inner.top + y), color,

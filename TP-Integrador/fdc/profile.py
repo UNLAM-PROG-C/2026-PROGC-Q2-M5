@@ -2,10 +2,8 @@
 
 The name is asked the first time the game opens and is used by every mode
 (tournament, local and online). It is stored on the computer so it is not
-asked again:
-  * desktop version: a JSON file (by default ~/.futbol_de_cabeza.json, or the
-    one in the FDC_PROFILE variable);
-  * browser: the localStorage of the page.
+asked again. It uses a JSON file (by default ~/.futbol_de_cabeza.json, or
+the one in the FDC_PROFILE variable).
 
 Names can repeat. To tell two people with the same name apart, each profile
 has its own random id (never shown): with it the online server gives each
@@ -15,7 +13,6 @@ import json
 import os
 import re
 import secrets
-import sys
 
 NAME_MIN_LEN = 3            # fewest letters of a name
 # Most letters of a name (it fits in the scoreboard and in the lists).
@@ -32,8 +29,6 @@ NAME_RULE = (f"entre {NAME_MIN_LEN} y {NAME_MAX_LEN} letras, números o "
              "espacios")
 DEFAULT_PATH = os.environ.get("FDC_PROFILE") or os.path.join(
     os.path.expanduser("~"), ".futbol_de_cabeza.json")
-STORAGE_KEY = "fdc_profile"
-IN_BROWSER = sys.platform == "emscripten"
 # Random bytes of the player id (16 hexadecimal characters).
 PLAYER_ID_BYTES = 8
 # Longest stored id accepted (otherwise a new one is generated).
@@ -90,11 +85,6 @@ def save(profile, path=None):
 
 
 def _read(path):
-  if IN_BROWSER:
-    # pylint: disable-next=import-outside-toplevel
-    import platform     # in pygbag, "platform" exposes the JS window
-    raw = platform.window.localStorage.getItem(STORAGE_KEY)
-    return str(raw) if raw else None
   if not os.path.isfile(path):
     return None
   with open(path, encoding="utf-8") as fh:
@@ -102,10 +92,5 @@ def _read(path):
 
 
 def _write(path, text):
-  if IN_BROWSER:
-    # pylint: disable-next=import-outside-toplevel
-    import platform     # in pygbag, "platform" exposes the JS window
-    platform.window.localStorage.setItem(STORAGE_KEY, text)
-    return
   with open(path, "w", encoding="utf-8") as fh:
     fh.write(text)

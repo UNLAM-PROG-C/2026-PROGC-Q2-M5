@@ -15,7 +15,7 @@ if ROOT not in sys.path:
 
 FORBIDDEN = ("numpy", "pygame", "pycuda", "fdc.gpu")
 MODULES = ("fdc.protocol", "fdc.ipc", "fdc.sim.core", "fdc.sim.match",
-           "fdc.sim.powers", "fdc.sim.process", "fdc.sim.inline",
+           "fdc.sim.powers", "fdc.sim.process",
            "fdc.online.lobby", "fdc.online.server", "fdc.online.room_runner",
            "fdc.online.wire")
 

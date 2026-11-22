@@ -35,7 +35,7 @@ def profile_file(name="Prueba", player_id=None):
 
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def make_app(test_mode=True, seed=5, duration=None, server_url=None,
-             profile_name="Prueba", web=False, quality_mode="sin-efectos"):
+             profile_name="Prueba", quality_mode="sin-efectos"):
   """The real App with test options.
 
     The smoke tests play whole matches inside a time limit, so they run in
@@ -45,7 +45,7 @@ def make_app(test_mode=True, seed=5, duration=None, server_url=None,
       test_mode=test_mode, seed=seed, no_audio=False, fullscreen=False,
       debug_panel=True, duration=duration,
       server_url=server_url or NO_SERVER,
-      profile_path=profile_file(profile_name), web=web,
+      profile_path=profile_file(profile_name),
       quality_mode=quality_mode)
   return game.App(opts)
 

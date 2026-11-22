@@ -10,13 +10,13 @@ Concurrency (see docs/CONCURRENCY.md):
     numbers and shutdown Event), handled with SimLink. A stuck room does not
     slow the others and each room can use another core.
   * One BRIDGE per room (asyncio task at 60 Hz, fdc/online/room_runner.py):
-    it takes the controls of the two browsers to its process and forwards
+    it takes the controls of the two clients to its process and forwards
     states (30 per second) and events.
   * Launching or closing a process may block: it runs in an executor thread
     (run_in_executor) so the loop is not slowed down.
 
 It also serves, on the same port:
-  * the files of the web client (build/web, made with tools/build_web.py);
+  * the static downloads page (landing/);
   * the server PANEL (/status, fdc/online/panel.py): live processes,
     threads, tasks, rooms and traffic, to see the concurrency while playing.
     The full view (/status/full, with names) asks for a password.
@@ -50,12 +50,12 @@ from fdc.online import wire
 log = logging.getLogger("fdc.server")
 ONLINE = config.Online
 
-DEFAULT_WEB_DIR = os.path.join(config.ROOT_DIR, "build", "web")
+DEFAULT_WEB_DIR = os.path.join(config.ROOT_DIR, "landing")
 PANEL_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "panel.html")
 # /status.json: the data the panel page reads.
 JSON_SUFFIX = ".json"
-# Listening on all interfaces: not usable as a browser address.
+# Listening on all interfaces: not a destination address.
 ALL_INTERFACES = ("0.0.0.0", "", "::")
 LOOPBACK = "127.0.0.1"
 # Documentation address (RFC 5737) and any port: "connecting" a UDP socket
@@ -63,8 +63,6 @@ LOOPBACK = "127.0.0.1"
 LAN_PROBE = ("192.0.2.1", 9)
 LOG_FORMAT = ("%(asctime)s [%(processName)s pid=%(process)d] %(levelname)s "
               "%(name)s: %(message)s")
-mimetypes.add_type("application/wasm", ".wasm")
-mimetypes.add_type("application/octet-stream", ".apk")
 # The landing (spec-landing 2.2.4): Python does not know .webp, and a wrong
 # type makes the browser download the picture instead of painting it.
 mimetypes.add_type("image/webp", ".webp")
@@ -79,7 +77,7 @@ COMMAND_LINE = (
                 "help": "interface to listen on (0.0.0.0 = all)"}),
     ("--port", {"type": int, "default": ONLINE.PORT}),
     ("--web", {"default": DEFAULT_WEB_DIR,
-               "help": "folder of the compiled web client"}),
+               "help": "folder of the static site"}),
     ("--duration", {"type": float, "default": None,
                     "help": "match length (s)"}),
     ("--grace", {"type": float, "default": ONLINE.RECONNECT_GRACE,
@@ -178,28 +176,16 @@ class GameServer:
 
   # ------------------------------------------------------------------ HTTP
   async def http(self, connection, request):
-    """HTTP requests: WebSocket handshake, panel or web client files."""
+    """HTTP requests: WebSocket handshake, panel or static files."""
     path = request.path.split("?", 1)[0]
     if path == ONLINE.WS_PATH:
       return None                 # the WebSocket handshake goes on
-    host = request.headers.get("Host", "")
-    if host.split(":")[0].lower() == "localhost":
-      return self._to_loopback(host, request.path)
     if path in (ONLINE.PANEL_PATH, ONLINE.PANEL_PATH + JSON_SUFFIX):
       return self._panel(path, full=False)
     if path in (ONLINE.PANEL_FULL_PATH,
                 ONLINE.PANEL_FULL_PATH + JSON_SUFFIX):
       return self._full_panel(connection, request, path)
     return await asyncio.to_thread(self._static, connection, path)
-
-  def _to_loopback(self, host, path):
-    """pygbag takes "localhost:8..." as ITS development server and looks
-        for its packages on localhost:8000: the game does not start. The
-        same computer as 127.0.0.1 does not have that problem."""
-    port = host.split(":")[1] if ":" in host else str(self.port)
-    location = f"http://{LOOPBACK}:{port}{path}"
-    return _response(http.HTTPStatus.FOUND, b"",
-                     extra=[("Location", location)])
 
   def _full_panel(self, connection, request, path):
     if not self.panel_password:
@@ -227,11 +213,9 @@ class GameServer:
                        "text/html; charset=utf-8")
 
   def _static(self, connection, path):
-    """A file of the web client (never outside its folder)."""
-    if self.web_dir is None or not (self.web_dir / "index.html").is_file():
-      return connection.respond(
-          http.HTTPStatus.NOT_FOUND, "El cliente web no está "
-          "compilado. Ejecutá: python tools/build_web.py\n")
+    """A static file (never outside the static site folder)."""
+    if self.web_dir is None:
+      return connection.respond(http.HTTPStatus.NOT_FOUND, "No existe.\n")
     path += "index.html" if path.endswith("/") else ""
     target = (self.web_dir / path.lstrip("/")).resolve()
     if self.web_dir in target.parents and (target / "index.html").is_file():
@@ -554,11 +538,11 @@ class GameServer:
 
   def _announce(self, host):
     urls = self.urls(host)
-    log.info("server ready. Open in the browser: %s", "  or  ".join(urls))
+    log.info("server ready: %s", "  or  ".join(urls))
     log.info("server panel: %s%s", urls[0], ONLINE.PANEL_PATH)
 
   def urls(self, host):
-    """Addresses to open the game (0.0.0.0 is not a browser address)."""
+    """HTTP addresses of this server."""
     if host not in ALL_INTERFACES:
       return [f"http://{host}:{self.port}"]
     out = [f"http://{LOOPBACK}:{self.port}"]

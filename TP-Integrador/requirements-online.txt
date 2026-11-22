@@ -1,5 +1,2 @@
-# Sólo para el modo online (el juego local no necesita nada más que pygame):
-#   servidor:      websockets
-#   cliente web:   pygbag (compila el juego para el navegador)
+# WebSocket for the desktop client and online server.
 websockets==17.1
-pygbag==0.9.3

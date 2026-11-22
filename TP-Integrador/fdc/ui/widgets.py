@@ -27,7 +27,7 @@ class TextField:
   """One-line text field (with hidden letters for passwords)."""
 
   # Text: TEXTINPUT is the right event (accents, capitals, keyboard
-  # layout). If the environment does not produce it (some browsers), the
+  # layout). If the environment does not produce it, the
   # KEYDOWN character is used; once a TEXTINPUT shows up, only that one is
   # used. Shared by every field.
   textinput_seen = False

@@ -6,16 +6,9 @@ blocks waiting for the simulation or the network: every frame it reads
 whatever arrived (get_nowait) and draws the last valid state. The rhythm is
 set by FrameLimiter, which sleeps between frames (no busy waiting).
 
-In the browser (pygbag) there is the whole game, but no processes: the
-local modes simulate inside the page (InlineLink, fdc/sim/inline.py, with
-the same simulation core), the online mode uses the room process on the
-server, and the loop is asynchronous: every frame gives the control back to
-the browser.
-
 State pattern: App holds the current screen and every screen decides the
 next one with app.switch().
 """
-import asyncio
 import collections
 import logging
 import os
@@ -25,20 +18,18 @@ import time
 import pygame
 
 from fdc import config
+from fdc import ipc
 from fdc import profile as profiles
 from fdc.online import client
 from fdc.online import endpoint
-from fdc.sim import inline
 from fdc.gpu import overlay as gpu_overlay
 from fdc.gpu import sysinfo
 from fdc.ui import assets
 from fdc.ui import audio
-from fdc.ui import browser
 from fdc.ui import fx
 from fdc.ui import input as ui_input
 from fdc.ui import layout
 from fdc.ui import match_screens
-from fdc.ui import online_screens
 from fdc.ui import palette
 from fdc.ui import pixelfont
 from fdc.ui import profile_screen
@@ -102,9 +93,8 @@ class FrameLimiter:
     uses time.sleep rather than a busy wait.
     """
 
-  def __init__(self, fps, sleep=True):
-    # In the browser the rhythm is set by the browser itself.
-    self.sleep = sleep
+  def __init__(self, fps):
+    self.sleep = True            # the benchmark can disable frame pacing
     self.period = 1.0 / fps
     self.deadline = time.perf_counter()
     self.last = self.deadline
@@ -132,7 +122,7 @@ class FrameLimiter:
 
 
 class _NoFx:
-  """Stand-in of the effects when they are not available (web, no numpy)."""
+  """Stand-in when the effects cannot load, for example without NumPy."""
 
   enabled = False
   night = False
@@ -229,22 +219,15 @@ class App:
 
   def __init__(self, options):
     self.options = options
-    # Browser version (pygbag).
-    self.web = bool(getattr(options, "web", False))
     self.screen = self._open_window()
-    self.clock = FrameLimiter(config.UI_FPS, sleep=not self.web)
-    if self.web:
-      # Esc, F3, Tab and the arrows do not fire browser actions.
-      browser.install_key_guard()
+    self.clock = FrameLimiter(config.UI_FPS)
     self._load_resources()
     self._init_state()
     self._start_simulation()
 
   def _start_simulation(self):
     """The simulation process starts BEFORE the menu is shown; the boot
-        screen waits for its READY without blocking the window. In the
-        browser there are no processes: the local simulation runs in the
-        page."""
+        screen waits for its READY without blocking the window."""
     self.link = self._create_link()
     self.link.start()
     self.current = screens.BootScreen(self)
@@ -263,8 +246,6 @@ class App:
 
   def _display_flags(self):
     """Flags of the window: never exclusive unless --fullscreen."""
-    if self.web:
-      return 0                   # the browser scales the canvas
     flags = pygame.SCALED | pygame.RESIZABLE
     return flags | pygame.FULLSCREEN if self.options.fullscreen else flags
 
@@ -304,7 +285,6 @@ class App:
     self.work_ms = 0.0           # ms of the last frame without the limiter
     self._init_overlay()
     self.keys = {k: ui_input.key_code(k) for k in GLOBAL_KEYS}
-    self.first_frame_shown = False
     self._init_online()
     self._init_profile(options)
 
@@ -329,11 +309,6 @@ class App:
   def _create_link(self):
     options = self.options
     duration = getattr(options, "duration", None)
-    if self.web:
-      return inline.InlineLink(test_mode=options.test_mode,
-                               seed=options.seed, duration=duration)
-    # pylint: disable-next=import-outside-toplevel
-    from fdc import ipc  # Here: the browser has no multiprocessing.
     return ipc.SimLink(test_mode=options.test_mode, seed=options.seed,
                        duration=duration)
 
@@ -358,19 +333,16 @@ class App:
     screen.enter()
 
   def home(self):
-    """The main menu (the same on desktop and in the browser)."""
+    """The main menu."""
     return screens.MenuScreen(self)
 
   def first_screen(self):
     """After the boot: the name (if not chosen yet) and then the menu.
-        If the browser reloaded in the middle of the online mode, back to
-        the room. With `--demo` the automatic demo starts instead."""
+        With `--demo` the automatic demo starts instead."""
     if getattr(self.options, "demo", False):
       return self.demo_screen()
     if self.profile is None:
       return profile_screen.ProfileScreen(self, first_run=True)
-    if self.web and client.saved_session():
-      return online_screens.OnlineHomeScreen(self)
     return self.home()
 
   def demo_screen(self, menu_return=False):
@@ -463,9 +435,6 @@ class App:
     self.overlay.draw(self.screen, self._overlay_info(), avoid=controls)
     self._draw_gpu_notice(self.screen)
     pygame.display.flip()
-    if self.web and not self.first_frame_shown:
-      self.first_frame_shown = True
-      browser.hide_loading_screen()
 
   def _draw_quality_controls(self):
     """F10/F1 chips in a match or in Options; the area they cover."""
@@ -492,15 +461,6 @@ class App:
         self.frame()
     except KeyboardInterrupt:
       log.info("interrupted from the terminal: orderly shutdown")
-    finally:
-      self.shutdown()
-
-  async def run_async(self):
-    """Browser loop: every frame gives the control back (no sleep)."""
-    try:
-      while self.running:
-        self.frame()
-        await asyncio.sleep(0)
     finally:
       self.shutdown()
 
@@ -608,9 +568,8 @@ class App:
     return True
 
   def _fullscreen_key(self):
-    """F11: full screen (not in the browser)."""
-    if not self.web:
-      pygame.display.toggle_fullscreen()
+    """F11: toggle full screen."""
+    pygame.display.toggle_fullscreen()
     return True
 
   def shutdown(self):
@@ -652,9 +611,6 @@ class App:
              f"part {data['particles']:.2f} ms", None)]
 
   def _process_lines(self):
-    if getattr(self.link, "inline", False):
-      return [("Navegador: sin procesos; la simulación local corre en "
-               "la misma página (el online, en el servidor)", None)]
     li = self.link.debug_lines()
     info = self.link.ready_info or {}
     state = "viva" if li["alive"] else "detenida"

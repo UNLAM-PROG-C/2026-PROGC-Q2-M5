@@ -5,8 +5,7 @@ code. The server distrusts everything that arrives: each message is decoded,
 its shape is checked and it is dropped if it does not match.
 
 Used by the server (fdc/online/server.py) and the client
-(fdc/online/client.py), also inside the browser (pygbag): it imports neither
-pygame nor network libraries.
+(fdc/online/client.py). It imports neither pygame nor network libraries.
 
 Client -> server
     hello {username, player_id, protocol?, token?}
@@ -103,7 +102,7 @@ INPUT_FIELDS = 4        # controls snapshot: left, right, jumps, kicks
 POSITION_DECIMALS = 1   # tenths of a pixel are enough to draw
 FINE_DECIMALS = 3       # the kick progress and the scale need more precision
 FULL_TURN = 360.0       # degrees: the ball angle is sent between 0 and 360
-# Internal data of the simulation process that the browser does not need.
+# Internal data of the simulation process that the client does not need.
 _STATE_SKIP = ("dropped_states", "dropped_cosmetic")
 
 

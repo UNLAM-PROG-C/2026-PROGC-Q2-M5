@@ -12,10 +12,10 @@ Para que alguien de otra red entre al juego hay cuatro caminos. La parte 1 (prep
 
 | Camino | Costo | Dirección que usan los jugadores | ¿Abrir puertos en el router? | ¿Anda con CGNAT? | HTTPS | Para qué conviene |
 |---|---|---|---|---|---|---|
-| **A. Abrir un puerto** | Gratis | `http://TU-IP-PÚBLICA:8765` o `http://algo.duckdns.org:8765` | Sí (8765) | No | No | Probar ya entre dos casas |
-| **B. Dominio + Cloudflare Tunnel** ⭐ | El dominio (unos USD 10 por año) | `https://futbol.tudominio.com` | **No** | **Sí** | Sí | Dejarlo andando y mostrarlo a los profes |
-| **C. Dominio + puertos 80/443 + Caddy** | El dominio, o gratis con DuckDNS | `https://futbol.tudominio.com` | Sí (80 y 443) | No | Sí | Si no querés depender de Cloudflare |
-| **D. Túnel de prueba sin dominio** | Gratis | `https://palabras-al-azar.trycloudflare.com` (cambia cada vez) | No | Sí | Sí | Una demo rápida |
+| **A. Abrir un puerto** | Gratis | `ws://TU-IP-PÚBLICA:8765/ws` o `ws://algo.duckdns.org:8765/ws` | Sí (8765) | No | No | Probar ya entre dos casas |
+| **B. Dominio + Cloudflare Tunnel** ⭐ | El dominio (unos USD 10 por año) | `wss://futbol.tudominio.com/ws` | **No** | **Sí** | Sí | Dejarlo andando y mostrarlo a los profes |
+| **C. Dominio + puertos 80/443 + Caddy** | El dominio, o gratis con DuckDNS | `wss://futbol.tudominio.com/ws` | Sí (80 y 443) | No | Sí | Si no querés depender de Cloudflare |
+| **D. Túnel de prueba sin dominio** | Gratis | `wss://palabras-al-azar.trycloudflare.com/ws` (cambia cada vez) | No | Sí | Sí | Una demo rápida |
 
 **Recomendación:** **A** para probar hoy mismo entre dos casas, y **B** para la versión final.
 - **B no abre ningún puerto de tu casa** y funciona aunque tu proveedor use CGNAT.
@@ -60,23 +60,11 @@ En el resto de la guía se usa la carpeta `C:\FutbolDeCabeza`. Si elegís otra, 
 ```powershell
 cd C:\FutbolDeCabeza
 py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt -r requirements-online.txt
+.venv\Scripts\python -m pip install -r requirements-online.txt
 ```
 
 - **Servidor:** necesita sólo `websockets`.
-- **Compilar la página:** `pygame` y `pygbag` hacen falta sólo para eso (paso 1.5).
-
-### 1.5 Compilar la versión web
-
-```powershell
-.venv\Scripts\python tools\build_web.py
-```
-
-- **Resultado:** al final tiene que decir `listo: C:\FutbolDeCabeza\build\web (... KB)`.
-- **Internet:** la primera vez hace falta, porque pygbag baja su plantilla.
-- **Si falla en Windows:** compilalo en la Mac con `.venv/bin/python tools/build_web.py` y copiá la carpeta `build/web` de la Mac a `C:\FutbolDeCabeza\build\web` (con un pendrive o una carpeta compartida). Esa carpeta no está en git, así que `git pull` no la trae.
-
-### 1.6 Probarlo en la misma NAS
+### 1.5 Probarlo en la misma NAS
 
 ```powershell
 .venv\Scripts\python server.py
@@ -84,14 +72,14 @@ py -3.13 -m venv .venv
 
 1. Al arrancar, el servidor muestra las direcciones donde escucha, por ejemplo `http://127.0.0.1:8765` y la de tu red local (`http://192.168.0.50:8765`).
 2. Si Windows pregunta si Python puede aceptar conexiones, elegí **Redes privadas** y *Permitir*.
-3. Abrí <http://127.0.0.1:8765> en el navegador de la NAS. Tiene que aparecer la pantalla de carga con el estadio y después **«¡TOCÁ PARA JUGAR!»**.
+3. Abrí <http://127.0.0.1:8765/status> para ver el panel. Para jugar, usá el cliente de escritorio con `--server ws://127.0.0.1:8765/ws`.
 4. Para cortarlo: `Ctrl + C` en la ventana de PowerShell.
 
-### 1.7 Probarlo desde otra compu de tu casa
+### 1.6 Probarlo desde otra compu de tu casa
 
-Con el servidor andando, abrí en otra compu conectada al mismo wifi la dirección de red local que mostró el servidor (`http://192.168.0.50:8765`). Si no abre, falta la regla del firewall (paso 1.10).
+Con el servidor andando, conectá el cliente de otra compu del mismo wifi a `ws://192.168.0.50:8765/ws` desde *Jugar → Multijugador → Online*. Si no conecta, falta la regla del firewall (paso 1.9).
 
-### 1.8 Darle a la NAS una IP fija en tu red
+### 1.7 Darle a la NAS una IP fija en tu red
 
 El router tiene que mandar siempre al mismo equipo, así que la NAS no puede cambiar de IP.
 
@@ -99,7 +87,7 @@ El router tiene que mandar siempre al mismo equipo, así que la NAS no puede cam
 2. Entrá al router. Suele ser <http://192.168.0.1> o <http://192.168.1.1>, y el usuario y la clave están en una etiqueta del router.
 3. Buscá **"Reserva DHCP"**, **"IP estática"** o **"Address Reservation"**. Asociá esa MAC con esa IP.
 
-### 1.9 Que la NAS no se suspenda
+### 1.8 Que la NAS no se suspenda
 
 *Configuración → Sistema → Inicio/apagado y suspensión → Suspender: **Nunca*** (al menos con el equipo enchufado). También se puede desde PowerShell:
 
@@ -107,7 +95,7 @@ El router tiene que mandar siempre al mismo equipo, así que la NAS no puede cam
 powercfg /change standby-timeout-ac 0
 ```
 
-### 1.10 Firewall de Windows (sólo para el camino A y para jugar dentro de tu red)
+### 1.9 Firewall de Windows (sólo para el camino A y para jugar dentro de tu red)
 
 En PowerShell **como administrador**:
 
@@ -178,16 +166,16 @@ En el router, buscá **"Reenvío de puertos"**, **"Port Forwarding"**, **"Servid
 |---|---|
 | Protocolo | TCP |
 | Puerto externo | 8765 |
-| IP interna / destino | la IP fija de la NAS (paso 1.8), por ejemplo `192.168.0.50` |
+| IP interna / destino | la IP fija de la NAS (paso 1.7), por ejemplo `192.168.0.50` |
 | Puerto interno | 8765 |
 
-Guardá. Verificá también la regla del firewall del paso 1.10.
+Guardá. Verificá también la regla del firewall del paso 1.9.
 
 ### 3.3 Probar desde otra red
 
 > **Importante:** probalo desde **afuera** de tu casa. Muchos routers no dejan entrar a tu propia IP pública desde adentro (falta "NAT loopback"). Desde adentro puede no abrir aunque esté todo bien.
 
-En el celular, **apagá el wifi** y con datos móviles entrá a `http://TU-IP-PÚBLICA:8765`. Si aparece la pantalla de carga del juego, ya se puede entrar desde otra red. Para jugar hace falta una compu con teclado: el juego no es táctil.
+Desde una compu en otra red (por ejemplo, conectada al hotspot del celular), configurá el cliente con `ws://TU-IP-PÚBLICA:8765/ws` y entrá al online.
 
 ### 3.4 Un nombre fijo gratis (porque la IP de tu casa cambia)
 
@@ -203,11 +191,11 @@ La IP pública de una casa suele cambiar cada tanto. Para no pasar una direcció
      -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://www.duckdns.org/update?domains=futbolcabeza&token=TU-TOKEN&ip=' | Out-Null"
      ```
 
-3. Los jugadores entran a `http://futbolcabeza.duckdns.org:8765`.
+3. Los jugadores configuran `ws://futbolcabeza.duckdns.org:8765/ws` en el cliente.
 
 ### 3.5 Limitaciones del camino A
 
-- **Sin HTTPS:** el navegador marca "No seguro" y la contraseña de una sala viaja sin cifrar. Para un TP alcanza, pero no uses una contraseña que uses en otro lado.
+- **Sin WSS:** la contraseña de una sala viaja sin cifrar. Para un TP alcanza, pero no uses una contraseña que uses en otro lado.
 - **Puertos raros bloqueados:** algunas redes (universidad, trabajo, algunos wifi públicos) no dejan conectarse al puerto 8765. Para mostrarlo en la facultad conviene el camino **B**.
 - **Tu IP queda a la vista:** quien entra ve la IP de tu casa.
 
@@ -248,8 +236,6 @@ Los nombres de los menús de Cloudflare cambian seguido. Si no encontrás algo, 
 | Domain | `tudominio.com` |
 | Service URL | `http://127.0.0.1:8765` (si pide el tipo aparte: `HTTP` y `127.0.0.1:8765`) |
 
-> Poné `127.0.0.1` y **no** `localhost`. El juego (pygbag) se confunde con direcciones `localhost:8…`.
-
 ### 4.4 Ajustar el servidor
 
 En la tarea del paso 2, los argumentos tienen que ser `server.py --host 127.0.0.1`. No hace falta tocar el router ni el firewall.
@@ -260,7 +246,7 @@ El juego usa WebSocket para el online. En Cloudflare, dentro del dominio: **Netw
 
 ### 4.6 Probar
 
-Con el celular con datos móviles, o desde otra casa, entrá a `https://futbol.tudominio.com`. El panel queda en `https://futbol.tudominio.com/status`.
+Desde otra red conectá el cliente de escritorio a `wss://futbol.tudominio.com/ws`. El panel queda en `https://futbol.tudominio.com/status`.
 
 ---
 
@@ -290,7 +276,7 @@ Para esto tenés que tener IP pública (paso 3.1). Caddy saca y renueva solo el 
    - *Argumentos:* `run --config C:\Caddy\Caddyfile`
    - *Iniciar en:* `C:\Caddy`
 7. **Servidor del juego:** con `server.py --host 127.0.0.1` (paso 2).
-8. **Probar** desde afuera: `https://futbol.tudominio.com`.
+8. **Probar** desde afuera con el cliente: `wss://futbol.tudominio.com/ws`.
 
 Algunos proveedores bloquean el puerto 80 entrante. Si Caddy no consigue el certificado, revisá eso o pasate al camino B.
 
@@ -307,7 +293,7 @@ Para una demo de un rato, sin cuenta y sin tocar el router:
    cloudflared tunnel --url http://127.0.0.1:8765
    ```
 
-3. A los segundos muestra una dirección `https://algo-al-azar.trycloudflare.com`. Pasásela a los jugadores.
+3. A los segundos muestra una dirección `https://algo-al-azar.trycloudflare.com`. Para jugar, pasales `wss://algo-al-azar.trycloudflare.com/ws`.
 
 Limitaciones:
 - **Dura lo que la ventana:** anda mientras esa ventana esté abierta.
@@ -318,10 +304,10 @@ Limitaciones:
 
 ## 7. Comprobar que se juega entre dos redes
 
-1. **En la NAS:** <http://127.0.0.1:8765> abre el juego.
-2. **Desde otra red** (celular con datos y wifi apagado): la dirección pública (camino A, B, C o D) abre la pantalla de carga.
+1. **En la NAS:** <http://127.0.0.1:8765/status> muestra el panel.
+2. **Desde otra red** (celular con datos y wifi apagado): abrí `/status` en la dirección pública (camino A, B, C o D) como prueba HTTP.
 3. **Dos compus en redes distintas** (por ejemplo, una en tu casa y otra con el celular como hotspot):
-   1. las dos abren la dirección y eligen su nombre;
+   1. las dos abren el cliente de escritorio, configuran el mismo servidor `ws://…/ws` o `wss://…/ws` y eligen su nombre;
    2. una crea una sala desde *Jugar → Multijugador → Online*;
    3. la otra se une, eligen personaje, ponen "listo" y juegan.
 4. **Panel:** `.../status` muestra 2 conexiones y **un proceso de simulación para esa sala**, con su pid. Con F3 durante el partido se ve ese mismo pid y el tiempo de los ACK.
@@ -334,13 +320,11 @@ Limitaciones:
 ```powershell
 cd C:\FutbolDeCabeza
 git pull
-.venv\Scripts\python -m pip install -r requirements.txt -r requirements-online.txt
-.venv\Scripts\python tools\build_web.py
+.venv\Scripts\python -m pip install -r requirements-online.txt
 ```
 
 Después reiniciá la tarea del servidor (Programador de tareas → *Finalizar* y *Ejecutar*).
 - **Salas:** viven en memoria, así que reiniciar el servidor cierra las que estaban abiertas.
-- **Versión vieja en el navegador:** si alguien sigue viendo la anterior, que recargue con `Ctrl + F5`. Con Cloudflare, si hiciera falta: *Caching → Purge Everything*. El servidor ya manda `Cache-Control: no-cache`, así que no debería pasar.
 
 ---
 
@@ -348,10 +332,8 @@ Después reiniciá la tarea del servidor (Programador de tareas → *Finalizar* 
 
 | Qué pasa | Por qué suele ser | Qué hacer |
 |---|---|---|
-| Desde afuera no abre, pero en casa sí | CGNAT, el puerto no está redirigido a la IP correcta, falta la regla del firewall, o estás probando con tu IP pública desde adentro | Paso 3.1, revisá la regla del router y la del firewall (1.10), y probá con datos móviles |
-| "El cliente web no está compilado" | Falta `build\web` | Paso 1.5, o copiá `build/web` desde la Mac |
-| Queda en la pantalla de carga | La página baja Python (WebAssembly) de `pygame-web.github.io`, y la red del jugador no llega ahí o anda muy lenta | Probá con otra red. La primera carga tarda más; después queda en caché |
-| El juego abre pero el online queda "CONECTANDO…" | El WebSocket `/ws` no pasa: WebSockets apagado en Cloudflare, o una red que bloquea el puerto 8765 | Paso 4.5. En redes estrictas, usá HTTPS (caminos B o C) |
+| Desde afuera no abre, pero en casa sí | CGNAT, el puerto no está redirigido a la IP correcta, falta la regla del firewall, o estás probando con tu IP pública desde adentro | Paso 3.1, revisá la regla del router y la del firewall (1.9), y probá con datos móviles |
+| El cliente queda "CONECTANDO…" | El WebSocket `/ws` no pasa: WebSockets apagado en Cloudflare, o una red que bloquea el puerto 8765 | Paso 4.5. En redes estrictas, usá HTTPS (caminos B o C) |
 | En la facultad no anda y en casa sí | Redes que sólo dejan los puertos 80 y 443 | Camino B o C (HTTPS por el 443) |
 | Se corta solo a los pocos días | La opción "Detener la tarea si se ejecuta más de 3 días" | Desmarcala (paso 2.6) |
 | Después de una actualización de Windows no anda | La tarea no tiene el desencadenador "Al iniciar el sistema" o le falta "Ejecutar aunque el usuario no haya iniciado sesión" | Revisá el paso 2 |

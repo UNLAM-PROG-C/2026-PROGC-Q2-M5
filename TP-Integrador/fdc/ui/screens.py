@@ -368,7 +368,7 @@ class BootScreen(Screen):
 
   def _status(self, surf, link, waiting):
     """READY line (only with a simulation process)."""
-    if link is None or getattr(link, "inline", False):
+    if link is None:
       return
     text = (f"Esperando la confirmación READY ({self.t:.1f} s de "
             f"{config.IPC.READY_TIMEOUT:.0f} s)" if waiting
@@ -401,9 +401,9 @@ class MenuScreen(Screen):
         ("Controles", lambda: app.switch(ControlsScreen(app))),
         ("Poderes", lambda: app.switch(LegendScreen(app))),
         ("Opciones", lambda: app.switch(OptionsScreen(app))),
+        ("DEMO", app.start_demo),
+        ("Salir", app.quit),
     ]
-    if not app.web:            # a web page does not close itself
-      items.extend((("DEMO", app.start_demo), ("Salir", app.quit)))
     self.menu = Menu(items, self.MENU_CENTER)
     self.player_hover = False
 
@@ -444,9 +444,8 @@ class MenuScreen(Screen):
 
   def _escape(self):
     """Esc takes the cursor to the quit button (it does not close)."""
-    if not self.app.web:
-      self.menu.sel = len(self.menu.items) - 1
-      self.app.audio.play("select")
+    self.menu.sel = len(self.menu.items) - 1
+    self.app.audio.play("select")
 
   def update(self, dt):
     super().update(dt)
@@ -833,9 +832,7 @@ class ErrorScreen(Screen):
     self.message = message
     tb = [ln for ln in (detail or "").strip().splitlines() if ln.strip()]
     self.detail = tb[-self.TRACE_LINES:] if tb else []
-    items = [("Reintentar", self.retry)]
-    if not app.web:
-      items.append(("Salir", app.quit))
+    items = [("Reintentar", self.retry), ("Salir", app.quit)]
     self.menu = Menu(items, self.MENU_CENTER, width=self.MENU_W)
 
   def enter(self):
@@ -885,8 +882,6 @@ class ErrorScreen(Screen):
       y += layout.TEXT_LINE_H
 
   def _hint(self):
-    if getattr(self.app.link, "inline", False):
-      return "Podés reintentar: la simulación vuelve a empezar."
     return ("La interfaz sigue funcionando: podés reintentar (se lanza "
             "un proceso nuevo) o salir.")
 

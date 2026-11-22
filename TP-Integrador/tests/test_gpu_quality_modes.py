@@ -167,7 +167,7 @@ class SwitchTest(unittest.TestCase):
 
 class QualityControlsTest(unittest.TestCase):
   def setUp(self):
-    self.app = driver.make_app(web=True, quality_mode=OFF)
+    self.app = driver.make_app(quality_mode=OFF)
     self.addCleanup(self.app.shutdown)
     self.menu = screens.OptionsScreen(self.app)
     self.app.switch(self.menu)

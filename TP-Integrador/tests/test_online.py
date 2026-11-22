@@ -1,6 +1,5 @@
 """Online mode: real server with real WebSocket connections and room logic."""
 import base64
-import http.client
 import json
 import os
 import socket
@@ -37,7 +36,6 @@ GRACE = 30              # s to come back after a disconnection
 INPUT_SENDS = 20        # control snapshots sent during the match
 INPUT_GAP = 0.02        # s between them
 HTTP_TIMEOUT = 5        # s of the raw HTTP connection
-REDIRECT = 302          # HTTP status of the localhost redirection
 UNAUTHORIZED = 401      # HTTP status without the panel password
 NOT_FOUND = 404         # HTTP status when there is no full panel
 
@@ -406,7 +404,7 @@ class ServerLobbyTest(unittest.TestCase):
     self.assertEqual([m["username"] for m in members], ["Ale", "Ale"])
     self.assertEqual(len({(m["username"], m["tag"]) for m in members}), 2)
 
-  def test_static_files_and_status(self):
+  def test_static_files(self):
     with tempfile.TemporaryDirectory() as tmp:
       path = os.path.join(tmp, "index.html")
       with open(path, "w", encoding="utf-8") as fh:
@@ -419,20 +417,6 @@ class ServerLobbyTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as err:
           _get(base + "/../../config.py")
         err.exception.close()
-        self.check_localhost_redirect(srv.server.port)
-
-  def check_localhost_redirect(self, port):
-    """pygbag does not start served from localhost:8...: redirected to
-        127.0.0.1."""
-    conn = http.client.HTTPConnection("127.0.0.1", port,
-                                      timeout=HTTP_TIMEOUT)
-    conn.request("GET", "/", headers={"Host": f"localhost:{port}"})
-    r = conn.getresponse()
-    self.assertEqual((r.status, r.getheader("Location")),
-                     (REDIRECT, f"http://127.0.0.1:{port}/"))
-    r.read()
-    r.close()
-    conn.close()
 
   def test_panel_public_and_protected(self):
     with ServerThread(panel_password="secret") as srv:

@@ -44,7 +44,7 @@ class Session:
   def send_text(self, text, replaceable=False):
     """Never blocks: leaves the message for the writer task.
 
-        Policy: states are replaceable (if the browser is slow only the
+        Policy: states are replaceable (if the client is slow only the
         newest is sent); everything else is delivered in order. If too many
         pile up, the client is not reading: the connection is closed (and
         the time to come back starts), so a slow client affects nobody."""

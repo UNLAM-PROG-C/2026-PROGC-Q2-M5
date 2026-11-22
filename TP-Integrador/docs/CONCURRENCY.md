@@ -1,6 +1,6 @@
 # Cómo funciona la concurrencia en Futbol De Cabeza
 
-Este documento explica **todo lo que corre al mismo tiempo** en el juego: la versión de escritorio, el servidor online y la versión de navegador. También explica cómo se comunican esas partes y cómo se sincronizan.
+Este documento explica **todo lo que corre al mismo tiempo** en el juego: el cliente de escritorio y el servidor online. También explica cómo se comunican esas partes y cómo se sincronizan.
 
 ---
 
@@ -24,8 +24,6 @@ nivel de luma y `atomicMax` conserva el máximo. La CPU usa la media para ajusta
 la ganancia del próximo cuadro. Estas atómicas protegen memoria del dispositivo,
 no las colas de `multiprocessing` ni el estado del partido.
 
-**En el navegador no hay concurrencia real.** Ahí no se pueden crear procesos ni hilos: todo corre en el hilo de la página, por turnos. Lo que se demuestra en el TP es la versión de escritorio y el servidor.
-
 ---
 
 ## 2. Mapa general
@@ -45,17 +43,16 @@ no las colas de `multiprocessing` ni el estado del partido.
  └──────────────────────────────┘                        └─────────────────────────────────────────────────┘
                                                                    ▲ WebSocket (JSON)   ▲
                                                          ┌─────────┴──────┐    ┌────────┴───────┐
-                                                         │ navegador casa A│    │ navegador casa B│
-                                                         │ (un solo hilo)  │    │ (un solo hilo)  │
+                                                         │  cliente casa A │    │  cliente casa B │
+                                                         │ UI + hilo red  │    │ UI + hilo red  │
                                                          └────────────────┘    └────────────────┘
 ```
 
-**Una sola simulación, en tres lugares.** La lógica de la simulación es una sola (`fdc/sim/core.py`). Cambia sólo cómo viajan los mensajes:
+**Un solo núcleo de simulación.** La lógica es la misma (`fdc/sim/core.py`) en una partida local y en cada sala online. En ambos casos `SimLink` se comunica con un proceso separado:
 
 | Dónde corre | Clase | Transporte |
 |---|---|---|
 | Escritorio y salas del servidor | `SimulationServer` (`fdc/sim/process.py`) | Proceso propio, con colas de `multiprocessing` |
-| Navegador (modos locales) | `InlineSimulation` (`fdc/sim/inline.py`) | Listas en memoria, dentro de la página |
 
 ---
 
@@ -133,7 +130,7 @@ No hay espera activa en ningún lado: ningún bucle pregunta "¿llegó algo?" si
 | Hilo interno de `websockets` | Escritorio jugando online | La librería `websockets` (cliente sincrónico) | Recibe los marcos de la conexión y responde los pings. |
 | Audio de SDL | Proceso de la interfaz | SDL, al iniciar `pygame.mixer` | Mezcla y reproduce los sonidos sin trabar el dibujo. No lo controla el juego. |
 
-No hay hilos en el navegador ni en la lógica del juego.
+La lógica del partido no crea hilos propios.
 
 ---
 
@@ -152,8 +149,8 @@ Un servidor de salas pasa casi todo el tiempo **esperando**: mensajes de los jug
 | Tarea | Cuántas | Qué hace |
 |---|---|---|
 | `handler` (lectora) | Una por conexión | Recibe JSON, lo **valida** (formato, tipo, campos, tamaño máximo 2 KB, como mucho 150 mensajes por segundo) y lo enruta: salas al `Lobby`, controles y pedidos al puente de la sala. |
-| `_write_loop` (escritora) | Una por conexión | Duerme en un `asyncio.Event` hasta que haya algo para mandar. Los mensajes confiables salen en orden. Los estados son **reemplazables**: si el navegador va lento, se manda sólo el último. Si se acumulan más de 400 confiables, el cliente no está leyendo y se corta su conexión, así un cliente lento no frena a nadie. |
-| `RoomRunner._pump` (puente) | Una por sala en juego | Ciclo de 60 Hz: retira lo que mandó el proceso de la sala (sin bloquear), junta los controles de los dos jugadores y se los manda, reenvía los eventos y **30 estados por segundo**, y lleva la pausa pedida (los dos "listo" o 30 s). |
+| `_write_loop` (escritora) | Una por conexión | Duerme en un `asyncio.Event` hasta que haya algo para mandar. Los mensajes confiables salen en orden. Los estados son **reemplazables**: si el cliente va lento, se manda sólo el último. Si se acumulan más de 400 confiables, el cliente no está leyendo y se corta su conexión, así un cliente lento no frena a nadie. |
+| `RoomRunner._pump` (puente) | Una por sala en juego | Ciclo de 120 Hz: retira lo que mandó el proceso de la sala (sin bloquear), junta los controles de los dos jugadores y se los manda, reenvía eventos y hasta **60 estados por segundo** en condiciones normales, y lleva la pausa pedida (los dos "listo" o 30 s). |
 | `_expire_later` (plazo) | Una por jugador desconectado | Duerme 30 s. Si la persona no volvió, el partido se da por abandonado (gana el que se quedó) y se libera su lugar. |
 
 ### 6.3 Un proceso por sala
@@ -162,7 +159,7 @@ Cada sala en juego tiene su **propio proceso de simulación**, el mismo de la ve
 
 - **Aislamiento:** si una sala se traba o falla, las demás siguen jugando.
 - **Paralelismo real:** cada sala puede usar otro núcleo de la NAS.
-- **Autoridad:** el proceso de la sala decide todo. Los navegadores sólo mandan controles y pedidos.
+- **Autoridad:** el proceso de la sala decide todo. Los clientes sólo mandan controles y pedidos.
 
 ### 6.4 Sincronización propia del online
 
@@ -178,9 +175,9 @@ Cada sala en juego tiene su **propio proceso de simulación**, el mismo de la ve
 ### 6.5 Recorrido de un control, de la tecla a la pantalla
 
 ```
- navegador A                servidor (bucle asyncio)                proceso de la sala
+ cliente A                servidor (bucle asyncio)                proceso de la sala
  tecla ─► foto {p:[...]} ─► handler: valida, guarda  ─────────────► (el puente la manda
-          (si cambió, o        inputs[lado] = foto                     cada 1/60 s por input_q)
+          (si cambió, o        inputs[lado] = foto                     en el ciclo de 120 Hz por input_q)
            cada 0,25 s)                                              física 120 Hz
                                                                      estado ─► state_q
  dibuja suavizado ◄──────── writer de A ◄── puente: último estado ◄──────┘
@@ -197,43 +194,21 @@ Cada sala en juego tiene su **propio proceso de simulación**, el mismo de la ve
 - **Interfaz:** en cada cuadro retira lo que haya (`get_nowait`) y procesa los mensajes **de a uno**. Si un mensaje cambia de pantalla, los siguientes ya los recibe la pantalla nueva y no se pierde ninguno.
 - **Envío:** se manda desde el hilo principal. La librería permite enviar desde un hilo mientras otro recibe.
 
-**Navegador** (`BrowserTransport`): un solo hilo.
-
-- **Recepción:** el WebSocket de JavaScript avisa con un callback cuando llega un mensaje, y el callback lo agrega a un arreglo.
-- **Lectura:** Python retira ese arreglo una vez por cuadro.
-- **Sin locks:** JavaScript tiene un único hilo y nunca interrumpe a Python a mitad de algo. El callback corre **entre** cuadros.
-
 ---
 
-## 8. Versión de navegador: un solo hilo, por turnos
-
-En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multiprocessing` ni hilos. Lo que hay es concurrencia **cooperativa** con el navegador:
-
-```
- requestAnimationFrame del navegador (≈ 60 por segundo)
-   └─► App.frame(): eventos ─► simulación local o mensajes de red ─► lógica ─► dibujo
-   └─► await asyncio.sleep(0)  ◄── le devuelve el control al navegador
-         (ahí el navegador procesa clics, teclas y llegadas del WebSocket, y pinta)
-```
-
-- **Modos locales** (Mundialito y local de dos): usan `InlineLink`, que cumple el mismo contrato que el enlace al proceso (`SimLink`): órdenes con ACK, fotos de controles con contadores y estados con número. En cada cuadro aplica las órdenes y la última foto, y avanza la física con paso fijo de 1/120 s hasta el momento actual (como mucho 6 pasos, igual que el proceso). Corre en el mismo hilo: si la página se traba, la simulación se traba con ella, y por eso ahí no hace falta watchdog.
-- **Online:** la simulación está en el proceso de la sala, en el servidor. El navegador sólo dibuja y manda controles.
-
----
-
-## 9. Comunicación y sincronización
+## 8. Comunicación y sincronización
 
 | | Comunicación (qué viaja) | Sincronización (cómo se ponen de acuerdo) |
 |---|---|---|
 | **Escritorio** | 4 colas: órdenes, controles, estados, eventos | READY, ACK con `cid`, número de partido, `seq`, `eid`, `Event` de cierre, watchdog, control del padre vivo, `join` con tiempo límite |
 | **Servidor ↔ sala** | Las mismas 4 colas (`SimLink`) | Lo mismo. Además, el puente reanuda sólo cuando no queda ningún motivo de pausa (`hold`). |
-| **Servidor ↔ navegador** | WebSocket con JSON | Sesión con token, plazo de 30 s, keepalive (ping cada 5 s, corte si no responde en 10), `match`, `seq` y `eid` en los mensajes, pausa con "listo" o 30 s |
+| **Servidor ↔ cliente de escritorio** | WebSocket con JSON | Sesión con token, plazo de 30 s, keepalive (ping cada 5 s, corte si no responde en 10), `match`, `seq` y `eid` en los mensajes, pausa con "listo" o 30 s |
 | **Dentro del servidor** | Llamadas a funciones en el mismo hilo | Un solo dueño de los datos (el bucle), `asyncio.Event` para despertar a cada escritora |
 | **Cliente de escritorio** | Cola acotada hilo lector → interfaz | `get_nowait` por cuadro, orden FIFO |
 
 ---
 
-## 10. Problemas clásicos de concurrencia y cómo se evitan
+## 9. Problemas clásicos de concurrencia y cómo se evitan
 
 | Problema | Cómo se evita acá |
 |---|---|
@@ -250,7 +225,7 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 
 ---
 
-## 11. Cómo verlo funcionando
+## 10. Cómo verlo funcionando
 
 - **Dos procesos:** `.venv/bin/python main.py --debug` y apretá F3. Se ven los pid de los dos procesos, que la simulación no cargó pygame, el último ACK con su tiempo de ida y vuelta, los controles reemplazados y los estados ignorados.
 - **Panel del servidor (online, desde el navegador):** `/status` muestra en vivo un proceso de simulación por sala con su pid, las tareas `asyncio` por tipo (lectoras, escritoras, keepalive, puentes de sala, plazos de reconexión), los hilos, el tráfico por segundo y el tiempo de los ACK. `/status/full` (con contraseña: `--panel-password` o `FDC_PANEL_PASSWORD`) agrega los jugadores y el registro de procesos. Sirve también en la NAS con el dominio. Detalles en [ONLINE.md](ONLINE.md#panel-del-servidor-para-ver-la-concurrencia-en-vivo).
@@ -260,24 +235,22 @@ En el navegador (pygbag, Python compilado a WebAssembly) **no existen** `multipr
 - **Pruebas automáticas:**
   - `tests/test_process.py`: procesos reales, cierre y huérfanos.
   - `tests/test_online.py`: servidor real con conexiones reales, desconexión y reconexión.
-  - `tests/test_inline.py`: la simulación dentro de la página.
 - **Guía paso a paso para la defensa:** sección 9 del README.
 
 ---
 
-## 12. Dónde está cada cosa en el código
+## 11. Dónde está cada cosa en el código
 
 | Tema | Archivo y función |
 |---|---|
 | Colas, lanzamiento, salud y cierre (UI) | `fdc/ipc.py` → `SimLink.start`, `send_command`, `send_input`, `poll`, `check_health`, `stop` |
 | Núcleo de la simulación | `fdc/sim/core.py` → `SimulationCore.handle_command`, `apply_inputs`, `step_once` |
 | Bucle del proceso de simulación | `fdc/sim/process.py` → `SimulationServer.run`, `_idle`, `put_state`, `put_reliable` |
-| Simulación en el navegador | `fdc/sim/inline.py` → `InlineLink.poll`, `_advance` |
 | Protocolo (contadores, filtros, deduplicación) | `fdc/protocol.py` → `PressCounter`, `StateFilter`, `EventDeduper` |
 | Servidor: conexiones y salas | `fdc/online/server.py` → `GameServer.handler`, `route`, `_connection_lost`, `_expire_later` |
 | Servidor: cola de salida | `fdc/online/session.py` → `Session.send_text`, `_write_loop` |
 | Servidor: puente con la sala | `fdc/online/room_runner.py` → `RoomRunner.tick`, `request_pause`, `player_away`, `forfeit` |
 | Servidor: panel y datos de la sala (F3) | `fdc/online/panel.py` → `panel_data`; `fdc/online/server.py` → `GameServer._stats_loop`; `fdc/online/room_runner.py` → `RoomRunner.room_info`; página `fdc/online/panel.html` |
 | Salas (lógica pura) | `fdc/online/lobby.py` → `Lobby.handle` |
-| Cliente de red | `fdc/online/client.py` → `ThreadTransport`, `BrowserTransport`, `NetClient.poll` |
-| Bucle de la interfaz | `fdc/ui/app.py` → `App.frame`, `run`, `run_async`, `FrameLimiter` |
+| Cliente de red | `fdc/online/client.py` → `ThreadTransport`, `NetClient.poll` |
+| Bucle de la interfaz | `fdc/ui/app.py` → `App.frame`, `run`, `FrameLimiter` |

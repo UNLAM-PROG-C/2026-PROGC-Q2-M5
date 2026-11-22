@@ -16,6 +16,7 @@ from fdc import config
 from fdc.gpu import backend
 from fdc.gpu import demo
 from fdc.gpu import env
+from fdc.ui import app as ui_app
 from fdc.ui import assets
 from fdc.ui import layout
 from fdc.ui import render
@@ -56,6 +57,19 @@ class DemoEffectsTest(unittest.TestCase):
     self.assertEqual(params["burned"]({"players": [player]}),
                      ((player["x"], player["y"]),))
     self.assertEqual(params["burned"](None), ())
+
+
+class FramePacingTest(unittest.TestCase):
+  def test_benchmark_can_disable_sleep(self):
+    with mock.patch.object(ui_app.time, "perf_counter", return_value=0.0):
+      with mock.patch.object(ui_app.time, "sleep") as sleep:
+        clock = ui_app.FrameLimiter(config.UI_FPS)
+        clock.tick()
+        sleep.assert_called_once_with(clock.period)
+        sleep.reset_mock()
+        clock.sleep = False
+        clock.tick()
+        sleep.assert_not_called()
 
 
 class DemoSignsTest(unittest.TestCase):

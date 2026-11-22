@@ -11,7 +11,7 @@ frames/
 capturas/
 colab_pack.zip
 
-# Compiled web client (tools/build_web.py).
+# Desktop build output.
 build/
 
 # macOS folder metadata.

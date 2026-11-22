@@ -348,7 +348,7 @@ class IPC:
 
 
 # ---------------------------------------------------------------------------
-# Online (room server + browser). See docs/ONLINE.md
+# Online (room server and desktop clients). See docs/ONLINE.md
 # ---------------------------------------------------------------------------
 class Online:
   """Server, client and panel settings of the online mode."""
@@ -364,7 +364,7 @@ class Online:
   # Bridge cycle. Twice the state rate: every state has its own deadline
   # and the tick only decides when it is checked (see room_runner).
   PUMP_HZ = 120               # cycles of the room <-> simulation bridge
-  STATE_HZ = 60               # states per second sent to each browser
+  STATE_HZ = 60               # states per second sent to each client
   PING_EVERY = 2.0            # s: the client measures the latency
   MAX_MESSAGE_BYTES = 2048    # bytes: largest message from a client
   MAX_MESSAGES_PER_SEC = 150  # more than this is abuse: disconnected

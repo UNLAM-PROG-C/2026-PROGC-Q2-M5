@@ -102,6 +102,6 @@ En el juego (escritorio o exe), para apuntar a ese servidor sin TLS:
 El juego de escritorio usa por defecto **la conexión directa**
 `ws://setcomnas.ddns.net:18765/ws`, que viene en el `servidor.txt` que
 acompaña al exe. Es el puerto 18765 del NAS publicado por `docker-compose`
-(no pasa por Cloudflare). El túnel `wss://futbol.timecore.com.ar/ws` admite clientes, pero no es el valor por defecto.
+(no pasa por Cloudflare). El túnel `wss://futbol.timecore.com.ar/ws` también admite clientes de escritorio, pero no es el valor por defecto.
 
 El juego de escritorio conecta a `/ws`; `/status` y `/status.json` son el panel.

@@ -3,7 +3,7 @@
 Each room in play has its own simulation PROCESS (the same of the local
 version, through SimLink: bounded queues, ACKs, match numbers and shutdown
 Event) and a bridge TASK of the server loop at 60 Hz that:
-  * takes the controls of the two browsers to the process;
+  * takes the controls of the two clients to the process;
   * forwards events and about 30 states per second to the players;
   * runs the online rules: requested pause, "ready", 30 s limits,
     disconnections and forfeits.
@@ -191,7 +191,7 @@ class RoomRunner:
         STATE_EVERY_TICKS physics steps), so forwarding each new one gives
         the even cadence of the physics itself. The half period cap only
         matters if the source ever goes faster than STATE_HZ: it keeps the
-        browser at two states per period instead of a flood.
+        client at two states per period instead of a flood.
         """
     if state is not None and state.get("match") == self.match["id"]:
       self.last_state = state

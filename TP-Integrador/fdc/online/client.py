@@ -1,4 +1,4 @@
-"""Client of the online mode (desktop and browser versions).
+"""Client of the online mode for the desktop game.
 
 NetClient does not use pygame: the online screens ask it every frame. It
 keeps the latest known data (name, rooms, current room, match, pause, rival,
@@ -6,19 +6,13 @@ result) so no message is lost when the screen changes, and it reconnects by
 itself if the connection drops (there are RECONNECT_GRACE seconds to come
 back without losing the place).
 
-Below it uses an interchangeable TRANSPORT (Strategy pattern):
-  * BrowserTransport: inside the browser (pygbag). It uses the JavaScript
-    WebSocket; what arrives is stored in a JS array and Python takes it once
-    per frame. There are no threads or processes in the browser.
-  * ThreadTransport: desktop version. A reader thread (blocked on the
-    network, no busy waiting) puts what arrives in a BOUNDED queue; the
-    interface empties it without blocking every frame.
-Both deliver events ("open" | "msg" | "closed", data) in order.
+ThreadTransport reads the WebSocket in a thread (blocking on the network,
+no busy waiting). It puts events ("open" | "msg" | "closed", data) in a
+bounded queue, in order. The UI drains it without blocking every frame.
 """
 import json
 import logging
 import queue
-import sys
 import threading
 import time
 
@@ -28,7 +22,6 @@ from fdc.online import wire
 
 log = logging.getLogger("fdc.net")
 ONLINE = config.Online
-IN_BROWSER = sys.platform == "emscripten"
 
 # Close codes that must NOT cause a reconnection (texts shown on screen).
 NO_RETRY_CODES = {
@@ -137,124 +130,9 @@ def _connect(sync_client, url):
                              max_size=ONLINE.CLIENT_MAX_MESSAGE)
 
 
-_JS = r"""
-window.fdcNet = window.fdcNet || {
-  socks: {}, next: 1,
-  open: function (url) {
-    var id = this.next++, box = {ws: null, q: []};
-    this.socks[id] = box;
-    try { box.ws = new WebSocket(url); }
-    catch (e) {
-      box.q.push(['closed', {code: null, reason: String(e)}]);
-      return id;
-    }
-    box.ws.onopen = function () { box.q.push(['open', null]); };
-    box.ws.onmessage = function (e) { box.q.push(['msg', e.data]); };
-    box.ws.onclose = function (e) {
-      box.q.push(['closed',
-                  {code: e.code, reason: e.reason || 'conexión cerrada'}]);
-    };
-    return id;
-  },
-  send: function (id, s) {
-    var b = this.socks[id];
-    if (b && b.ws && b.ws.readyState === 1) { b.ws.send(s); return 1; }
-    return 0;
-  },
-  take: function (id) {
-    var b = this.socks[id];
-    if (!b || !b.q.length) return '';
-    var s = JSON.stringify(b.q); b.q = []; return s;
-  },
-  close: function (id) {
-    var b = this.socks[id];
-    if (b && b.ws) { try { b.ws.close(); } catch (e) {} }
-    delete this.socks[id];
-  },
-  defaultUrl: function () {
-    return (location.protocol === 'https:' ? 'wss://' : 'ws://')
-        + location.host + '/ws';
-  }
-};
-"""
-
-
-def _window():
-  # pylint: disable-next=import-outside-toplevel
-  import platform     # in pygbag, "platform" exposes the JS window object
-  return platform.window
-
-
-class BrowserTransport:
-  """Browser WebSocket (pygbag)."""
-  js_installed = False      # the JS helper is installed once per page
-
-  def __init__(self, url):
-    self.win = _window()
-    install_js()
-    self.id = int(self.win.fdcNet.open(url))
-
-  def receive(self, limit=ONLINE.CLIENT_RECEIVE_BATCH):
-    del limit  # Unused: JS hands everything that arrived.
-    raw = str(self.win.fdcNet.take(self.id))
-    if not raw:
-      return []
-    return [tuple(item) for item in json.loads(raw)]
-
-  def send(self, text):
-    return bool(self.win.fdcNet.send(self.id, text))
-
-  def close(self):
-    self.win.fdcNet.close(self.id)
-
-
-def install_js():
-  """Installs the JS helper once per page."""
-  if not BrowserTransport.js_installed:
-    _window().eval(_JS)
-    BrowserTransport.js_installed = True
-
-
 def default_url():
-  """In the browser, the same site the page came from; on the desktop,
-    the address of --server, FDC_SERVER or servidor.txt (see endpoint)."""
-  if IN_BROWSER:
-    install_js()
-    return str(_window().fdcNet.defaultUrl())
+  """Resolves the address from the settings (see endpoint)."""
   return endpoint.resolve_url()
-
-
-def default_transport():
-  return BrowserTransport if IN_BROWSER else ThreadTransport
-
-
-# In the browser the token is stored in sessionStorage (that tab only): if
-# the page is reloaded by mistake, the player can come back to the same room
-# and match within the reconnection time. The desktop does not need it.
-_SESSION_KEY = "fdc_session"
-
-
-def remember_session(username, token):
-  if IN_BROWSER and token:
-    _window().sessionStorage.setItem(_SESSION_KEY,
-                                     json.dumps([username, token]))
-
-
-def forget_session():
-  if IN_BROWSER:
-    _window().sessionStorage.removeItem(_SESSION_KEY)
-
-
-def saved_session():
-  """(name, token) stored by this tab, or None."""
-  if not IN_BROWSER:
-    return None
-  try:
-    raw = _window().sessionStorage.getItem(_SESSION_KEY)
-    name, token = json.loads(str(raw)) if raw else (None, None)
-  except (ValueError, TypeError):
-    return None
-  return (name, token) if name and token else None
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +147,7 @@ class NetClient:
 
   def __init__(self, url=None, transport=None, clock=time.monotonic):
     self.url = url or default_url()
-    self.transport_cls = transport or default_transport()
+    self.transport_cls = transport or ThreadTransport
     self.clock = clock
     self.transport, self.status, self.welcomed = None, IDLE, False
     self.fatal = None       # text if the connection was lost for good
@@ -327,7 +205,6 @@ class NetClient:
     self.welcomed = False
     self.token = None
     self.room = self.match = self.result = self.room_info = None
-    forget_session()
 
   @property
   def connected(self):
@@ -469,7 +346,6 @@ class NetClient:
     self.display = msg.get("display") or self.username
     self.token = msg.get("token")
     self.lost_at = None
-    remember_session(self.username, self.token)
     if not msg.get("restored"):
       self.room = self.match = None    # new session: no room or match
 

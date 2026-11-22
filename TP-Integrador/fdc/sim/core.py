@@ -6,9 +6,6 @@ NOT know how messages travel: each subclass defines that (Template Method).
   * SimulationServer (fdc/sim/process.py): its own process with bounded
     queues. Used by the desktop version and by the online server (one per
     room).
-  * InlineSimulation (fdc/sim/inline.py): in the browser, where there are no
-    processes, it runs inside the same page.
-So the simulation logic is ONE, the same in the three places.
 """
 import logging
 import os
@@ -216,7 +213,7 @@ class SimulationCore:
 
 def catch_up(sim, now, next_tick):
   """Runs the fixed steps due until `now` (at most MAX_CATCHUP_STEPS).
-    Returns the time of the next step. Used by the process and the browser."""
+    Returns the time of the next step. Used by the simulation process."""
   steps = 0
   while now >= next_tick and steps < config.MAX_CATCHUP_STEPS:
     sim.step_once()
