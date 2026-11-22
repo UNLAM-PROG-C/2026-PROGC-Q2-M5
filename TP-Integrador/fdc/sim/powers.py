@@ -1,9 +1,9 @@
 """Powers: pickups, timed effects and bombs.
 
 Implemented rules (see also README):
-* At most one pickup at a time; it appears every 5-7 s of effective play
-  (2.5-3.5 s with SPAWN_RATE) and disappears after 8 s if the ball does not
-  touch it. Half of them appear on the floor, half at lob height.
+* At most one pickup at a time; new ones wait for SPAWN_INTERVAL seconds of
+  effective play. A pickup disappears after 8 s if the ball does not touch
+  it. Half of them appear on the floor, half at lob height.
 * Receiver = last player who touched the ball. Without a last touch,
   personal powers are NOT consumed (the ball goes through); global ones are.
 * Effects are stored in a dictionary keyed by (target, property):
@@ -27,6 +27,7 @@ RULES = config.PowerRules
 ARENA = config.Arena
 FIRE_PROP = "fire"          # property of the burning ball
 BURN_PROP = "burned"        # property of the player who touched the fire
+CONFUSION_PROP = "confusion"
 # Effect properties that multiply a value of the player, and its attribute.
 MULTIPLIERS = (("speed", "speed_mult"), ("jump", "jump_mult"),
                ("size", "target_scale"))
@@ -108,15 +109,12 @@ class PowerManager:
     self._next_id += 1
     return self._next_id
 
-  def _roll_spawn(self):
-    return self.rng.uniform(RULES.SPAWN_MIN, RULES.SPAWN_MAX)
-
   def clear(self):
     """Clears effects, pickup and bombs (after a goal or a restart)."""
     self.effects = {}
     self.pickup = None
     self.bombs = []
-    self.spawn_timer = self._roll_spawn()
+    self.spawn_timer = RULES.SPAWN_INTERVAL
 
   # ------------------------------------------------------------- timers
   def update(self, dt, match, events):
@@ -166,7 +164,7 @@ class PowerManager:
     else:
       power = self.rng.choice(config.POWER_IDS)
       self.place_pickup(power, pos, events)
-      self.spawn_timer = self._roll_spawn()
+      self.spawn_timer = RULES.SPAWN_INTERVAL
 
   def place_pickup(self, power, pos, events):
     self.pickup = Pickup(self._new_id(), power, pos[0], pos[1])
@@ -262,13 +260,17 @@ class PowerManager:
     effects = self.effects
     key = f"p{player.idx}"
     player.clear_modifiers()
-    for prop, attr in MULTIPLIERS:
-      effect = effects.get((key, prop))
-      if effect is not None:
-        setattr(player, attr, effect.value)
+    self._set_multipliers(player, key)
     player.frozen = (key, "frozen") in effects
     player.no_kick = (key, "no_kick") in effects
+    player.confused = (key, CONFUSION_PROP) in effects
     self._set_burn(player, effects.get((key, BURN_PROP)))
+
+  def _set_multipliers(self, player, key):
+    for prop, attr in MULTIPLIERS:
+      effect = self.effects.get((key, prop))
+      if effect is not None:
+        setattr(player, attr, effect.value)
 
   @staticmethod
   def _set_burn(player, effect):

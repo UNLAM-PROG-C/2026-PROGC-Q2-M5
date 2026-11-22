@@ -7,7 +7,7 @@ from fdc.ui import palette
 
 HINT = "F10: SIN EFECTOS / FULL · F1: ayuda"
 HELP = "F2: pasos CUDA · F4: CPU/GPU en FULL"
-DEMO_HELP = " · Tab: siguiente · Esc: salir"
+DEMO_HELP = " · Tab: siguiente"
 NOTICE_MS = 3000  # Duration of the confirmation in milliseconds.
 MARGIN = 8        # Pixels between the chips and the screen edge.
 GAP = 6           # Pixels between neighboring chips.

@@ -253,6 +253,7 @@ class Player:
   def clear_modifiers(self):
     self.speed_mult = 1.0
     self.jump_mult = 1.0
+    self.confused = False
     self.frozen = False
     self.burned = False         # the fire power: no action, no walk
     self.burned_left = 0.0      # s left of the burn (for the screens)
@@ -326,6 +327,7 @@ def _buffer_presses(p, jump_pressed, kick_pressed):
 
 
 def _walk(p, dt, move_dir):
+  move_dir = -move_dir if p.confused else move_dir
   target = move_dir * PlayerSpec.MOVE_SPEED * p.speed_mult
   if move_dir and PlayerSpec.FACE_MOVEMENT:
     p.facing = move_dir

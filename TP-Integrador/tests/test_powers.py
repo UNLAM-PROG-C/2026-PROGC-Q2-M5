@@ -80,6 +80,17 @@ class ActivationTest(unittest.TestCase):
     self.assertAlmostEqual(m.goals[0].target_height,
                            ARENA.GOAL_HEIGHT * 0.75)
 
+  def test_confusion_pickup_reverses_only_the_rivals_walk(self):
+    m = quiet_match()
+    m.last_touch = 0
+    put_pickup_on_ball(m, "confusion")
+    self.assertEqual(count(run(m, DT), protocol.EV_POWER), 1)
+    for i in range(len(m.players)):
+      m.set_input(i, False, True, 0, 0)
+    run(m, DT)
+    self.assertGreater(m.players[0].vx, 0)
+    self.assertLess(m.players[1].vx, 0)
+
   def test_all_twenty_powers(self):
     self.assertEqual(len(config.POWERS), 20)
     for pdef in config.POWERS:
@@ -157,14 +168,10 @@ class SpawnTest(unittest.TestCase):
   def test_spawn_interval_single_pickup_and_ttl(self):
     m = quiet_match(seed=3, spawn_powers=True)
     m.ball.y = 120.0   # far from any object, without touching it
-    # pylint: disable-next=protected-access
-    m.powers.spawn_timer = m.powers._roll_spawn()
-    self.assertTrue(RULES.SPAWN_MIN <= m.powers.spawn_timer
-                    <= RULES.SPAWN_MAX)
     seen, first_at = self.watch_spawns(m)
     self.assertGreaterEqual(seen, 2)
-    self.assertTrue(RULES.SPAWN_MIN - 0.1 <= first_at
-                    <= RULES.SPAWN_MAX + 0.1)
+    assert first_at is not None
+    self.assertAlmostEqual(first_at, RULES.SPAWN_INTERVAL, delta=DT)
 
   def watch_spawns(self, m):
     """20 s with the ball held up high: (spawns, time of the first)."""
@@ -212,7 +219,7 @@ def positions(m, p, seconds):
 
 class SpawnHeightTest(unittest.TestCase):
   """1.0.2: half of the pickups on the floor, half between the floor
-    and 180 px, and one every 2.5-3.5 s of play."""
+    and 180 px, with a named interval between pickups."""
 
   ROLLS = 4000            # pickups rolled to measure the share
   SHARE_TOL = 0.05        # the share of the floor must be 0.5 more or less
@@ -249,14 +256,9 @@ class SpawnHeightTest(unittest.TestCase):
     self.assertEqual(powers.position_is_free(
         ARENA.WIDTH / 2, RULES.SPAWN_FLOOR_Y, quiet_match()), True)
 
-  def test_one_pickup_every_two_and_a_half_to_three_and_a_half_s(self):
-    self.assertAlmostEqual(RULES.SPAWN_MIN, 2.5)
-    self.assertAlmostEqual(RULES.SPAWN_MAX, 3.5)
+  def test_spawn_interval_is_clamped_to_four_seconds(self):
     rng = random.Random(7)
-    timers = [powers.PowerManager(rng).spawn_timer for _ in range(200)]
-    self.assertGreaterEqual(min(timers), RULES.SPAWN_MIN)
-    self.assertLessEqual(max(timers), RULES.SPAWN_MAX)
-    self.assertLess(abs(sum(timers) / len(timers) - 3.0), 0.2)
+    self.assertAlmostEqual(powers.PowerManager(rng).spawn_timer, 4.0)
 
 
 def hold_right_and_press(m, i):
@@ -265,6 +267,16 @@ def hold_right_and_press(m, i):
 
 
 class EffectBehaviourTest(unittest.TestCase):
+  def test_confusion_expiration_restores_the_rivals_walk(self):
+    m = quiet_match()
+    target = m.players[1]
+    activate(m, "confusion", 0)
+    duration = config.POWERS_BY_ID["confusion"].duration
+    run(m, duration + DT)
+    m.set_input(target.idx, False, True, 0, 0)
+    run(m, DT)
+    self.assertGreater(target.vx, 0)
+
   def test_frozen_keeps_gravity_blocks_actions(self):
     m = playing_match()
     p = m.players[0]

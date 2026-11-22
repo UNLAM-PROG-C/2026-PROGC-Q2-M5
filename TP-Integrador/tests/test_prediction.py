@@ -80,6 +80,17 @@ class PredictionTest(unittest.TestCase):
     frames(pred, clock, 0.1)
     self.assertGreater(pred.player.x, 300.0 + 5.0)
 
+  def test_confusion_reverses_movement_in_client_prediction(self):
+    pred, clock = ready_prediction()
+    before = pred.player.x
+    st = make_state(before)
+    st["seq"] += 1
+    st["players"][0]["confused"] = True
+    pred.reconcile(st, clock.now)
+    pred.push_input(RIGHT)
+    frames(pred, clock, 0.1)
+    self.assertLess(pred.player.x, before)
+
   def test_a_jump_starts_in_the_same_frame(self):
     pred, clock = ready_prediction()
     pred.push_input([False, False, 1, 0])

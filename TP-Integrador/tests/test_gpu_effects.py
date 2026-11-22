@@ -278,6 +278,13 @@ class ReplayChainTest(unittest.TestCase):
     self.play(2)
     self.assertTrue(self.fx.metrics.stage["crt"])
 
+  def test_scheduled_goal_waits_for_the_simulation_window(self):
+    self.play(SAVE_FRAMES)
+    self.fx.event(dict(GOAL, replay=True))
+    self.play(CELEBRATION_FRAMES)
+    self.assertIsNone(self.fx.replay_mode())
+    self.assertFalse(self.fx.metrics.stage["crt"])
+
   def test_the_goal_celebrates_before_the_replay(self):
     """F10: first the confetti and the sign, then the replay."""
     self.play(SAVE_FRAMES)

@@ -14,6 +14,7 @@ import pygame
 import helpers  # noqa: F401  pylint: disable=unused-import
 from fdc import config
 from fdc import protocol
+from fdc.gpu import postfx as chain
 from fdc.gpu import replay
 from fdc.ui import match_screens
 from fdc.ui import online_screens
@@ -34,7 +35,8 @@ class FakePostFx:
     self.started = self.ended = self.drives = 0
     self.progress = None
 
-  def start_goal_replay(self):
+  def start_goal_replay(self, frames, duration):
+    del frames, duration
     self.started += 1
     return self.can_replay
 
@@ -128,6 +130,13 @@ def screen(postfx, cls=match_screens.MatchScreen):
   return ms
 
 
+def cpu_chain():
+  pygame.display.init()
+  pygame.display.set_mode((WIDTH, HEIGHT))
+  options = types.SimpleNamespace(force_cpu=True, quality_mode="full")
+  return chain.PostFx(options, (WIDTH, HEIGHT))
+
+
 class ReplayWindowScreenTest(unittest.TestCase):
   """The window is the one the simulation announced, not the screen's."""
 
@@ -160,13 +169,35 @@ class ReplayWindowScreenTest(unittest.TestCase):
 class ReplayDrawingTest(unittest.TestCase):
   """What is drawn inside the window, with and without the effects."""
 
+  def test_announced_replay_uses_screen_history_when_chain_has_no_pending(self):
+    postfx = cpu_chain()
+    ms = screen(postfx)
+    ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
+    live = goal_state(RULES.GOAL_REPLAY)
+    view = ms._replay_view(live, live, ms.goal_window(live))
+    self.assertEqual(postfx.replay_mode(), replay.REPLAY_KIND)
+    self.assertNotEqual(view["ball"]["x"], live["ball"]["x"])
+    surf = pygame.Surface((WIDTH, HEIGHT))
+    postfx.begin(surf, live).fill((0, 0, 0))
+    postfx.finish(surf, STEP)
+    self.assertTrue(postfx.metrics.stage["crt"])
+
+  def test_simulation_window_outlives_the_render_clock(self):
+    postfx = cpu_chain()
+    ms = screen(postfx)
+    ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
+    live = goal_state(STEP)
+    ms._replay_view(live, live, ms.goal_window(live))
+    postfx.clock += RULES.GOAL_REPLAY
+    self.assertTrue(postfx._advance_player())
+
   def test_without_effects_the_plain_replay_shows_the_past(self):
     postfx = FakePostFx(effects=False)
     ms = screen(postfx)
     ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
-    self.assertIsNotNone(ms.plain)
     live = state(STEPS - 1)
     first = ms._replay_view(live, live, (0.0, RULES.GOAL_REPLAY))
+    self.assertIsNotNone(ms.plain)
     last = ms._replay_view(live, live, (1.0, 0.0))
     self.assertLess(first["ball"]["x"], last["ball"]["x"])
     self.assertLess(last["ball"]["x"], live["ball"]["x"])
@@ -176,15 +207,14 @@ class ReplayDrawingTest(unittest.TestCase):
     ms = screen(postfx)
     ms.replay_history = replay.StateHistory()      # nothing saved
     ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
-    self.assertIsNone(ms.plain)
     live = state(5)
     self.assertIs(ms._replay_view(live, live, (0.1, 2.0)), live)
+    self.assertIsNone(ms.plain)
 
   def test_with_effects_the_frame_comes_from_the_chain(self):
     postfx = FakePostFx(effects=True)
     ms = screen(postfx)
     ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
-    self.assertIsNone(ms.plain)     # the chain draws it, not a plain clip
     live = state(STEPS - 1)
     view = ms._replay_view(live, live, (0.25, 2.25))
     self.assertTrue(view.get("from_effects"))
@@ -196,19 +226,27 @@ class ReplayDrawingTest(unittest.TestCase):
     ms = screen(postfx)
     ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
     live = state(1)
+    ms._replay_view(live, live, (0.1, 2.0))
     self.assertIs(ms._replay_view(live, live, None), live)
     self.assertEqual(postfx.ended, 1)
 
   def test_without_the_event_the_clip_is_not_cut(self):
     postfx = FakePostFx(effects=True)
     ms = screen(postfx)
-    ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
     live = state(1)
-    ms._replay_view(live, live, None)      # the window just closed
-    self.assertEqual(postfx.ended, 1)
-    ms.replay_seconds = None                # no window: an older server
     ms._replay_view(live, live, None)
-    self.assertEqual(postfx.ended, 1)       # its own clip is left alone
+    self.assertEqual(postfx.ended, 0)
+
+  def test_announcement_waits_for_the_replay_state(self):
+    postfx = FakePostFx()
+    ms = screen(postfx)
+    ms._goal_replay({"seconds": RULES.GOAL_REPLAY})
+    early = goal_state(RULES.GOAL_HOLD)
+    self.assertIs(ms._replay_view(early, early, ms.goal_window(early)), early)
+    self.assertEqual(postfx.started, 0)
+    ready = goal_state(RULES.GOAL_REPLAY)
+    ms._replay_view(ready, ready, ms.goal_window(ready))
+    self.assertEqual(postfx.started, 1)
 
   def test_online_draws_the_replay_and_not_the_live_match(self):
     postfx = FakePostFx(effects=False)

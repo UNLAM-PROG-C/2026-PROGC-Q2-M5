@@ -203,8 +203,9 @@ class _NoFx:
     """No replay without the effects."""
     return False
 
-  def start_goal_replay(self):
+  def start_goal_replay(self, frames, duration):
     """No replay without the effects: the screen draws it plain."""
+    del frames, duration
     return False
 
   def drive_replay(self, progress):
@@ -365,14 +366,21 @@ class App:
         If the browser reloaded in the middle of the online mode, back to
         the room. With `--demo` the automatic demo starts instead."""
     if getattr(self.options, "demo", False):
-      # Lazy import: fdc.gpu.demo imports this module.
-      from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
-      return demo.DemoScreen(self)
+      return self.demo_screen()
     if self.profile is None:
       return profile_screen.ProfileScreen(self, first_run=True)
     if self.web and client.saved_session():
       return online_screens.OnlineHomeScreen(self)
     return self.home()
+
+  def demo_screen(self, menu_return=False):
+    """Same demo for the menu and the command line."""
+    from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
+    return demo.DemoScreen(self, menu_return=menu_return)
+
+  def start_demo(self):
+    """Run the demo and return here on Escape."""
+    self.switch(self.demo_screen(menu_return=True))
 
   def set_profile(self, profile):
     self.profile = profile
@@ -465,7 +473,7 @@ class App:
       return None
     menu = isinstance(self.current, screens.OptionsScreen)
     if menu or isinstance(self.current, match_screens.MatchScreen):
-      demo = not menu and getattr(self.options, "demo", False)
+      demo = getattr(self.current, "IS_DEMO", False)
       return self.quality_controls.draw(self.screen, demo=demo, menu=menu)
     return None
 

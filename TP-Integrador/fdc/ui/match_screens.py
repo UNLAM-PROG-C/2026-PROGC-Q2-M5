@@ -490,10 +490,12 @@ class MatchScreen(screens.Screen):
     self.replay_history = replay.StateHistory()
     self.replay_seconds = None     # s of the window announced
     self.goal_t = None             # time of the goal on this screen
+    self.replay_started = False
     self.plain = None              # replay without the effects
 
   def _reset_replay(self):
     """New match: nothing of the previous goal is shown again."""
+    self._close_replay()
     self.replay_history.clear()
     self.replay_seconds = None
     self.goal_t = None
@@ -709,7 +711,12 @@ class MatchScreen(screens.Screen):
     self.app.audio.play("whistle")
 
   def _goal(self, m):
+    self._close_replay()
+    self.replay_seconds = None
     self.goal_t = self.t            # the replay looks back from here
+    self._celebrate_goal(m)
+
+  def _celebrate_goal(self, m):
     self.renderer.goal_banner = (config.MatchRules.GOAL_CELEBRATION, m)
     gx = (self.CONFETTI_INSET if m["side"] == 0
           else config.Arena.WIDTH - self.CONFETTI_INSET)
@@ -720,18 +727,19 @@ class MatchScreen(screens.Screen):
     self.app.audio.play("goal")
 
   def _goal_replay(self, m):
-    """The simulation says the replay starts: show it (or the sign)."""
+    """Wait for a matching state before showing the announced replay."""
     self.replay_seconds = float(m["seconds"])
-    self.renderer.goal_banner = None    # the replay takes the screen
-    if not self.app.postfx.start_goal_replay():
-      self.plain = self._plain_replay()
 
-  def _plain_replay(self):
-    """Replay of the goal drawn as is: the effects are off (F10)."""
-    frames = self.replay_history.window(self.goal_t or self.t)
-    if len(frames) < replay.MIN_FRAMES:
-      return None
-    return replay.ReplayPlayer(frames, self.t, self.replay_seconds)
+  def _start_goal_clip(self):
+    """One clip for plain or CRT rendering, tied to the goal window."""
+    assert self.replay_seconds is not None
+    self.replay_started = True
+    self.renderer.goal_banner = None
+    center = self.t if self.goal_t is None else self.goal_t
+    frames = self.replay_history.window(center)
+    self.app.postfx.start_goal_replay(frames, self.replay_seconds)
+    if len(frames) >= replay.MIN_FRAMES:
+      self.plain = replay.ReplayPlayer(frames, self.t, self.replay_seconds)
 
   def _match_end(self, m):
     self.end_info = m
@@ -913,8 +921,8 @@ class MatchScreen(screens.Screen):
     """World (from 'view'), effects, scoreboard, signs and notices."""
     self.replay_history.feed(st, self.t)
     window = self.goal_window(st)
-    mode = self.app.postfx.replay_mode()
     view = self._replay_view(st, view, window)
+    mode = self.app.postfx.replay_mode()
     world = self.app.postfx.begin(surf, st)
     self._draw_world(world, view, mode)
     self.app.postfx.finish(surf, self.app.last_dt)
@@ -948,24 +956,25 @@ class MatchScreen(screens.Screen):
   def _replay_view(self, st, view, window):
     """World to draw: the replay wins over the live view."""
     if window is None:
-      self._close_replay()
-      return view
-    self.app.postfx.drive_replay(window[0])
-    if self.app.postfx.enabled:
+      return st if self._close_replay() else view
+    if not self.replay_started:
+      self._start_goal_clip()
+    if self.app.postfx.enabled and self.app.postfx.replay_mode():
+      self.app.postfx.drive_replay(window[0])
       return self.app.postfx.view_state(st)
     if self.plain is None:
       return view          # nothing to show: the sign says it all
     return self.plain.state_at_progress(window[0])
 
   def _close_replay(self):
-    """The window is closed: nothing of the replay is drawn any more.
-
-        Only when a window was announced: a clip the effects started on their
-        own (an older server that does not announce it) is not cut here.
-        """
+    """Close an opened window, not an announcement ahead of its state."""
+    if not self.replay_started:
+      return False
+    self.replay_started = False
+    self.replay_seconds = None
     self.plain = None
-    if self.replay_seconds:
-      self.app.postfx.end_goal_replay()
+    self.app.postfx.end_goal_replay()
+    return True
 
   def _draw_replay_sign(self, surf, window):
     """Sign of the replay with the seconds left."""

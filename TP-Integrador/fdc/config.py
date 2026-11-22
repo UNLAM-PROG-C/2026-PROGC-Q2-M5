@@ -16,7 +16,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identity
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_VERSION = "1.0.5"      # shown in the window title and the release notes
+GAME_VERSION = "1.0.6"      # shown in the window title and the release notes
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
 # Version of the UI <-> simulation protocol (reported in READY and checked by
 # the online server, which refuses a client of another version).
@@ -186,12 +186,7 @@ class MatchRules:
 # ---------------------------------------------------------------------------
 class PowerRules:
   """When and where the powers appear, and how strong they are."""
-  # Powers appear more often than in v1 (they were barely seen in a match):
-  # the two times below are divided by SPAWN_RATE, so 2.5 s - 3.5 s.
-  SPAWN_BASE = (5.0, 7.0)    # s between pickups at SPAWN_RATE = 1
-  SPAWN_RATE = 2.0           # how many times more often than the base
-  SPAWN_MIN = SPAWN_BASE[0] / SPAWN_RATE   # s of play, at least
-  SPAWN_MAX = SPAWN_BASE[1] / SPAWN_RATE   # s at most between two pickups
+  SPAWN_INTERVAL = 4.0       # s of play; halved range hits the 4 s floor
   # s: a pickup lasts if the ball does not touch it (2 s more than before:
   # they disappeared before anyone could reach them)
   PICKUP_TTL = 8.0
@@ -294,15 +289,13 @@ POWERS = (
     PowerDef("small_ball", "Pelota pequeña", "PELOTA -", CATEGORY_GLOBAL,
              "ball", "radius", 0.70, 6.0,
              "El radio de la pelota se reduce (×0,70)."),
-    # Cosmetic powers (F3): they only last a while and change what is drawn.
-    # "fire" also burns in the simulation: the first player who touches the
-    # ball stays 2 s without walking, jumping or kicking.
+    # Powers with a post-processing effect in FULL.
     PowerDef("blackout", "Apagón", "APAGÓN", CATEGORY_GOOD, "rival",
              "blackout", None, 6.0,
              "Se apagan las luces: sólo se ve alrededor del rival."),
     PowerDef("confusion", "Confusión", "CONFUSIÓN", CATEGORY_GOOD, "rival",
              "confusion", None, 5.0,
-             "El rival ve la cancha al revés y torcida."),
+             "El rival camina al revés. En FULL también se tuerce la cancha."),
     PowerDef("fire", "Pelota de fuego", "FUEGO", CATEGORY_GLOBAL, "ball",
              "fire", None, 6.0,
              "La pelota arde: el primero que la toca queda quemado y no se "

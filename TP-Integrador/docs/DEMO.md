@@ -22,7 +22,11 @@ py -m pip install -r requirements.txt
   no hay CUDA y arranca SIN EFECTOS. Para ver todos los efectos con numpy,
   usá `--calidad full`.
 
-## Demo automática (`--demo`)
+## Demo automática (`DEMO` o `--demo`)
+
+En escritorio, elegí **DEMO** en el menú inicial: usa la calidad actual y
+muestra sus atajos. **Esc** vuelve al menú. Si arrancaste por línea de
+comandos con `--demo`, **Esc** cierra el juego.
 
 ```powershell
 py main.py --demo --calidad full

@@ -269,6 +269,7 @@ class Prediction:
     player.frozen = bool(own.get("frozen"))
     player.burned = bool(own.get("burned"))
     player.no_kick = bool(own.get("no_kick"))
+    player.confused = bool(own.get("confused"))
     player.knockback = 1.0 if own.get("knock") else 0.0
 
   def _load(self, target, source, idx):
@@ -301,6 +302,7 @@ class Prediction:
     target.burned = bool(source.get("burned"))
     target.burned_left = float(source.get("burned_left") or 0.0)
     target.no_kick = bool(source.get("no_kick"))
+    target.confused = bool(source.get("confused"))
     target.knockback = 1.0 if source.get("knock") else 0.0
 
   def _load_timers(self, target, source):

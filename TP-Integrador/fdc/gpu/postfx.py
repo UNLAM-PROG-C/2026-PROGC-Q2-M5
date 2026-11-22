@@ -306,7 +306,7 @@ class PostFx:
     if msg.get("side") is None:
       return
     self.celebration = celebration.Celebration(self.clock, msg)
-    self.pending = self.clock
+    self.pending = None if msg.get("replay") else self.clock
 
   def _start_replay(self):
     """Replay of a goal.
@@ -322,8 +322,6 @@ class PostFx:
     frames = self.history.window(pending) if pending is not None else []
     if frames:
       self.player = self._replay_player(frames)
-      # The screen closes the replay when the window of the goal ends.
-      self.player.from_goal = True
 
   def _replay_player(self, frames):
     """Build the clip at the current chain time."""
@@ -338,7 +336,8 @@ class PostFx:
       self.confetti.burst(*self.celebration.burst_shape(index))
     if self.celebration.finished(self.clock):
       self.celebration = None
-      self._start_replay()
+      if self.pending is not None:
+        self._start_replay()
 
   def _touch(self, x, y, speed):
     """Sparks of a kick or a bounce (only if it was strong)."""
@@ -382,7 +381,8 @@ class PostFx:
 
   def _advance_player(self):
     """Drops the replay when it is over; True while one is drawn."""
-    if self.player is not None and self.player.finished(self.clock):
+    if (self.player is not None and not self.player.from_goal
+            and self.player.finished(self.clock)):
       self.player = None
     return self.player is not None
 
@@ -436,18 +436,16 @@ class PostFx:
     self.player = self._replay_player(frames)
     return True
 
-  def start_goal_replay(self):
-    """Starts the replay of the goal the tally announced.
-
-        The clip is the one around the goal (not "the last seconds"): the
-        screen calls it when the simulation says the replay begins.
-        """
-    if not self.enabled or self.pending is None:
+  def start_goal_replay(self, frames, duration):
+    """Show the screen's clip with CRT for the simulation's window."""
+    if not self.enabled:
       return False
-    self.celebration = None
-    self.confetti.clear()
-    self._start_replay()
-    return self.player is not None
+    self.skip()
+    if len(frames) < replay.MIN_FRAMES:
+      return False
+    self.player = replay.ReplayPlayer(frames, self.clock, duration)
+    self.player.from_goal = True
+    return True
 
   def drive_replay(self, progress):
     """Puts the clip at `progress` (0..1) of the simulation's window."""

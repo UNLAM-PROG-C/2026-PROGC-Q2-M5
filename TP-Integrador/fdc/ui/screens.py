@@ -403,7 +403,7 @@ class MenuScreen(Screen):
         ("Opciones", lambda: app.switch(OptionsScreen(app))),
     ]
     if not app.web:            # a web page does not close itself
-      items.append(("Salir", app.quit))
+      items.extend((("DEMO", app.start_demo), ("Salir", app.quit)))
     self.menu = Menu(items, self.MENU_CENTER)
     self.player_hover = False
 

@@ -17,6 +17,7 @@ from fdc import protocol
 from fdc.sim import match as sim_match   # noqa: F401  (imported by the link)
 from fdc.gpu import backend
 from fdc.gpu import metrics as gpu_metrics
+from fdc.gpu import overlay
 from fdc.ui import app as ui_app
 from fdc.ui import assets
 from fdc.ui import layout
@@ -223,8 +224,10 @@ class DemoScreen(match_screens.MatchScreen):
     """
 
   VIEWER = 0                 # the demo is watched from player 0
+  IS_DEMO = True
 
-  def __init__(self, app, chars=None, log=None):
+  def __init__(self, app, chars=None, log=None, menu_return=False):
+    self.menu_return = menu_return
     self.seed = self._seed(app)
     self.matches = 0
     self._init_run(app, log)
@@ -260,11 +263,30 @@ class DemoScreen(match_screens.MatchScreen):
     """Warms the sprites and starts the first segment."""
     super().enter()
     postfx = self.app.postfx
+    self._remember_display()
     if getattr(postfx, "enabled", False) and getattr(postfx, "ops",
                                                      None) is None:
       postfx.start()          # compile before measuring, not inside
     self._switch_backend(self.passes[self.pass_index])
     self._enter_segment(self.director.index)
+
+  def _remember_display(self):
+    self._previous_night = self.app.postfx.night
+    self._previous_overlay = self.app.overlay.mode
+    if self.menu_return and not getattr(self.app.options, "overlay", None):
+      self.app.overlay.mode = overlay.FULL
+
+  def leave(self):
+    """Close the active measurement and remove the demo's forced effects."""
+    self._close_segment()
+    self.measure.close()
+    postfx = self.app.postfx
+    postfx.force(clear=True)
+    postfx.clear()
+    postfx.night = self._previous_night
+    postfx.enabled = self._chain_wanted()
+    self.app.overlay.mode = self._previous_overlay
+    super().leave()
 
   def _start_payload(self):
     """Every match of the demo uses a seed of its own."""
@@ -275,10 +297,8 @@ class DemoScreen(match_screens.MatchScreen):
 
   def controls(self, active):
     """The two bots play (nobody touches the keyboard in the demo)."""
-    if self.state is None:
-      return [None, None]
-    return [player.controls(self.state, self._dt)
-            for player in self.bots]
+    state = self.state if active else None
+    return [player.controls(state, self._dt) for player in self.bots]
 
   def update(self, dt):
     """Advances the clock of the demo and the effect of the segment."""
@@ -388,14 +408,20 @@ class DemoScreen(match_screens.MatchScreen):
     self._start(protocol.CMD_RESTART)
 
   def handle_event(self, ev):
-    """Esc quits, Tab skips to the next segment; the rest as usual."""
+    """Esc leaves the demo and Tab skips to the next segment."""
     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-      self.app.quit()
+      self._escape_demo()
       return
     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_TAB:
       self._skip()
       return
     super().handle_event(ev)
+
+  def _escape_demo(self):
+    if self.menu_return:
+      self.to_menu()
+    else:
+      self.app.quit()
 
   def _skip(self):
     """Tab: closes this segment and jumps to the next one."""
@@ -417,14 +443,17 @@ class DemoScreen(match_screens.MatchScreen):
 
   def _draw_label(self, surf):
     """Segment name and seconds left, big (it is for a projector)."""
+    action = "volver al menú" if self.menu_return else "salir"
     note = (f"{self.director.remaining():.1f} s · Tab: siguiente · "
-            f"Esc: salir · F4: GPU/numpy")
+            f"Esc: {action} · F4: GPU/numpy")
     _draw_sign(surf, self.director.label(), note, palette.WHITE)
 
   def _draw_finished(self, surf):
     """Sign of the end of the demo (the CSV is already closed)."""
-    _draw_sign(surf, "FIN DE LA DEMO", f"Tiempos en {self.measure.path}",
-               palette.GOLD)
+    note = f"Tiempos en {self.measure.path}"
+    if self.menu_return:
+      note += " · Esc: volver al menú"
+    _draw_sign(surf, "FIN DE LA DEMO", note, palette.GOLD)
 
   # ------------------------------------------------------------ data
   def _backend(self):

@@ -357,7 +357,8 @@ class Match:
   def _goal_event(self, goal, scorer, own_goal):
     """Payload of the goal: who scored and where the ball went in."""
     return {"scorer": scorer, "side": goal.side, "score": list(self.score),
-            "own_goal": own_goal, "x": self.ball.x, "y": self.ball.y}
+            "own_goal": own_goal, "x": self.ball.x, "y": self.ball.y,
+            "replay": self.replay_pending}
 
   def _reset_after_goal(self):
     for player in self.players:
@@ -443,4 +444,5 @@ def _player_snapshot(player):
       # Power modifiers: the client needs them to predict with the same
       # physics (see fdc/online/prediction.py).
       "speed": player.speed_mult, "jump": player.jump_mult,
+      "confused": player.confused,
   }

@@ -8,6 +8,7 @@ import functools
 import unittest
 from unittest import mock
 
+import driver
 import pygame
 
 import helpers  # pylint: disable=unused-import
@@ -18,6 +19,7 @@ from fdc.gpu import env
 from fdc.ui import assets
 from fdc.ui import layout
 from fdc.ui import render
+from fdc.ui import screens
 
 FRAMES = 40             # frames of each run (short: it is a test)
 STAGES = ("glow", "particles", "frame", "fps")
@@ -33,6 +35,7 @@ def _record_row(draw, rows, *args, **kwargs):
 
 def _demo_signs(surf):
   screen = demo.DemoScreen.__new__(demo.DemoScreen)
+  screen.menu_return = False
   screen.director = demo.DemoDirector()
   screen.director.index = demo.SEGMENTS.index(("hielo", "ice"))
   rows = []
@@ -85,6 +88,28 @@ class DemoOffTest(unittest.TestCase):
 
   def test_frame_time(self):
     self.assertGreater(self.data["ms_frame"], 0.0)
+
+
+class MenuDemoTest(unittest.TestCase):
+  def test_demo_button_keeps_quality_and_escape_returns_home(self):
+    game = driver.make_app(test_mode=False, quality_mode="sin-efectos")
+    self.addCleanup(game.shutdown)
+    d = driver.Driver(game)
+    quality = game.postfx.quality_mode_name()
+    d.until(lambda: isinstance(d.screen(), screens.MenuScreen))
+    self._click_demo(d)
+    self.assertIsInstance(d.screen(), demo.DemoScreen)
+    self.assertEqual(game.postfx.quality_mode_name(), quality)
+    d.tap(pygame.K_ESCAPE)
+    self.assertTrue(game.running)
+    self.assertIsInstance(d.screen(), screens.MenuScreen)
+
+  def _click_demo(self, d):
+    menu = d.screen().menu
+    labels = [label for label, _ in menu.items]
+    self.assertIn("DEMO", labels)
+    rect = menu.rects()[labels.index("DEMO")]
+    d.post(pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center)
 
 
 @unittest.skipUnless(HAVE_GPU, "no CUDA here (see INSTALACION.md)")
