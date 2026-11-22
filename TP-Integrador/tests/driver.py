@@ -23,6 +23,15 @@ NO_SERVER = "ws://127.0.0.1:1/ws"
 DEFAULT_TIMEOUT = 10.0      # s to wait for a condition
 
 
+class _TestApp(game.App):
+  """Keep SDL dummy independent of scaled renderer support."""
+
+  def _display_flags(self):
+    if pygame.display.get_driver() == "dummy":
+      return 0
+    return super()._display_flags()
+
+
 def profile_file(name="Prueba", player_id=None):
   """Temporary profile for the tests (the user one is never touched).
     With name=None the file stays empty: the game asks for the name."""
@@ -47,7 +56,7 @@ def make_app(test_mode=True, seed=5, duration=None, server_url=None,
       server_url=server_url or NO_SERVER,
       profile_path=profile_file(profile_name),
       quality_mode=quality_mode)
-  return game.App(opts)
+  return _TestApp(opts)
 
 
 def _key_event(etype, key):
