@@ -28,14 +28,14 @@ class SimulationCore:
     self.seed = options.get("seed")
     # Short matches for tests or demonstrations.
     self.duration = options.get("duration")
+    self.untimed = options.get("untimed")
     self.match = None
     self.eid = self.seq = 0
     self.ack = [0, 0]       # online: last controls applied per player
     self.press = [[protocol.PressCounter(), protocol.PressCounter()]
                   for _ in range(2)]
     self.last_input_time = time.monotonic()
-    self.running = True
-    self.dropped_cosmetic = self.dropped_states = 0
+    self.running, self.dropped_cosmetic, self.dropped_states = True, 0, 0
     self.handlers = self._command_handlers()
 
   def _command_handlers(self):
@@ -118,7 +118,7 @@ class SimulationCore:
         self.match.characters if self.match else NO_CHARACTERS)
     self.match = match.Match(
         cmd["match"], seed=cmd.get("seed", self.seed), characters=chars,
-        duration=self.duration,
+        duration=self.duration, untimed=self.untimed,
         golden_goal=bool(cmd.get("golden_goal", False)),
         presentation=bool(cmd.get("presentation", True)))
     self.last_input_time = time.monotonic()

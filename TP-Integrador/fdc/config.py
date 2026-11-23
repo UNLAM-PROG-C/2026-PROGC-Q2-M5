@@ -320,6 +320,16 @@ POWERS_BY_ID = {p.id: p for p in POWERS}
 PERSONAL_TARGETS = ("self", "rival", "rival_goal")
 
 
+class Presentation:
+  """Live presentation mode (without automatic pickups)."""
+  NIGHT_DURATION = 10.0      # s of night per key press
+  TARGET_PLAYER = 1         # zero-based index of J2
+  DEFAULT_CHARACTERS = ("messi", "maradona")
+  HUD_TOP = 132             # px, below the scoreboard and above the pitch
+  HUD_ROW_GAP = 6           # px between the legend and status
+  HUD_PADDING = (16, 8)     # total horizontal and vertical padding (px)
+
+
 # ---------------------------------------------------------------------------
 # Inter-process communication
 # ---------------------------------------------------------------------------

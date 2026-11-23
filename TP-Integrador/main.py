@@ -71,6 +71,9 @@ COMMAND_LINE = (
                       "help": "overlay de rendimiento (F2 lo cambia en vivo)"}),
     (("--demo",), {"dest": "demo", "action": "store_true",
                    "help": "demo automática de 7 segmentos, sin menús"}),
+    (("--presentation",), {"action": "store_true",
+                           "help": "partido local sin reloj, con efectos "
+                                   "a demanda"}),
     (("--demo-seconds",), {"dest": "demo_seconds", "type": float,
                            "default": None,
                            "help": "segundos de cada segmento (por defecto "

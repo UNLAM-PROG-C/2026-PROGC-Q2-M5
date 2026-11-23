@@ -36,11 +36,18 @@ def _goal_hold(presentation):
   return config.MatchRules.GOAL_CELEBRATION
 
 
+def _match_clock(duration, untimed):
+  if untimed:
+    return None
+  return float(duration) if duration else config.MatchRules.DURATION
+
+
 class Match:
   """Players, ball, goals, powers, score, clock and phases of a match."""
 
   def __init__(self, match_id, seed=None, characters=("?", "?"),
-               duration=None, golden_goal=False, presentation=True):
+               duration=None, golden_goal=False, presentation=True,
+               untimed=False):
     self.id = match_id
     # Golden goal: if time ends in a draw, the next goal wins.
     self.golden_goal, self.golden = golden_goal, False
@@ -49,8 +56,7 @@ class Match:
     # Only kept for the log: physics uses the same base abilities.
     self.characters = tuple(characters)
     self._create_entities()
-    self.clock = (float(duration) if duration
-                  else config.MatchRules.DURATION)
+    self.clock = _match_clock(duration, untimed)
     self._reset_flow()
 
   def _set_presentation(self, presentation):
@@ -206,19 +212,27 @@ class Match:
 
   def _play(self, dt):
     """Effective play: powers, physics, pickups, goals and the clock."""
-    self.powers.update(dt, self, self._events)
-    self.powers.apply_modifiers(self)
+    if self.clock is not None:
+      self.powers.update(dt, self, self._events)
+      self.powers.apply_modifiers(self)
     prev_x = self.ball.x
     self._physics(dt, controls=True)
-    self.powers.check_pickup(self, self._events)
+    if self.clock is not None:
+      self.powers.check_pickup(self, self._events)
     self._check_goals(prev_x)
-    if self.phase == protocol.PHASE_PLAYING and not self.golden:
-      self.clock = max(0.0, self.clock - dt)
-      if self.clock <= 0:
-        if self.golden_goal and self.score[0] == self.score[1]:
-          self._start_golden_goal()
-        else:
-          self._finish()
+    self._tick_clock(dt)
+
+  def _tick_clock(self, dt):
+    if (self.clock is None or self.phase != protocol.PHASE_PLAYING
+        or self.golden):
+      return
+    self.clock = max(0.0, self.clock - dt)
+    if self.clock > 0:
+      return
+    if self.golden_goal and self.score[0] == self.score[1]:
+      self._start_golden_goal()
+    else:
+      self._finish()
 
   def _start_golden_goal(self):
     """Draw at the end: kickoff from the centre, the first goal wins."""

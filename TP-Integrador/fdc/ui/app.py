@@ -32,6 +32,7 @@ from fdc.ui import layout
 from fdc.ui import match_screens
 from fdc.ui import palette
 from fdc.ui import pixelfont
+from fdc.ui import presentation
 from fdc.ui import profile_screen
 from fdc.ui import quality_hud
 from fdc.ui import screens
@@ -219,6 +220,8 @@ class App:
 
   def __init__(self, options):
     self.options = options
+    self.presentation_mode = (getattr(options, "presentation", False)
+                              and not getattr(options, "demo", False))
     self.screen = self._open_window()
     self.clock = FrameLimiter(config.UI_FPS)
     self._load_resources()
@@ -310,7 +313,7 @@ class App:
     options = self.options
     duration = getattr(options, "duration", None)
     return ipc.SimLink(test_mode=options.test_mode, seed=options.seed,
-                       duration=duration)
+                       duration=duration, untimed=self.presentation_mode)
 
   def _set_icon(self):
     """Window icon: the logo of the game (assets/icono/logo.png)."""
@@ -341,6 +344,8 @@ class App:
         With `--demo` the automatic demo starts instead."""
     if getattr(self.options, "demo", False):
       return self.demo_screen()
+    if self.presentation_mode:
+      return presentation.PresentationScreen(self)
     if self.profile is None:
       return profile_screen.ProfileScreen(self, first_run=True)
     return self.home()
@@ -353,6 +358,22 @@ class App:
   def start_demo(self):
     """Run the demo and return here on Escape."""
     self.switch(self.demo_screen(menu_return=True))
+
+  def start_presentation(self):
+    """Use a local untimed child, without adding an IPC command."""
+    self.close_online()
+    self._switch_local_mode(True)
+
+  def end_presentation(self):
+    """Return to the ordinary local simulation for the other modes."""
+    self._switch_local_mode(False)
+
+  def _switch_local_mode(self, presentation_mode):
+    self.link.stop()
+    self.presentation_mode = presentation_mode
+    self.link = self._create_link()
+    self.link.start()
+    self.switch(screens.BootScreen(self))
 
   def set_profile(self, profile):
     self.profile = profile
@@ -564,6 +585,8 @@ class App:
     """N: night mode, but only inside a match (not while typing)."""
     if not self.input.capture:
       return False
+    if self.presentation_mode:
+      return True     # Night can only be triggered by the timed shortcut.
     self.postfx.night = not self.postfx.night
     return True
 

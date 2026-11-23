@@ -402,6 +402,7 @@ class MenuScreen(Screen):
         ("Poderes", lambda: app.switch(LegendScreen(app))),
         ("Opciones", lambda: app.switch(OptionsScreen(app))),
         ("DEMO", app.start_demo),
+        ("Presentación", app.start_presentation),
         ("Salir", app.quit),
     ]
     self.menu = Menu(items, self.MENU_CENTER)

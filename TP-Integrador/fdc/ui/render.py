@@ -691,7 +691,8 @@ class MatchRenderer:
     led_area = self._board(surf, board)
     for i in (0, 1):
       self._plate(surf, led_area, i, st["score"][i])
-    self._clock(surf, led_area, st)
+    if st["clock"] is not None:
+      self._clock(surf, led_area, st)
     self._state_label(surf, led_area, st)
     for i in (0, 1):
       self._name_sign(surf, board, i)

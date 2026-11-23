@@ -443,6 +443,12 @@ class PostFx:
     self.skip()
     if len(frames) < replay.MIN_FRAMES:
       return False
+    return self.start_driven_replay(frames, duration)
+
+  def start_driven_replay(self, frames, duration):
+    """A clip whose lifetime and progress are owned by the screen."""
+    if not self.enabled or not frames:
+      return False
     self.player = replay.ReplayPlayer(frames, self.clock, duration)
     self.player.from_goal = True
     return True

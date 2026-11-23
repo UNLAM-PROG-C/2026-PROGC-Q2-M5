@@ -326,8 +326,13 @@ def _buffer_presses(p, jump_pressed, kick_pressed):
     p.kick_buffer = PlayerSpec.KICK_BUFFER
 
 
+def effective_direction(move_dir, confused):
+  """Confusion reverses horizontal intent but not jump or kick."""
+  return -move_dir if confused else move_dir
+
+
 def _walk(p, dt, move_dir):
-  move_dir = -move_dir if p.confused else move_dir
+  move_dir = effective_direction(move_dir, p.confused)
   target = move_dir * PlayerSpec.MOVE_SPEED * p.speed_mult
   if move_dir and PlayerSpec.FACE_MOVEMENT:
     p.facing = move_dir

@@ -45,10 +45,11 @@ class SimLink(link.MatchLink):
   """Local MatchLink: one simulation process and its queues."""
 
   def __init__(self, test_mode=False, seed=None, log_to_file=True,
-               duration=None):
+               duration=None, untimed=False):
     self.ctx = multiprocessing.get_context("spawn")
     self.options = {"test_mode": test_mode, "seed": seed,
-                    "log": log_to_file, "duration": duration}
+                    "log": log_to_file, "duration": duration,
+                    "untimed": untimed}
     self.proc = None
     self._reset_state()
 

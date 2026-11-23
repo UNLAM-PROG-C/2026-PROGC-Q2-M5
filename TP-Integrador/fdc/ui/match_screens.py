@@ -695,6 +695,9 @@ class MatchScreen(screens.Screen):
   def _on_event(self, m):
     """Dispatches a simulation event to its handler (if any)."""
     self.app.postfx.event(m)
+    self._dispatch_event(m)
+
+  def _dispatch_event(self, m):
     name = EVENT_HANDLERS.get(m["type"])
     if name is not None:
       getattr(self, name)(m)
@@ -923,13 +926,17 @@ class MatchScreen(screens.Screen):
     window = self.goal_window(st)
     view = self._replay_view(st, view, window)
     mode = self.app.postfx.replay_mode()
-    world = self.app.postfx.begin(surf, st)
+    world = self.app.postfx.begin(surf, self.postfx_state(st))
     self._draw_world(world, view, mode)
     self.app.postfx.finish(surf, self.app.last_dt)
     self.renderer.draw_hud(surf, st)
     self.renderer.draw_center_messages(surf, st)
     self._draw_replay_sign(surf, window)
     self._draw_toasts(surf)
+
+  def postfx_state(self, st):
+    """State consumed by the effects pipeline."""
+    return st
 
   def _draw_world(self, world, view, mode):
     """Pitch, players and ball, with shake only in live play."""
