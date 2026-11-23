@@ -9,6 +9,14 @@ import numpy as np
 from fdc.gpu import primitives
 
 CHANNELS = 3            # interleaved RGB
+ZERO = 0.0              # bottom of the normalized range
+UNIT = 1.0              # top of the normalized range
+CENTER = 0.5            # center of a normalized screen coordinate
+GLOW_SCALE = 2         # full-resolution pixels per glow sample axis
+MIN_STRETCH_SPAN = 1.0  # smallest contrast span in byte levels
+CROWD_HALVES = 2.0     # one team per half of the stands
+CROWD_STAGGER_ROWS = 2  # offset every other row by half a seat
+CROWD_ODD_BIT = 1      # selects the alternating stripes of a flag
 BYTE_MAX = 255.0        # top of the 8 bit range
 BIT_HALF_W = 3          # column of the half width of a paper bit
 BIT_HALF_H = 4          # column of the half height of a paper bit
@@ -78,7 +86,7 @@ def _rgb(img):
 
 
 def _clamp(img):
-  return np.clip(img * BYTE_MAX, 0.0, BYTE_MAX).astype(np.uint8)
+  return np.clip(img * BYTE_MAX, ZERO, BYTE_MAX).astype(np.uint8)
 
 
 def _saturation(rgb):
@@ -86,7 +94,7 @@ def _saturation(rgb):
   high = rgb.max(axis=-1)
   low = rgb.min(axis=-1)
   sat = (high - low) / np.maximum(high, EPS)
-  return np.clip(sat * GLOW_SAT_GAIN, 0.0, 1.0)
+  return np.clip(sat * GLOW_SAT_GAIN, ZERO, UNIT)
 
 
 def _box_axis(img, radius, axis):
@@ -140,11 +148,11 @@ class Cpu(primitives.Primitives):
 
   def glow(self, img, threshold, radius, passes):
     """Bright pass at half resolution, then `passes` box blurs."""
-    small = img[::2, ::2].astype(np.float32) / BYTE_MAX
+    small = img[::GLOW_SCALE, ::GLOW_SCALE].astype(np.float32) / BYTE_MAX
     luma = (LUMA_R * small[..., 0] + LUMA_G * small[..., 1]
             + LUMA_B * small[..., 2])
-    span = max(1.0 - threshold, EPS)
-    over = np.clip((luma - threshold) / span, 0.0, 1.0)
+    span = max(UNIT - threshold, EPS)
+    over = np.clip((luma - threshold) / span, ZERO, UNIT)
     over = over * _saturation(small)      # white boards and lines: no halo
     field = small * over[..., None]
     for _ in range(passes):
@@ -156,14 +164,15 @@ class Cpu(primitives.Primitives):
     """Exposure, glow, gamma and vignette."""
     h, w = img.shape[:2]
     base = _rgb(img) * exposure
-    big = np.repeat(np.repeat(glow, 2, axis=0), 2, axis=1)[:h, :w]
+    rows = np.repeat(glow, GLOW_SCALE, axis=0)
+    big = np.repeat(rows, GLOW_SCALE, axis=1)[:h, :w]
     if big.shape[:2] != (h, w):
       pad = ((0, h - big.shape[0]), (0, w - big.shape[1]), (0, 0))
       big = np.pad(big, pad, mode="edge")
     value = base + big * strength
-    out = np.power(np.maximum(value, 0.0), gamma)
+    out = np.power(np.maximum(value, ZERO), gamma)
     out = out * _vignette(h, w, vignette)[..., None]
-    return _clamp(np.minimum(out, 1.0))
+    return _clamp(np.minimum(out, UNIT))
 
   def glow_composite(self, img, threshold, radius, passes, params):
     """Same result as glow + composite, in one call."""
@@ -201,7 +210,7 @@ class Cpu(primitives.Primitives):
 
   def mix(self, a, b, alpha):
     """Linear mix: alpha 0 keeps `a`, alpha 1 keeps `b`."""
-    return _clamp(_rgb(a) * (1.0 - alpha) + _rgb(b) * alpha)
+    return _clamp(_rgb(a) * (UNIT - alpha) + _rgb(b) * alpha)
 
   def histogram(self, img):
     """256 bins of luminance (same scale as the kernel)."""
@@ -211,14 +220,14 @@ class Cpu(primitives.Primitives):
     return np.bincount(bins.ravel(),
                        minlength=int(BYTE_MAX) + 1).astype(np.int32)
 
-  def stretch(self, img, lo, hi, vignette=0.0):
+  def stretch(self, img, lo, hi, vignette=ZERO):
     """Contrast stretch between two levels (the vignette comes last)."""
-    span = max(hi - lo, 1.0)
+    span = max(hi - lo, MIN_STRETCH_SPAN)
     h, w = img.shape[:2]
     out = img.astype(np.float32)
     out -= lo
     out /= span
-    np.clip(out, 0.0, 1.0, out=out)
+    np.clip(out, ZERO, UNIT, out=out)
     out *= _vignette(h, w, vignette)[..., None]   # it never goes over 1
     return _clamp(out)
 
@@ -250,10 +259,10 @@ def _vignette(h, w, amount):
 
 def _vignette_of(h, w, amount):
   """The factor itself: one per pixel, from the centre to the corner."""
-  ys = (np.arange(h, dtype=np.float32) / h) - HALF
-  xs = (np.arange(w, dtype=np.float32) / w) - HALF
+  ys = (np.arange(h, dtype=np.float32) / h) - CENTER
+  xs = (np.arange(w, dtype=np.float32) / w) - CENTER
   d = np.sqrt(ys[:, None] ** 2 + xs[None, :] ** 2) * SQRT2
-  return 1.0 - amount * d * d
+  return UNIT - amount * d * d
 
 
 class _Crowd:
@@ -286,7 +295,7 @@ class _Crowd:
     for k in range(CROWD_ROWS):
       self._row(row + k, colours)
     lit = np.multiply(colours, shade, out=colours)
-    return primitives._to_byte(np.clip(lit, 0.0, 1.0, out=lit))
+    return primitives._to_byte(np.clip(lit, ZERO, UNIT, out=lit))
 
   def _setup(self, img):
     """Sizes and the x of every column (once per frame)."""
@@ -312,7 +321,7 @@ class _Crowd:
 
   def _centre(self):
     """x of the middle of the seat."""
-    return self.cfg[CROWD_W] * 0.5
+    return self.cfg[CROWD_W] * HALF
 
   def _dx(self, lx):
     """Distance of the pixel to the middle of its seat."""
@@ -336,7 +345,7 @@ class _Crowd:
 
   def _team(self):
     """Team of each half of the stands (left player, right player)."""
-    return np.where(self.xs < self.w / 2.0, 0, 1).astype(np.int32)
+    return np.where(self.xs < self.w / CROWD_HALVES, 0, 1).astype(np.int32)
 
   def _var(self, hsh):
     """Brightness of the shirt of that seat (the hash spreads it)."""
@@ -348,9 +357,9 @@ class _Crowd:
   def _half(self, up):
     """Half width of the shirt at that height (rounded shoulders)."""
     cfg = self.cfg
-    half = cfg[CROWD_BODY_W] * 0.5
+    half = cfg[CROWD_BODY_W] * HALF
     return np.where(up > cfg[CROWD_BODY_H] - CROWD_SHOULDER,
-                    half - CROWD_SHOULDER * 0.5, half)
+                    half - CROWD_SHOULDER * HALF, half)
 
   def _jump(self, hsh, team):
     """Little jump of each person; the jumping stand goes higher."""
@@ -362,10 +371,10 @@ class _Crowd:
     amp = cfg[CROWD_JUMP] * (CROWD_JUMP_LOW
                              + CROWD_JUMP_SPREAD * spread * CROWD_SPREAD)
     same = team == self.side
-    amp = amp + np.where(same, cfg[CROWD_GOAL_JUMP] * self.boost, 0.0)
+    amp = amp + np.where(same, cfg[CROWD_GOAL_JUMP] * self.boost, ZERO)
     hz = cfg[CROWD_HZ] + np.where(same,
-                                  cfg[CROWD_GOAL_HZ] * self.boost, 0.0)
-    return amp * (0.5 + 0.5 * np.sin(self.t * hz + phase))
+                                  cfg[CROWD_GOAL_HZ] * self.boost, ZERO)
+    return amp * (HALF + HALF * np.sin(self.t * hz + phase))
 
   def _jumps(self, hsh, team):
     """Jump of every pixel: it is the same in a whole seat row."""
@@ -384,7 +393,8 @@ class _Crowd:
   def _row(self, r, colours):
     """People (and flags) of one row of seats over the current image."""
     cfg = self.cfg
-    cx = self.xs + (r % 2) * (cfg[CROWD_W] // 2)
+    stagger = (r % CROWD_STAGGER_ROWS) * (cfg[CROWD_W] // CROWD_STAGGER_ROWS)
+    cx = self.xs + stagger
     col = (cx / cfg[CROWD_W]).astype(np.int32)
     lx = cx - col * cfg[CROWD_W]
     hsh = _crowd_hash(col, r)
@@ -413,7 +423,7 @@ class _Crowd:
   def _torso(self, dx, up):
     """Mask of the shirt: a rectangle with the shoulders rounded."""
     cfg = self.cfg
-    return ((up >= 0.0) & (up <= cfg[CROWD_BODY_H])
+    return ((up >= ZERO) & (up <= cfg[CROWD_BODY_H])
             & (np.abs(dx) <= self._half(up)))
 
   def _dy(self, up):
@@ -447,7 +457,7 @@ class _Crowd:
     """A darker line at the top of the shirt (it marks the shoulders)."""
     cfg = self.cfg
     return np.where(up > cfg[CROWD_BODY_H] - cfg[CROWD_SHOULDER_EDGE],
-                    cfg[CROWD_SHOULDER_SHADE], 1.0)
+                    cfg[CROWD_SHOULDER_SHADE], UNIT)
 
   def _head_parts(self, d2, dy):
     """(skin, hair, rim) masks of the head."""
@@ -507,7 +517,7 @@ class _Crowd:
 
   def _fx(self, hsh, lx, up):
     """Distance to the left edge of the cloth (it moves with the wave)."""
-    return (lx - self._centre() + self.cfg[CROWD_FLAG_W] * 0.5
+    return (lx - self._centre() + self.cfg[CROWD_FLAG_W] * HALF
             - self._wave(hsh, up))
 
   def _pole(self, colours, lx, up, own):
@@ -518,11 +528,11 @@ class _Crowd:
 
   def _cloth(self, colours, index, fx, team):
     """Cloth of the flag: the stripes and its border, in place."""
-    inside = (fx >= 0.0) & (fx < self.cfg[CROWD_FLAG_W])
+    inside = (fx >= ZERO) & (fx < self.cfg[CROWD_FLAG_W])
     cloth = index[inside]
     stripe = (fx[inside] * CROWD_STRIPES
-              / self.cfg[CROWD_FLAG_W]).astype(np.int32) & 1
-    tone = np.where(stripe == 1, CROWD_FLAG_WHITE_ROW,
+              / self.cfg[CROWD_FLAG_W]).astype(np.int32) & CROWD_ODD_BIT
+    tone = np.where(stripe == CROWD_ODD_BIT, CROWD_FLAG_WHITE_ROW,
                     CROWD_FLAG_A_ROW + team.ravel()[cloth % self.w])
     self._put(colours, cloth, self.pal[tone])
 
@@ -539,7 +549,7 @@ class _Crowd:
   def _fx_at(self, hsh, lx, up, index):
     """Distance to the left edge of the cloth, only at `index`."""
     return (lx.ravel()[index] - self._centre()
-            + self.cfg[CROWD_FLAG_W] * 0.5
+            + self.cfg[CROWD_FLAG_W] * HALF
             - self._wave(hsh.ravel()[index], up.ravel()[index]))
 
 

@@ -24,8 +24,9 @@ BLOCK1D = (32, 1, 1)            # for the kernels with one index (particles)
 COMPILER_OPTIONS = ["-std=c++17", "--use_fast_math"]
 DEFAULT_ARCH = "sm_120"         # RTX 50 series; it is detected at runtime
 KERNEL_FILE = "kernels.cu"      # the CUDA source, next to this module
+CONFIG_HEADER = "kernels_config.cuh"  # compile-time constants for the source
 FATBIN_FILE = "kernels.fatbin"  # the same, compiled (tools/build_kernels)
-HASH_FILE = "kernels.sha256"    # sha256 of the .cu the fatbin comes from
+HASH_FILE = "kernels.sha256"    # sha256 of the expanded CUDA source
 REASON_MAX = 160                # characters of the failure shown on screen
 MIN_ALLOC = 4                   # bytes: CUDA does not allocate 0
 LAMP_FIELDS = 4                 # x, y, radius and power of one lamp
@@ -41,9 +42,12 @@ def kernel_path():
 
 
 def kernel_source():
-  """The CUDA source as a string (read once per call: it is small)."""
+  """Expand the local header for NVCC and PyCUDA temporary source files."""
+  folder = os.path.dirname(kernel_path())
+  with open(os.path.join(folder, CONFIG_HEADER), encoding="utf-8") as fh:
+    config = fh.read()
   with open(kernel_path(), encoding="utf-8") as fh:
-    return fh.read()
+    return fh.read().replace(f'#include "{CONFIG_HEADER}"', config.rstrip())
 
 
 def c_linkage_source():
@@ -71,7 +75,8 @@ def prebuilt_path():
   """Path of the compiled kernels, or None if missing or out of date.
 
     The fatbin is only trusted when the hash saved at build time is the one
-    of the current `kernels.cu`; otherwise the source is compiled (dev PCs).
+    of the current CUDA source (including its header); otherwise the source
+    is compiled on the developer PC.
     """
   folder = os.path.dirname(os.path.abspath(__file__))
   fatbin = os.path.join(folder, FATBIN_FILE)

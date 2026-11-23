@@ -1,18 +1,12 @@
 // Luma histogram kernels: the same problem with different synchronization.
 // Every kernel uses a grid-stride loop, so the launch is identical and only
 // the way the threads update the 256 shared counters changes.
-#define BINS 256  // one bin per 8-bit luma value
-#define LUMA_R 77  // BT.601 weights in 8.8 fixed point (sum = 256)
-#define LUMA_G 150
-#define LUMA_B 29
-#define LUMA_ROUND 128  // half of 256: round to nearest
-#define LUMA_SHIFT 8  // divide by 256
-#define CH 3  // RGB channels per pixel
+#include "kernels_config.cuh"
 
 __device__ unsigned int luma_bin(const unsigned char *src, int pixel)
 {
   int i = pixel * CH;
-  return (LUMA_R * src[i] + LUMA_G * src[i + 1] + LUMA_B * src[i + 2]
+  return (LUMA_R * src[i] + LUMA_G * src[i + GREEN] + LUMA_B * src[i + BLUE]
           + LUMA_ROUND) >> LUMA_SHIFT;
 }
 
@@ -24,7 +18,7 @@ __global__ void k_hist_global(const unsigned char *src, unsigned int *hist,
   int stride = blockDim.x * gridDim.x;
   for (int p = blockIdx.x * blockDim.x + threadIdx.x; p < pixels; p += stride)
   {
-    atomicAdd(&hist[luma_bin(src, p)], 1u);
+    atomicAdd(&hist[luma_bin(src, p)], HIST_INCREMENT);
   }
 }
 
@@ -34,7 +28,7 @@ __device__ void clear_bins(unsigned int *local)
 {
   for (int b = threadIdx.x; b < BINS; b += blockDim.x)
   {
-    local[b] = 0;
+    local[b] = EMPTY_BIN;
   }
 }
 
@@ -42,7 +36,7 @@ __device__ void merge_bins(const unsigned int *local, unsigned int *hist)
 {
   for (int b = threadIdx.x; b < BINS; b += blockDim.x)
   {
-    if (local[b] > 0)
+    if (local[b] > EMPTY_BIN)
     {
       atomicAdd(&hist[b], local[b]);
     }
@@ -58,7 +52,7 @@ __global__ void k_hist_shared(const unsigned char *src, unsigned int *hist,
   int stride = blockDim.x * gridDim.x;
   for (int p = blockIdx.x * blockDim.x + threadIdx.x; p < pixels; p += stride)
   {
-    atomicAdd(&local[luma_bin(src, p)], 1u);
+    atomicAdd(&local[luma_bin(src, p)], HIST_INCREMENT);
   }
   __syncthreads();  // the block finished counting before the merge
   merge_bins(local, hist);
@@ -73,6 +67,6 @@ __global__ void k_hist_racy(const unsigned char *src,
   for (int p = blockIdx.x * blockDim.x + threadIdx.x; p < pixels; p += stride)
   {
     unsigned int b = luma_bin(src, p);
-    hist[b] = hist[b] + 1;
+    hist[b] = hist[b] + HIST_INCREMENT;
   }
 }

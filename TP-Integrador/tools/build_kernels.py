@@ -9,12 +9,12 @@ nvcc 13 still supports plus PTX for the newest one, so a GPU newer than all
 of them still works: the driver compiles that PTX when the game starts.
 
 Run it on the dev PC (it needs nvcc and cl.exe, see INSTALACION.md) every
-time kernels.cu changes:
+time kernels.cu or kernels_config.cuh changes:
 
     py tools/build_kernels.py
 
 It also writes kernels.sha256; the game only trusts the fatbin when that
-hash matches the current kernels.cu, so a stale fatbin is never loaded.
+hash matches the current source and header, so a stale fatbin is never loaded.
 """
 import os
 import subprocess

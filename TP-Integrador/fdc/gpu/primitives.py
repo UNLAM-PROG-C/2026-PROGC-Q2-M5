@@ -9,6 +9,11 @@ import math
 
 import numpy as np
 
+ZERO = 0.0              # bottom of the normalized range
+UNIT = 1.0              # top of the normalized range
+SOBEL_NEAR_WEIGHT = 2.0  # weight of the orthogonal neighbors
+BLACK = 0               # black byte for out-of-image samples
+NO_SCANLINES = 0        # zero interval disables CRT bands
 BYTE_MAX = 255.0        # top of the 8 bit range
 HALF = 0.5              # rounding and mid gray
 LUMA_R = 0.299          # luminance of red (Rec. 601)
@@ -45,7 +50,7 @@ def _rgb(img):
 
 def _to_byte(v):
   """0..1 float to uint8, rounding like the kernels do."""
-  return np.clip(v * BYTE_MAX + HALF, 0.0, BYTE_MAX).astype(np.uint8)
+  return np.clip(v * BYTE_MAX + HALF, ZERO, BYTE_MAX).astype(np.uint8)
 
 
 def _nearest(img, sx, sy):
@@ -57,7 +62,7 @@ def _nearest(img, sx, sy):
   ix = np.clip(ix, 0, w - 1)
   iy = np.clip(iy, 0, h - 1)
   out = img[iy, ix].copy()
-  out[~inside] = 0
+  out[~inside] = BLACK
   return out
 
 
@@ -85,9 +90,9 @@ def _light_field(xs, ys, lights, ambient, cap=0.0):
   total = np.full(xs.shape, ambient, np.float32)
   for x, y, radius, power in list(lights)[:SPOT_MAX]:
     d2 = ((xs - x) ** 2 + (ys - y) ** 2) / (radius * radius)
-    fall = np.clip(1.0 - d2, 0.0, None)
+    fall = np.clip(UNIT - d2, ZERO, None)
     add = power * fall * fall
-    if cap > 0.0:
+    if cap > ZERO:
       add = add * (cap - total)
     total += add
   return total
@@ -95,12 +100,12 @@ def _light_field(xs, ys, lights, ambient, cap=0.0):
 
 def _byte(v):
   """0..255 float to uint8, rounding like the kernels do."""
-  return np.clip(v + HALF, 0.0, BYTE_MAX).astype(np.uint8)
+  return np.clip(v + HALF, ZERO, BYTE_MAX).astype(np.uint8)
 
 
 def _stats(hist, top):
   """(mean, p95, top) of a 256-bin luma histogram."""
-  total = float(hist.sum()) or 1.0
+  total = float(hist.sum()) or UNIT
   levels = np.arange(BINS, dtype=np.float64)
   mean = float((levels * hist).sum() / total)
   cumulative = np.cumsum(hist)
@@ -126,7 +131,7 @@ class Primitives:
 
   def gain(self, img, gain):
     """Multiplies every channel (night, auto exposure)."""
-    return _to_byte(np.clip(_rgb(img) * gain, 0.0, 1.0))
+    return _to_byte(np.clip(_rgb(img) * gain, ZERO, UNIT))
 
   def tint(self, img, rgb):
     """Multiplies each channel by the colour (0..1)."""
@@ -153,20 +158,20 @@ class Primitives:
     a, b, c = pad[:PAD_END, :PAD_END], pad[:PAD_END, 1:-1], pad[:PAD_END, 2:]
     d, f = pad[1:-1, :PAD_END], pad[1:-1, 2:]
     g, hh, k = pad[2:, :PAD_END], pad[2:, 1:-1], pad[2:, 2:]
-    gx = (c + 2.0 * f + k) - (a + 2.0 * d + g)
-    gy = (g + 2.0 * hh + k) - (a + 2.0 * b + c)
+    gx = (c + SOBEL_NEAR_WEIGHT * f + k) - (a + SOBEL_NEAR_WEIGHT * d + g)
+    gy = (g + SOBEL_NEAR_WEIGHT * hh + k) - (a + SOBEL_NEAR_WEIGHT * b + c)
     return np.sqrt(gx * gx + gy * gy) * SOBEL_SCALE
 
   def sobel_normalize(self, edges, max_value=None):
     """Edges to 0..255 over the whole image, in the three channels."""
-    top = max_value if max_value else float(edges.max() or 1.0)
-    u = _to_byte(np.clip(edges / top, 0.0, 1.0))
+    top = max_value if max_value else float(edges.max() or UNIT)
+    u = _to_byte(np.clip(edges / top, ZERO, UNIT))
     return np.stack([u, u, u], axis=-1)
 
   def edge_glow(self, img, edges, strength):
     """Adds the bright edges to the original image."""
     v = _rgb(img) + _rgb(edges) * strength
-    return _to_byte(np.clip(v, 0.0, 1.0))
+    return _to_byte(np.clip(v, ZERO, UNIT))
 
   def ice(self, img, strength, tint, amount):
     """Ice power: bright edges, then a blue tint weighted by `amount`.
@@ -176,11 +181,11 @@ class Primitives:
     edges = self.sobel_normalize(self.sobel(self.to_gray(img)))
     out = self.edge_glow(img, edges, strength)
     blue = self.tint(out, tint)
-    mixed = _rgb(out) * (1.0 - amount) + _rgb(blue) * amount
-    return _to_byte(np.clip(mixed, 0.0, 1.0))
+    mixed = _rgb(out) * (UNIT - amount) + _rgb(blue) * amount
+    return _to_byte(np.clip(mixed, ZERO, UNIT))
 
   # ------------------------------------------------ pods and night (F3/F4)
-  def spotlights(self, img, lights, ambient, tint, cap=0.0):
+  def spotlights(self, img, lights, ambient, tint, cap=ZERO):
     """Multiplies the light of every lamp (0..1) and the warm colour.
 
         `cap` > 0 is the night: the lamps add up towards the cap and never
@@ -191,7 +196,7 @@ class Primitives:
     light = _light_field(xs, ys, lights, ambient, cap)
     colour = np.array(tint, np.float32)
     return _to_byte(np.clip(_rgb(img) * light[..., None] * colour,
-                            0.0, 1.0))
+                            ZERO, UNIT))
 
   def heat_distort(self, img, cx, cy, rad, t, amp):
     """Hot air in a circle: the pixels inside read from a moved place."""
@@ -199,7 +204,7 @@ class Primitives:
     xs, ys = _grid_xy(w, h)
     dx, dy = xs - cx, ys - cy
     d = np.sqrt(dx * dx + dy * dy)
-    fall = np.clip(1.0 - d / rad, 0.0, None)
+    fall = np.clip(UNIT - d / rad, ZERO, None)
     sx = xs + np.trunc(amp * np.sin(ys * HEAT_FREQ_Y + t * HEAT_SPEED_Y)
                        * fall).astype(np.float32)
     sy = ys + np.trunc(amp * HEAT_LATERAL
@@ -224,22 +229,22 @@ class Primitives:
     look = luma * band * vig + grain * noise
     v = luma + (look - luma) * amount
     return _to_byte(np.clip(v[..., None] * np.array(tint, np.float32),
-                            0.0, 1.0))
+                            ZERO, UNIT))
 
   def _crt_bands(self, ys, scan, rows):
     """One darker line every `rows` rows (the sweep of the tube)."""
-    if rows <= 0:
+    if rows <= NO_SCANLINES:
       return np.ones(ys.shape, np.float32)
     dark = (ys.astype(np.int32) % rows) == rows - 1
-    return np.where(dark, 1.0 - scan, 1.0).astype(np.float32)
+    return np.where(dark, UNIT - scan, UNIT).astype(np.float32)
 
   def _crt_vignette(self, xs, ys, amount):
     """Radial darkening: 0 in the centre and 1 in the corners."""
     h, w = ys.shape
-    nx = CRT_SECOND * xs / float(max(w - 1, 1)) - 1.0
-    ny = CRT_SECOND * ys / float(max(h - 1, 1)) - 1.0
+    nx = CRT_SECOND * xs / float(max(w - 1, 1)) - UNIT
+    ny = CRT_SECOND * ys / float(max(h - 1, 1)) - UNIT
     d = np.sqrt(nx * nx + ny * ny) * CRT_DIAGONAL
-    return (1.0 - amount * d * d).astype(np.float32)
+    return (UNIT - amount * d * d).astype(np.float32)
 
   def _crt_grain(self, xs, ys, frame):
     """Grain of (x, y, frame) with the same hash as `k_crt`."""

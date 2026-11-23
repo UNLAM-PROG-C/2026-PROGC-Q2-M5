@@ -39,6 +39,7 @@ ASSETS_SKIP = (os.path.join("icono", "propuestas"),
                os.path.join("icono", "mac"))
 # The CUDA source of the kernels: only the modes with effects in the GPU.
 CUDA_DATA = (("fdc/gpu/kernels.cu", "fdc/gpu"),
+             ("fdc/gpu/kernels_config.cuh", "fdc/gpu"),
              ("fdc/gpu/kernels.fatbin", "fdc/gpu"),
              ("fdc/gpu/kernels.sha256", "fdc/gpu"))
 # DLLs that pycuda._driver imports: they must sit next to the exe (the pip

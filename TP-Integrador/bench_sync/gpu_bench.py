@@ -17,7 +17,8 @@ WARMUP = 3  # launches discarded before timing
 MS_PER_SECOND = 1000  # milliseconds per second
 KERNELS = {'a_global': 'k_hist_global', 'b_shared': 'k_hist_shared',
            'race': 'k_hist_racy'}
-SOURCE = os.path.join(os.path.dirname(__file__), 'kernels.cu')
+KERNEL_DIR = os.path.dirname(os.path.abspath(__file__))
+SOURCE = os.path.join(KERNEL_DIR, 'kernels.cu')
 
 
 class GpuHistogram:
@@ -25,7 +26,8 @@ class GpuHistogram:
 
   def __init__(self):
     with open(SOURCE, encoding='utf-8') as handle:
-      module = pycuda.compiler.SourceModule(handle.read())
+      module = pycuda.compiler.SourceModule(handle.read(),
+                                            include_dirs=[KERNEL_DIR])
     self.fns = {key: module.get_function(name)
                 for key, name in KERNELS.items()}
     sms = drv.Context.get_device().get_attribute(

@@ -7,7 +7,7 @@
 // Images: packed RGB bytes, no row padding, i = (y*w + x)*3.
 // Intermediate light buffers: three float channels per pixel.
 // Unless otherwise noted, w and h describe the output.
-#define CH 3
+#include "kernels_config.cuh"
 
 // Global thread index (blockIdx * blockDim + threadIdx) plus the border
 // check. Each helper returns false when the thread falls outside the data,
@@ -27,9 +27,29 @@ __device__ bool thread_index(int &i, int n)
   return i < n;
 }
 
+// Copy a packed RGB pixel without conversions.
+__device__ __forceinline__ void copy_rgb(const unsigned char *src,
+                                         unsigned char *dst)
+{
+  dst[RED] = src[RED];
+  dst[GREEN] = src[GREEN];
+  dst[BLUE] = src[BLUE];
+}
+
+__device__ __forceinline__ float bright_gain(const unsigned char *src,
+                                             int i, float threshold)
+{
+  float l = (LUMA_RED * src[i] + LUMA_GREEN * src[i + GREEN]
+             + LUMA_BLUE * src[i + BLUE]) / PIXEL_MAX;
+  float k = l > threshold ? (l - threshold) / (UNIT - threshold) : ZERO;
+  float hi = fmaxf(src[i], fmaxf(src[i + GREEN], src[i + BLUE])) / PIXEL_MAX;
+  float lo = fminf(src[i], fminf(src[i + GREEN], src[i + BLUE])) / PIXEL_MAX;
+  float sat = hi > ZERO ? (hi - lo) / hi : ZERO;
+  return k * fminf(sat * GLOW_SAT_GAIN, UNIT);
+}
+
 // Glow: scale the halo by saturation, with a peak gain of 1.
 // White signs and lines produce no halo; saturated sparks and ice do.
-#define GLOW_SAT_GAIN 1.5f
 // Keep only samples above the threshold, one pixel per 2x2 block.
 // The halo does not need full-resolution detail.
 __global__ void bright_pass(const unsigned char *src, float *dst,
@@ -37,18 +57,27 @@ __global__ void bright_pass(const unsigned char *src, float *dst,
 {
   int x, y;
   if (!pixel_coords(x, y, hw, hh)) return;
-  int i = ((2 * y) * w + 2 * x) * CH;
-  float l = (0.299f * src[i] + 0.587f * src[i + 1]
-             + 0.114f * src[i + 2]) / 255.0f;
-  float k = l > threshold ? (l - threshold) / (1.0f - threshold) : 0.0f;
-  float hi = fmaxf(src[i], fmaxf(src[i + 1], src[i + 2])) / 255.0f;
-  float lo = fminf(src[i], fminf(src[i + 1], src[i + 2])) / 255.0f;
-  float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;
-  k *= fminf(sat * GLOW_SAT_GAIN, 1.0f);  // suppress halos on white
+  int i = ((GLOW_SCALE * y) * w + GLOW_SCALE * x) * CH;
+  float k = bright_gain(src, i, threshold);
   int o = (y * hw + x) * CH;
-  dst[o] = src[i] * k / 255.0f;
-  dst[o + 1] = src[i + 1] * k / 255.0f;
-  dst[o + 2] = src[i + 2] * k / 255.0f;
+  dst[o] = src[i] * k / PIXEL_MAX;
+  dst[o + GREEN] = src[i + GREEN] * k / PIXEL_MAX;
+  dst[o + BLUE] = src[i + BLUE] * k / PIXEL_MAX;
+}
+
+// Blur along one axis, preserving the sample order of each channel.
+__device__ __forceinline__ void glow_average(const float *src, float *dst,
+                                             int count, int step)
+{
+  float rgb[CH] = {ZERO, ZERO, ZERO};
+  for (int k = 0; k < count; ++k)
+  {
+    int i = k * step * CH;
+    for (int c = 0; c < CH; ++c)
+      rgb[c] += src[i + c];
+  }
+  for (int c = 0; c < CH; ++c)
+    dst[c] = rgb[c] / (float)count;
 }
 
 // Horizontal blur of the float halo buffer.
@@ -57,14 +86,8 @@ __global__ void glow_rows(const float *src, float *dst, int w, int h, int r)
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - r), x1 = min(w - 1, x + r);
-  float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-  for (int k = x0; k <= x1; ++k)
-  {
-    int i = (y * w + k) * CH;
-    a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
-  }
-  float n = (float)(x1 - x0 + 1); int o = (y * w + x) * CH;
-  dst[o] = a0 / n; dst[o + 1] = a1 / n; dst[o + 2] = a2 / n;
+  int i = (y * w + x0) * CH, o = (y * w + x) * CH;
+  glow_average(src + i, dst + o, x1 - x0 + 1, 1);
 }
 
 // Vertical blur of the float halo buffer.
@@ -73,14 +96,32 @@ __global__ void glow_cols(const float *src, float *dst, int w, int h, int r)
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int y0 = max(0, y - r), y1 = min(h - 1, y + r);
-  float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-  for (int k = y0; k <= y1; ++k)
+  int i = (y0 * w + x) * CH, o = (y * w + x) * CH;
+  glow_average(src + i, dst + o, y1 - y0 + 1, w);
+}
+
+__device__ __forceinline__ float vignette_gain(int x, int y, int w, int h,
+                                                float vignette)
+{
+  float cx = (x / (float)w) - CENTER;
+  float cy = (y / (float)h) - CENTER;
+  float d = sqrtf(cx * cx + cy * cy) * SQRT2;
+  return UNIT - vignette * d * d;
+}
+
+__device__ __forceinline__ void composite_rgb(
+    const unsigned char *base, const float *glow, unsigned char *out,
+    float exposure, float gamma, float v, float glow_strength)
+{
+  float c[CH];
+  for (int k = 0; k < CH; ++k)
   {
-    int i = (k * w + x) * CH;
-    a0 += src[i]; a1 += src[i + 1]; a2 += src[i + 2];
+    float p = (base[k] / PIXEL_MAX) * exposure + glow[k] * glow_strength;
+    p = powf(p > ZERO ? p : ZERO, gamma) * v;
+    c[k] = (p > UNIT ? UNIT : p) * PIXEL_MAX;
   }
-  float n = (float)(y1 - y0 + 1); int o = (y * w + x) * CH;
-  dst[o] = a0 / n; dst[o + 1] = a1 / n; dst[o + 2] = a2 / n;
+  for (int k = 0; k < CH; ++k)
+    out[k] = (unsigned char)c[k];
 }
 
 // Final composition: exposure, gamma, additive halo and vignette.
@@ -91,26 +132,25 @@ __global__ void composite(const unsigned char *base, const float *glow,
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
-  int gx = x / 2 < gw ? x / 2 : gw - 1;
-  int gy = y / 2 < gh ? y / 2 : gh - 1;
-  int gi = (gy * gw + gx) * CH;
-  int i = (y * w + x) * CH;
-  float cx = (x / (float)w) - 0.5f;
-  float cy = (y / (float)h) - 0.5f;
-  float d = sqrtf(cx * cx + cy * cy) * 1.41421356f;
-  float v = 1.0f - vignette * d * d;
-  float c[CH];
-  for (int k = 0; k < CH; ++k)
+  int gx = x / GLOW_SCALE < gw ? x / GLOW_SCALE : gw - 1;
+  int gy = y / GLOW_SCALE < gh ? y / GLOW_SCALE : gh - 1;
+  int gi = (gy * gw + gx) * CH, i = (y * w + x) * CH;
+  float v = vignette_gain(x, y, w, h, vignette);
+  composite_rgb(base + i, glow + gi, out + i, exposure, gamma, v,
+                glow_strength);
+}
+
+__device__ __forceinline__ void splat_row(const float *rgb, float *acc,
+                                           int cx, int r, int w, float gain)
+{
+  for (int x = cx - r; x <= cx + r; ++x)
   {
-    float p = (base[i + k] / 255.0f) * exposure
-              + glow[gi + k] * glow_strength;
-    p = powf(p > 0.0f ? p : 0.0f, gamma) * v;
-    p = p > 1.0f ? 1.0f : p;
-    c[k] = p * 255.0f;
+    if (x < 0 || x >= w) continue;
+    int i = x * CH;
+    atomicAdd(&acc[i], rgb[RED] * gain);
+    atomicAdd(&acc[i + GREEN], rgb[GREEN] * gain);
+    atomicAdd(&acc[i + BLUE], rgb[BLUE] * gain);
   }
-  out[i] = (unsigned char)c[0];
-  out[i + 1] = (unsigned char)c[1];
-  out[i + 2] = (unsigned char)c[2];
 }
 
 // Each particle spreads light over a square of side `size` pixels.
@@ -120,21 +160,26 @@ __global__ void splat_particles(const float *pos, const float *col, int n,
 {
   int p;
   if (!thread_index(p, n)) return;
-  int cx = (int)pos[2 * p];
-  int cy = (int)pos[2 * p + 1];
-  int r = (int)col[4 * p + 3];
-  float cr = col[4 * p], cg = col[4 * p + 1], cb = col[4 * p + 2];
+  int cx = (int)pos[POSITION_FIELDS * p];
+  int cy = (int)pos[POSITION_FIELDS * p + 1];
+  const float *fields = col + PARTICLE_FIELDS * p;
+  int r = (int)fields[PARTICLE_RADIUS];
+  const float rgb[CH] = {fields[RED], fields[GREEN], fields[BLUE]};
   for (int y = cy - r; y <= cy + r; ++y)
+    if (y >= 0 && y < h) splat_row(rgb, acc + y * w * CH, cx, r, w, gain);
+}
+
+__device__ __forceinline__ void confetti_row(
+    const float *rgb, const unsigned char *img, float *acc,
+    int cx, int hw, int w, float gain)
+{
+  for (int x = cx - hw; x <= cx + hw; ++x)
   {
-    if (y < 0 || y >= h) continue;
-    for (int x = cx - r; x <= cx + r; ++x)
-    {
-      if (x < 0 || x >= w) continue;
-      int i = (y * w + x) * CH;
-      atomicAdd(&acc[i], cr * gain);
-      atomicAdd(&acc[i + 1], cg * gain);
-      atomicAdd(&acc[i + 2], cb * gain);
-    }
+    if (x < 0 || x >= w) continue;
+    int i = x * CH;
+    atomicAdd(&acc[i], (rgb[RED] - img[i] / PIXEL_MAX) * gain);
+    atomicAdd(&acc[i + GREEN], (rgb[GREEN] - img[i + GREEN] / PIXEL_MAX) * gain);
+    atomicAdd(&acc[i + BLUE], (rgb[BLUE] - img[i + BLUE] / PIXEL_MAX) * gain);
   }
 }
 
@@ -142,28 +187,18 @@ __global__ void splat_particles(const float *pos, const float *col, int n,
 // Blend with the background to preserve paper colors over the pitch.
 // Atomics accumulate the difference; add_light adds it to the image.
 __global__ void confetti(const float *pos, const float *col, int n,
-                         const unsigned char *img, float *acc, int w, int h,
-                         float gain)
+    const unsigned char *img, float *acc, int w, int h, float gain)
 {
   int p;
   if (!thread_index(p, n)) return;
-  int cx = (int)pos[2 * p];
-  int cy = (int)pos[2 * p + 1];
-  int hw = (int)col[5 * p + 3];  // paper half-width
-  int hh = (int)col[5 * p + 4];  // paper half-height (near 0 edge-on)
-  float tr = col[5 * p], tg = col[5 * p + 1], tb = col[5 * p + 2];
+  int cx = (int)pos[POSITION_FIELDS * p];
+  int cy = (int)pos[POSITION_FIELDS * p + 1];
+  const float *fields = col + PAPER_FIELDS * p;
+  int hw = (int)fields[PAPER_HALF_W], hh = (int)fields[PAPER_HALF_H];
+  const float rgb[CH] = {fields[RED], fields[GREEN], fields[BLUE]};
   for (int y = cy - hh; y <= cy + hh; ++y)
-  {
-    if (y < 0 || y >= h) continue;
-    for (int x = cx - hw; x <= cx + hw; ++x)
-    {
-      if (x < 0 || x >= w) continue;
-      int i = (y * w + x) * CH;
-      atomicAdd(&acc[i], (tr - img[i] / 255.0f) * gain);
-      atomicAdd(&acc[i + 1], (tg - img[i + 1] / 255.0f) * gain);
-      atomicAdd(&acc[i + 2], (tb - img[i + 2] / 255.0f) * gain);
-    }
-  }
+    if (y >= 0 && y < h)
+      confetti_row(rgb, img + y * w * CH, acc + y * w * CH, cx, hw, w, gain);
 }
 
 // Add the accumulated light to the image (particles and spotlights).
@@ -175,9 +210,9 @@ __global__ void add_light(const unsigned char *base, const float *acc,
   int i = (y * w + x) * CH;
   for (int k = 0; k < CH; ++k)
   {
-    float p = base[i + k] / 255.0f + acc[i + k] * gain;
-    p = p > 1.0f ? 1.0f : p;
-    out[i + k] = (unsigned char)(p * 255.0f);
+    float p = base[i + k] / PIXEL_MAX + acc[i + k] * gain;
+    p = p > UNIT ? UNIT : p;
+    out[i + k] = (unsigned char)(p * PIXEL_MAX);
   }
 }
 
@@ -189,12 +224,12 @@ __global__ void heat_distort(const unsigned char *src, unsigned char *out,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int sx = x + (int)(amp * sinf(y / period + phase));
-  int sy = y + (int)(amp * 0.5f * cosf(x / period + phase));
+  int sy = y + (int)(amp * HALF * cosf(x / period + phase));
   sx = min(max(sx, 0), w - 1);
   sy = min(max(sy, 0), h - 1);
   int i = (y * w + x) * CH;
   int j = (sy * w + sx) * CH;
-  out[i] = src[j]; out[i + 1] = src[j + 1]; out[i + 2] = src[j + 2];
+  copy_rgb(src + j, out + i);
 }
 
 // Linear blend of two images (alpha 0 = a, alpha 1 = b).
@@ -205,7 +240,7 @@ __global__ void mix_layers(const unsigned char *a, const unsigned char *b,
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
   for (int k = 0; k < CH; ++k)
-    out[i + k] = (unsigned char)(a[i + k] * (1.0f - alpha)
+    out[i + k] = (unsigned char)(a[i + k] * (UNIT - alpha)
                                  + b[i + k] * alpha);
 }
 
@@ -215,11 +250,21 @@ __global__ void luma_hist(const unsigned char *src, int *hist, int w, int h)
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  float l = (0.299f * src[i] + 0.587f * src[i + 1]
-             + 0.114f * src[i + 2]);
+  float l = (LUMA_RED * src[i] + LUMA_GREEN * src[i + GREEN]
+             + LUMA_BLUE * src[i + BLUE]);
   int bin = (int)l;
-  bin = bin < 0 ? 0 : (bin > 255 ? 255 : bin);
-  atomicAdd(&hist[bin], 1);
+  bin = bin < 0 ? 0 : (bin > PIXEL_MAX_INT ? PIXEL_MAX_INT : bin);
+  atomicAdd(&hist[bin], HIST_INCREMENT);
+}
+
+__device__ __forceinline__ float unit_clip(float value)
+{
+  return value < ZERO ? ZERO : (value > UNIT ? UNIT : value);
+}
+
+__device__ __forceinline__ float byte_clip(float value)
+{
+  return value < ZERO ? ZERO : (value > PIXEL_MAX ? PIXEL_MAX : value);
 }
 
 // Stretch contrast between two levels computed on the CPU. Apply the
@@ -230,26 +275,17 @@ __global__ void stretch(const unsigned char *src, unsigned char *out, int w,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  float span = hi - lo > 1.0f ? hi - lo : 1.0f;
-  float cx = (x / (float)w) - 0.5f;
-  float cy = (y / (float)h) - 0.5f;
-  float d = sqrtf(cx * cx + cy * cy) * 1.41421356f;
-  float v = 1.0f - vignette * d * d;
+  float span = hi - lo > MIN_STRETCH_SPAN ? hi - lo : MIN_STRETCH_SPAN;
+  float v = vignette_gain(x, y, w, h, vignette);
   for (int k = 0; k < CH; ++k)
   {
-    float p = (src[i + k] - lo) / span;
-    p = p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
-    out[i + k] = (unsigned char)(p * v * 255.0f);
+    float p = unit_clip((src[i + k] - lo) / span);
+    out[i + k] = (unsigned char)(p * v * PIXEL_MAX);
   }
 }
 
 // F1 image primitives: one thread per pixel, 2D indices, early border
 // checks and global memory buffers.
-
-#define GRAY_RED 0.299f    // BT.601 red luma weight
-#define GRAY_GREEN 0.587f  // BT.601 green luma weight
-#define GRAY_BLUE 0.114f   // BT.601 blue luma weight
-#define GRAY_ROUND 0.5f    // round to nearest byte
 
 // One thread per pixel; the border check protects global memory reads.
 __global__ void k_gray(const unsigned char *src, unsigned char *dst,
@@ -258,10 +294,10 @@ __global__ void k_gray(const unsigned char *src, unsigned char *dst,
   int x, y;
   if (!pixel_coords(x, y, width, height)) return;
   int i = (y * width + x) * CH;
-  float luma = GRAY_RED * src[i] + GRAY_GREEN * src[i + 1]
-               + GRAY_BLUE * src[i + 2];
-  unsigned char gray = (unsigned char)(luma + GRAY_ROUND);
-  dst[i] = dst[i + 1] = dst[i + 2] = gray;
+  float luma = LUMA_RED * src[i] + LUMA_GREEN * src[i + GREEN]
+               + LUMA_BLUE * src[i + BLUE];
+  unsigned char gray = (unsigned char)(luma + BYTE_ROUND);
+  dst[i] = dst[i + GREEN] = dst[i + BLUE] = gray;
 }
 
 // Negative: subtract each channel from 255.
@@ -271,9 +307,9 @@ __global__ void k_invert(const unsigned char *src, unsigned char *dst,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  dst[i] = 255 - src[i];
-  dst[i + 1] = 255 - src[i + 1];
-  dst[i + 2] = 255 - src[i + 2];
+  dst[i] = PIXEL_MAX_INT - src[i];
+  dst[i + GREEN] = PIXEL_MAX_INT - src[i + GREEN];
+  dst[i + BLUE] = PIXEL_MAX_INT - src[i + BLUE];
 }
 
 // Gain: multiply each channel for night lighting or auto exposure.
@@ -286,8 +322,8 @@ __global__ void k_gain(const unsigned char *src, unsigned char *dst,
   for (int c = 0; c < CH; ++c)
   {
     float v = src[i + c] * gain;
-    v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
-    dst[i + c] = (unsigned char)(v + 0.5f);
+    v = v < ZERO ? ZERO : (v > PIXEL_MAX ? PIXEL_MAX : v);
+    dst[i + c] = (unsigned char)(v + BYTE_ROUND);
   }
 }
 
@@ -298,9 +334,22 @@ __global__ void k_tint(const unsigned char *src, unsigned char *dst,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  dst[i] = (unsigned char)(src[i] * r + 0.5f);
-  dst[i + 1] = (unsigned char)(src[i + 1] * g + 0.5f);
-  dst[i + 2] = (unsigned char)(src[i + 2] * b + 0.5f);
+  dst[i] = (unsigned char)(src[i] * r + BYTE_ROUND);
+  dst[i + GREEN] = (unsigned char)(src[i + GREEN] * g + BYTE_ROUND);
+  dst[i + BLUE] = (unsigned char)(src[i + BLUE] * b + BYTE_ROUND);
+}
+
+__device__ __forceinline__ void rotate_sample(
+    const unsigned char *src, unsigned char *dst, int w, int h, int x, int y)
+{
+  if (x < 0 || x >= w || y < 0 || y >= h)
+  {
+    dst[RED] = BLACK;
+    dst[GREEN] = BLACK;
+    dst[BLUE] = BLACK;
+    return;
+  }
+  copy_rgb(src + (y * w + x) * CH, dst);
 }
 
 // Rotate about the center using nearest-neighbor sampling.
@@ -310,21 +359,12 @@ __global__ void k_rotate(const unsigned char *src, unsigned char *dst,
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
-  float cx = (w - 1) * 0.5f, cy = (h - 1) * 0.5f;
+  float cx = (w - 1) * HALF, cy = (h - 1) * HALF;
   float c = cosf(angle), s = sinf(angle);
   float dx = x - cx, dy = y - cy;
-  int sx = (int)(cx + c * dx + s * dy + 0.5f);
-  int sy = (int)(cy - s * dx + c * dy + 0.5f);
-  int o = (y * w + x) * CH;
-  if (sx < 0 || sx >= w || sy < 0 || sy >= h)
-  {
-    dst[o] = 0; dst[o + 1] = 0; dst[o + 2] = 0;
-    return;
-  }
-  int i = (sy * w + sx) * CH;
-  dst[o] = src[i];
-  dst[o + 1] = src[i + 1];
-  dst[o + 2] = src[i + 2];
+  int sx = (int)(cx + c * dx + s * dy + BYTE_ROUND);
+  int sy = (int)(cy - s * dx + c * dy + BYTE_ROUND);
+  rotate_sample(src, dst + (y * w + x) * CH, w, h, sx, sy);
 }
 
 // Ice power (F11): two passes, one image upload and one download.
@@ -336,8 +376,23 @@ __global__ void k_rotate(const unsigned char *src, unsigned char *dst,
 // Normalized luma of one pixel for the ice edges.
 __device__ float ice_gray(const unsigned char *src, int i)
 {
-  return (0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2]) /
-      255.0f;
+  return (LUMA_RED * src[i] + LUMA_GREEN * src[i + GREEN]
+          + LUMA_BLUE * src[i + BLUE]) / PIXEL_MAX;
+}
+
+__device__ __forceinline__ float sobel_edges(
+    const unsigned char *src, int w, int x, int x0, int x1, int y0, int y1, int y)
+{
+  float a = ice_gray(src, (y0 * w + x0) * CH);
+  float b = ice_gray(src, (y0 * w + x) * CH);
+  float c = ice_gray(src, (y0 * w + x1) * CH);
+  float d = ice_gray(src, (y * w + x0) * CH), f = ice_gray(src, (y * w + x1) * CH);
+  float g = ice_gray(src, (y1 * w + x0) * CH);
+  float hh = ice_gray(src, (y1 * w + x) * CH);
+  float k = ice_gray(src, (y1 * w + x1) * CH);
+  float gx = (c + SOBEL_NEAR_WEIGHT * f + k) - (a + SOBEL_NEAR_WEIGHT * d + g);
+  float gy = (g + SOBEL_NEAR_WEIGHT * hh + k) - (a + SOBEL_NEAR_WEIGHT * b + c);
+  return sqrtf(gx * gx + gy * gy) * SOBEL_SCALE;
 }
 
 __global__ void k_ice_edges(const unsigned char *src, float *edges,
@@ -347,19 +402,30 @@ __global__ void k_ice_edges(const unsigned char *src, float *edges,
   if (!pixel_coords(x, y, w, h)) return;
   int x0 = max(0, x - 1), x1 = min(w - 1, x + 1);
   int y0 = max(0, y - 1), y1 = min(h - 1, y + 1);
-  float a = ice_gray(src, (y0 * w + x0) * CH);
-  float b = ice_gray(src, (y0 * w + x) * CH);
-  float c = ice_gray(src, (y0 * w + x1) * CH);
-  float d = ice_gray(src, (y * w + x0) * CH);
-  float f = ice_gray(src, (y * w + x1) * CH);
-  float g = ice_gray(src, (y1 * w + x0) * CH);
-  float hh = ice_gray(src, (y1 * w + x) * CH);
-  float k = ice_gray(src, (y1 * w + x1) * CH);
-  float gx = (c + 2.0f * f + k) - (a + 2.0f * d + g);
-  float gy = (g + 2.0f * hh + k) - (a + 2.0f * b + c);
-  float v = sqrtf(gx * gx + gy * gy) * 0.25f;
+  float v = sobel_edges(src, w, x, x0, x1, y0, y1, y);
   edges[y * w + x] = v;
   atomicMax(top, __float_as_uint(v));
+}
+
+__device__ __forceinline__ float ice_edge(float magnitude, unsigned int peak)
+{
+  float max_value = __uint_as_float(peak);
+  float v = magnitude / (max_value > ZERO ? max_value : UNIT);
+  return (float)(unsigned char)(unit_clip(v) * PIXEL_MAX + BYTE_ROUND);
+}
+
+__device__ __forceinline__ void ice_tint(
+    const unsigned char *src, unsigned char *dst, const float *tint,
+    float edge, float strength, float amount)
+{
+  for (int c = 0; c < CH; ++c)
+  {
+    float lit = byte_clip(src[c] + edge * strength);
+    float glow = (float)(unsigned char)(lit + BYTE_ROUND);
+    float blue = (float)(unsigned char)(glow * tint[c] + BYTE_ROUND);
+    float mixed = glow * (UNIT - amount) + blue * amount;
+    dst[c] = (unsigned char)mixed;
+  }
 }
 
 __global__ void k_ice_apply(const unsigned char *src, const float *edges,
@@ -370,98 +436,80 @@ __global__ void k_ice_apply(const unsigned char *src, const float *edges,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  float max_value = __uint_as_float(top[0]);
-  float v = edges[y * w + x] / (max_value > 0.0f ? max_value : 1.0f);
-  v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-  float edge = (float)(unsigned char)(v * 255.0f + 0.5f);
-  float tint[3];
-  tint[0] = tr; tint[1] = tg; tint[2] = tb;
-  for (int c = 0; c < CH; ++c)
+  float edge = ice_edge(edges[y * w + x], top[0]);
+  float tint[CH] = {tr, tg, tb};
+  ice_tint(src + i, dst + i, tint, edge, strength, amount);
+}
+
+__device__ __forceinline__ float spotlight_gain(
+    const float *lamp, int x, int y, float light, float limit)
+{
+  float dx = x - lamp[0], dy = y - lamp[1];
+  float r = lamp[LAMP_RADIUS], power = lamp[LAMP_POWER];
+  float d2 = (dx * dx + dy * dy) / (r * r);
+  if (d2 < UNIT)
   {
-    float lit = src[i + c] + edge * strength;
-    lit = lit < 0.0f ? 0.0f : (lit > 255.0f ? 255.0f : lit);
-    float glow = (float)(unsigned char)(lit + 0.5f);
-    float blue = (float)(unsigned char)(glow * tint[c] + 0.5f);
-    float mixed = glow * (1.0f - amount) + blue * amount;
-    dst[i + c] = (unsigned char)mixed;
+    float fall = UNIT - d2;
+    if (limit > ZERO) light += power * fall * fall * (limit - light);
+    else light += power * fall * fall;
   }
+  return light;
+}
+
+__device__ __forceinline__ unsigned char spot_byte(
+    unsigned char value, float light, float tint)
+{
+  float v = value * light * tint;
+  return (unsigned char)(byte_clip(v) + BYTE_ROUND);
 }
 
 // Night and blackout (F3/F4): one thread per pixel with an early border
 // check. Read lights (x, y, radius, power) from global memory and multiply
 // the pixel by their combined light. With limit > 0 each lamp adds a
 // fraction of the remaining headroom. With limit == 0 the sum is uncapped.
-#define SPOT_MAX 8  // maximum lights per pixel
 __global__ void k_spotlights(const unsigned char *src, unsigned char *dst,
                              int w, int h, const float *lights, int n,
-                             float ambient, float tr, float tg, float tb,
-                             float limit)
+                             float ambient, float tr, float tg, float tb, float limit)
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   float light = ambient;
   for (int k = 0; k < n && k < SPOT_MAX; ++k)
-  {
-    float dx = x - lights[4 * k];
-    float dy = y - lights[4 * k + 1];
-    float r = lights[4 * k + 2];
-    float power = lights[4 * k + 3];
-    float d2 = (dx * dx + dy * dy) / (r * r);
-    if (d2 < 1.0f)
-    {
-      float fall = 1.0f - d2;  // smooth falloff from the center
-      if (limit > 0.0f)
-      {
-        light += power * fall * fall * (limit - light);
-      }
-      else
-      {
-        light += power * fall * fall;
-      }
-    }
-  }
+    light = spotlight_gain(lights + LAMP_FIELDS * k, x, y, light, limit);
   int i = (y * w + x) * CH;
-  float r = src[i] * light * tr;
-  float g = src[i + 1] * light * tg;
-  float b = src[i + 2] * light * tb;
-  r = r < 0.0f ? 0.0f : (r > 255.0f ? 255.0f : r);
-  g = g < 0.0f ? 0.0f : (g > 255.0f ? 255.0f : g);
-  b = b < 0.0f ? 0.0f : (b > 255.0f ? 255.0f : b);
-  dst[i] = (unsigned char)(r + 0.5f);
-  dst[i + 1] = (unsigned char)(g + 0.5f);
-  dst[i + 2] = (unsigned char)(b + 0.5f);
+  dst[i] = spot_byte(src[i], light, tr);
+  dst[i + GREEN] = spot_byte(src[i + GREEN], light, tg);
+  dst[i + BLUE] = spot_byte(src[i + BLUE], light, tb);
+}
+
+__device__ __forceinline__ void fire_sample_coords(
+    int x, int y, float cx, float cy, float rad, float t, float amp,
+    int &sx, int &sy)
+{
+  float dx = x - cx, dy = y - cy;
+  float d = sqrtf(dx * dx + dy * dy);
+  if (d < rad)
+  {
+    float fall = UNIT - d / rad;
+    sx = x + (int)(amp * sinf(y * HEAT_FREQ_Y + t * HEAT_SPEED_Y) * fall);
+    sy = y + (int)(amp * HEAT_LATERAL
+                   * sinf(x * HEAT_FREQ_X + t * HEAT_SPEED_X) * fall);
+  }
 }
 
 // Hot air around the ball during fire power. Pixels outside the radius
 // are copied unchanged. The launch size is independent of the radius.
-#define HEAT_FREQ_Y 0.12f  // vertical wave radians per pixel
-#define HEAT_SPEED_Y 18.0f  // vertical wave radians per second
-#define HEAT_FREQ_X 0.09f  // horizontal wave radians per pixel
-#define HEAT_SPEED_X 14.0f  // horizontal wave radians per second
-#define HEAT_LATERAL 0.4f  // scale the horizontal displacement
 __global__ void k_heat_distort(const unsigned char *src, unsigned char *dst,
                                int w, int h, float cx, float cy, float rad,
                                float t, float amp)
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
-  float dx = x - cx, dy = y - cy;
-  float d = sqrtf(dx * dx + dy * dy);
   int sx = x, sy = y;
-  if (d < rad)
-  {
-    float fall = 1.0f - d / rad;  // fall off to zero at the radius
-    sx = x + (int)(amp * sinf(y * HEAT_FREQ_Y + t * HEAT_SPEED_Y) * fall);
-    sy = y + (int)(amp * HEAT_LATERAL
-                   * sinf(x * HEAT_FREQ_X + t * HEAT_SPEED_X) * fall);
-  }
-  sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);  // clamp to the image border
+  fire_sample_coords(x, y, cx, cy, rad, t, amp, sx, sy);
+  sx = sx < 0 ? 0 : (sx >= w ? w - 1 : sx);
   sy = sy < 0 ? 0 : (sy >= h ? h - 1 : sy);
-  int i = (y * w + x) * CH;
-  int j = (sy * w + sx) * CH;
-  dst[i] = src[j];
-  dst[i + 1] = src[j + 1];
-  dst[i + 2] = src[j + 2];
+  copy_rgb(src + (sy * w + sx) * CH, dst + (y * w + x) * CH);
 }
 
 // Night luma histogram (F4): atomicAdd for the bins and atomicMax for
@@ -472,9 +520,9 @@ __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  float l = 0.299f * src[i] + 0.587f * src[i + 1] + 0.114f * src[i + 2];
-  unsigned int bin = (unsigned int)(l + 0.5f);  // same rounding as k_gray
-  atomicAdd(&hist[bin], 1u);
+  float l = LUMA_RED * src[i] + LUMA_GREEN * src[i + GREEN] + LUMA_BLUE * src[i + BLUE];
+  unsigned int bin = (unsigned int)(l + BYTE_ROUND);  // same rounding as k_gray
+  atomicAdd(&hist[bin], HIST_INCREMENT_U);
   atomicMax(luma_max, bin);
 }
 
@@ -482,12 +530,47 @@ __global__ void k_luma_hist(const unsigned char *src, unsigned int *hist,
 // F5: replay
 // ===========================================================================
 
+__device__ __forceinline__ float crt_vignette(int x, int y, int w, int h,
+                                               float vignette)
+{
+  float nx = CRT_COORD_SCALE * x / (float)(w > 1 ? w - 1 : 1) - UNIT;
+  float ny = CRT_COORD_SCALE * y / (float)(h > 1 ? h - 1 : 1) - UNIT;
+  float d = sqrtf(nx * nx + ny * ny) * CRT_DIAGONAL;
+  return UNIT - vignette * d * d;
+}
+
+// Pseudorandom grain with intentional unsigned overflow.
+__device__ __forceinline__ float crt_grain(int x, int y, int frame)
+{
+  unsigned int seed = (unsigned int)(x * CRT_X_MUL + y * CRT_Y_MUL
+                                    + frame * CRT_FRAME_MUL) * CRT_NOISE_MUL;
+  return (float)((seed >> CRT_NOISE_SHIFT) & CRT_NOISE_MASK) / PIXEL_MAX - HALF;
+}
+
+__device__ __forceinline__ float crt_luma(
+    const unsigned char *src, float band, float vig,
+    float grain, float noise, float amount)
+{
+  float l = (LUMA_RED * src[RED] + LUMA_GREEN * src[GREEN]
+             + LUMA_BLUE * src[BLUE]) / PIXEL_MAX;
+  float crt = l * band * vig + grain * noise;
+  return l + (crt - l) * amount;
+}
+
+__device__ __forceinline__ void crt_tint(unsigned char *dst, float v,
+                                         float tr, float tg, float tb)
+{
+  float out[CH] = {v * tr, v * tg, v * tb};
+  for (int c = 0; c < CH; ++c)
+  {
+    float b = out[c] * PIXEL_MAX;
+    dst[c] = (unsigned char)(byte_clip(b) + BYTE_ROUND);
+  }
+}
+
 // CRT replay: tinted gray, scanlines, vignette and grain. Each thread
 // processes one pixel in global memory. Integer noise depends only on
 // (x, y, frame), so NumPy can reproduce it exactly.
-#define CRT_NOISE_MUL 2654435761u  // integer noise multiplier
-#define CRT_NOISE_SHIFT 24  // keep the high bits of the noise
-#define CRT_DIAGONAL 0.70710678f  // 1/sqrt(2): normalize the vignette
 
 __global__ void k_crt(const unsigned char *src, unsigned char *dst,
                       int w, int h, int frame, float amount, float scan,
@@ -497,29 +580,11 @@ __global__ void k_crt(const unsigned char *src, unsigned char *dst,
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
   int i = (y * w + x) * CH;
-  float l = (0.299f * src[i] + 0.587f * src[i + 1]
-             + 0.114f * src[i + 2]) / 255.0f;
-  // Darken every `rows`-th row to simulate CRT scanlines.
-  float band = (rows > 0 && y % rows == rows - 1) ? (1.0f - scan) : 1.0f;
-  // Radial vignette: 0 at the center, 1 at the corners.
-  float nx = 2.0f * x / (float)(w > 1 ? w - 1 : 1) - 1.0f;
-  float ny = 2.0f * y / (float)(h > 1 ? h - 1 : 1) - 1.0f;
-  float d = sqrtf(nx * nx + ny * ny) * CRT_DIAGONAL;
-  float vig = 1.0f - vignette * d * d;
-  // Pseudorandom grain with intentional unsigned overflow.
-  unsigned int seed = (unsigned int)(x * 1973 + y * 9277 + frame * 26699) *
-      CRT_NOISE_MUL;
-  float grain = (float)((seed >> CRT_NOISE_SHIFT) & 255u) / 255.0f - 0.5f;
-  float crt = l * band * vig + grain * noise;
-  float v = l + (crt - l) * amount;  // amount 0 keeps the original luma
-  float out[CH];
-  out[0] = v * tr; out[1] = v * tg; out[2] = v * tb;
-  for (int c = 0; c < CH; ++c)
-  {
-    float b = out[c] * 255.0f;
-    b = b < 0.0f ? 0.0f : (b > 255.0f ? 255.0f : b);
-    dst[i + c] = (unsigned char)(b + 0.5f);
-  }
+  float band = rows > NO_SCANLINES && y % rows == rows - 1 ? UNIT - scan : UNIT;
+  float vig = crt_vignette(x, y, w, h, vignette);
+  float grain = crt_grain(x, y, frame);
+  float v = crt_luma(src + i, band, vig, grain, noise, amount);
+  crt_tint(dst + i, v, tr, tg, tb);
 }
 
 // Animated crowd (F11, FULL only): hash each seat (column and row) to
@@ -532,95 +597,39 @@ __global__ void k_crt(const unsigned char *src, unsigned char *dst,
 //
 // Far rows are darker. A head or flag can reach into the row above, so
 // check CROWD_ROWS rows per pixel, painting back to front.
-#define CROWD_HASH_C 73856093u  // column hash prime
-#define CROWD_HASH_R 19349663u  // row hash prime
-#define CROWD_ROWS 2  // rows checked per pixel
-#define CROWD_FLAG_HZ 3.2f  // flag wave radians per second
-#define CROWD_FLAG_CURVE 0.30f  // flag curvature in radians per vertical pixel
-#define CROWD_SHOULDER 2.0f  // torso narrowing at the shoulders in pixels
-#define CROWD_POLE_W 1.0f  // flagpole half-width in pixels
-#define CROWD_RISER 1.0f  // bright step edge in pixels
-#define CROWD_JUMP_LOW 0.4f  // minimum jump as a fraction of the peak
-#define CROWD_JUMP_SPREAD 0.6f  // extra jump fraction from the hash
-#define CROWD_PHASE 0.01f  // phase radians per hash unit
-#define CROWD_PHASE_TOP 628u  // roughly one cycle in hash units
-#define CROWD_SPREAD 0.01f  // scale a hash bucket to 0..1
-#define CROWD_SKINS 3  // skin tones in the palette
-#define CROWD_HAIRS 3  // hair tones in the palette
-#define CROWD_FULL 100u  // number of hash buckets
-
-// Indices into the configuration array supplied by the host.
-#define CC_W 0  // seat width in pixels
-#define CC_H 1  // seat height in pixels
-#define CC_JUMP 2  // jump height in pixels
-#define CC_HZ 3  // jump radians per second
-#define CC_GOAL_JUMP 4  // extra jump height for the scoring side
-#define CC_GOAL_HZ 5  // extra jump radians per second
-#define CC_WAVE 6  // flag wave amplitude in pixels
-#define CC_FLAG_W 7  // flag width in pixels
-#define CC_FLAG_H 8  // flag height in pixels
-#define CC_FILL 9  // percent of occupied seats
-#define CC_EVERY 10  // one flag every N seats
-#define CC_BODY_W 11  // torso width in pixels
-#define CC_BODY_H 12  // torso height in pixels
-#define CC_HEAD_R 13  // head radius in pixels
-#define CC_STEP 14  // step height in pixels
-#define CC_POLE_H 15  // pole height above the shoulder in pixels
-#define CC_SHADE_TOP 16  // shade factor for the farthest row
-#define CC_SHADE_BOTTOM 17  // shade factor for the nearest row
-#define CC_VAR_MIN 18  // minimum shirt brightness
-#define CC_VAR_RANGE 19  // extra brightness from the hash
-#define CC_HEAD_CUT 20  // fraction of the head covered by hair
-#define CC_OUTLINE 21  // dark outline width in pixels
-#define CC_SHOULDER_EDGE 22  // shoulder edge width in pixels
-#define CC_SHOULDER_SHADE 23  // shoulder edge shade factor
-
-// Palette rows (one RGB triple each).
-#define CP_SHIRT_A 0  // left team shirt
-#define CP_SHIRT_B 1  // right team shirt
-#define CP_SKIN 2  // first of CROWD_SKINS skin tones
-#define CP_HAIR 5  // first of CROWD_HAIRS hair tones
-#define CP_TREAD 8  // step floor
-#define CP_RISER 9  // dark riser
-#define CP_EDGE 10  // bright step edge
-#define CP_POLE 11  // flagpole
-#define CP_FLAG_WHITE 12  // white flag stripe
-#define CP_FLAG_A 13  // left team flag
-#define CP_FLAG_B 14  // right team flag
-#define CP_OUTLINE 15  // dark head outline
 
 // Mix seat column and row into a deterministic hash.
 __device__ unsigned int crowd_hash(int c, int r)
 {
   unsigned int hsh = ((unsigned int)c * CROWD_HASH_C) ^
       ((unsigned int)r * CROWD_HASH_R);
-  hsh ^= hsh >> 13;
-  hsh *= 1274126177u;
-  hsh ^= hsh >> 16;
+  hsh ^= hsh >> CROWD_HASH_SHIFT_FIRST;
+  hsh *= CROWD_HASH_MUL;
+  hsh ^= hsh >> CROWD_HASH_SHIFT_LAST;
   return hsh;
 }
 
 // Copy a palette row into rgb, multiplied by var for shading.
 __device__ void crowd_paint(const float *pal, int row, float var, float *rgb)
 {
-  rgb[0] = pal[3 * row] * var;
-  rgb[1] = pal[3 * row + 1] * var;
-  rgb[2] = pal[3 * row + 2] * var;
+  rgb[RED] = pal[CH * row] * var;
+  rgb[GREEN] = pal[CH * row + GREEN] * var;
+  rgb[BLUE] = pal[CH * row + BLUE] * var;
 }
 
 // Vary shirt brightness deterministically by seat hash.
 __device__ float crowd_var(unsigned int hsh, const float *cfg)
 {
   return cfg[CC_VAR_MIN] + cfg[CC_VAR_RANGE]
-         * (float)((hsh >> 13) % CROWD_FULL) * CROWD_SPREAD;
+         * (float)((hsh >> CROWD_VAR_SHIFT) % CROWD_FULL) * CROWD_SPREAD;
 }
 
 // Torso half-width at this height, narrowing toward the shoulders.
 __device__ float crowd_half(float up, const float *cfg)
 {
-  float half = cfg[CC_BODY_W] * 0.5f;
+  float half = cfg[CC_BODY_W] * HALF;
   if (up > cfg[CC_BODY_H] - CROWD_SHOULDER)
-    return half - CROWD_SHOULDER * 0.5f;
+    return half - CROWD_SHOULDER * HALF;
   return half;
 }
 
@@ -630,81 +639,87 @@ __device__ float crowd_jump(unsigned int hsh, float t, float boost,
 {
   float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
   float amp = cfg[CC_JUMP] * (CROWD_JUMP_LOW + CROWD_JUMP_SPREAD
-              * (float)((hsh / 7u) % CROWD_FULL) * CROWD_SPREAD);
+              * (float)((hsh / CROWD_JUMP_DIVISOR) % CROWD_FULL) * CROWD_SPREAD);
   float hz = cfg[CC_HZ];
   if (team == side)
   {  // scoring side
     amp += cfg[CC_GOAL_JUMP] * boost;
     hz += cfg[CC_GOAL_HZ] * boost;
   }
-  return amp * (0.5f + 0.5f * sinf(t * hz + phase));
+  return amp * (HALF + HALF * sinf(t * hz + phase));
 }
 
-// Test whether (lx, up) hits the torso, head or hair. Return 1 on a hit
-// and write its color into rgb.
-__device__ int crowd_person(float lx, float up, unsigned int hsh,
+__device__ __forceinline__ bool crowd_torso(float dx, float up,
+    unsigned int hsh, const float *cfg, const float *pal, int team, float *rgb)
+{
+  float body_h = cfg[CC_BODY_H];
+  if (!(up >= ZERO && up <= body_h && fabsf(dx) <= crowd_half(up, cfg)))
+    return false;
+  float var = crowd_var(hsh, cfg);
+  if (up > body_h - cfg[CC_SHOULDER_EDGE])
+    var *= cfg[CC_SHOULDER_SHADE];
+  crowd_paint(pal, CP_SHIRT_A + team, var, rgb);
+  return true;
+}
+
+__device__ __forceinline__ void crowd_head_color(float d2, float dy, float r,
+    unsigned int hsh, const float *cfg, const float *pal, float *rgb)
+{
+  float inner = r - cfg[CC_OUTLINE];
+  int hair = CP_HAIR + (int)((hsh >> CROWD_HAIR_SHIFT) % CROWD_HAIRS);
+  int skin = CP_SKIN + (int)((hsh >> CROWD_SKIN_SHIFT) % CROWD_SKINS);
+  if (dy < -cfg[CC_HEAD_CUT] * r)
+    crowd_paint(pal, hair, crowd_var(hsh, cfg), rgb);
+  else if (d2 > inner * inner)
+    crowd_paint(pal, CP_OUTLINE, UNIT, rgb);
+  else
+    crowd_paint(pal, skin, UNIT, rgb);
+}
+
+// Paint and report a hit on the torso, head or hair.
+__device__ bool crowd_person(float lx, float up, unsigned int hsh,
                             const float *cfg, const float *pal, int team,
                             float *rgb)
 {
-  float centre = cfg[CC_W] * 0.5f;
+  float centre = cfg[CC_W] * HALF;
   float dx = lx - centre;
-  float body_h = cfg[CC_BODY_H];
-  if (up >= 0.0f && up <= body_h && fabsf(dx) <= crowd_half(up, cfg))
-  {
-    float var = crowd_var(hsh, cfg);
-    if (up > body_h - cfg[CC_SHOULDER_EDGE])  // shoulder edge
-      var *= cfg[CC_SHOULDER_SHADE];
-    crowd_paint(pal, CP_SHIRT_A + team, var, rgb);
-    return 1;
-  }
-  float dy = up - (body_h + cfg[CC_HEAD_R] * 0.8f);
+  if (crowd_torso(dx, up, hsh, cfg, pal, team, rgb)) return true;
   float r = cfg[CC_HEAD_R];
+  float dy = up - (cfg[CC_BODY_H] + r * CROWD_HEAD_OFFSET);
   float d2 = dx * dx + dy * dy;
-  if (d2 > r * r)
-    return 0;
-  if (dy < -cfg[CC_HEAD_CUT] * r)
-  {  // hair at the top of the head
-    crowd_paint(pal, CP_HAIR + (int)((hsh >> 9) % CROWD_HAIRS),
-                crowd_var(hsh, cfg), rgb);
-    return 1;
-  }
-  float inner = r - cfg[CC_OUTLINE];
-  if (d2 > inner * inner)
-  {  // dark outline of the face
-    crowd_paint(pal, CP_OUTLINE, 1.0f, rgb);
-    return 1;
-  }
-  crowd_paint(pal, CP_SKIN + (int)((hsh >> 5) % CROWD_SKINS), 1.0f, rgb);
-  return 1;
+  if (d2 > r * r) return false;
+  crowd_head_color(d2, dy, r, hsh, cfg, pal, rgb);
+  return true;
+}
+
+__device__ __forceinline__ void crowd_cloth(float lx, float up, float top,
+    float t, unsigned int hsh, const float *cfg, const float *pal, int team,
+    float *rgb)
+{
+  if (up < top - cfg[CC_FLAG_H] || up > top) return;
+  float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
+  float wave = cfg[CC_WAVE] * sinf(t * CROWD_FLAG_HZ + phase
+                                  + (up - top) * CROWD_FLAG_CURVE);
+  float fx = lx + cfg[CC_FLAG_W] * HALF - wave;
+  if (fx < ZERO || fx >= cfg[CC_FLAG_W]) return;
+  int stripe = ((int)(fx * CROWD_STRIPES / cfg[CC_FLAG_W]) & CROWD_ODD_BIT);
+  crowd_paint(pal, stripe ? CP_FLAG_WHITE : CP_FLAG_A + team, UNIT, rgb);
 }
 
 // Flag, if present: pole above the head and two-color cloth with a
 // sinusoidal displacement that varies by row.
-__device__ int crowd_flag(unsigned int hsh, float lx, float up, float t,
+__device__ void crowd_flag(unsigned int hsh, float lx, float up, float t,
                           const float *cfg, const float *pal, int team,
                           float *rgb)
 {
-  if ((int)(hsh % (unsigned int)cfg[CC_EVERY]) != 0)
-    return 0;
-  float centre = cfg[CC_W] * 0.5f;
+  if ((int)(hsh % (unsigned int)cfg[CC_EVERY]) != CROWD_FLAG_BUCKET) return;
+  float centre = cfg[CC_W] * HALF;
   float base = cfg[CC_BODY_H] + cfg[CC_HEAD_R];
   float top = base + cfg[CC_POLE_H];
   if (up >= base && up <= top && fabsf(lx - centre) <= CROWD_POLE_W)
-  {
-    crowd_paint(pal, CP_POLE, 1.0f, rgb);  // flagpole
-    return 1;
-  }
-  if (up < top - cfg[CC_FLAG_H] || up > top)
-    return 0;
-  float phase = (float)(hsh % CROWD_PHASE_TOP) * CROWD_PHASE;
-  float wave = cfg[CC_WAVE] * sinf(t * CROWD_FLAG_HZ + phase
-                                  + (up - top) * CROWD_FLAG_CURVE);
-  float fx = lx - centre + cfg[CC_FLAG_W] * 0.5f - wave;
-  if (fx < 0.0f || fx >= cfg[CC_FLAG_W])
-    return 0;
-  int stripe = ((int)(fx * 3.0f / cfg[CC_FLAG_W]) & 1);
-  crowd_paint(pal, stripe ? CP_FLAG_WHITE : CP_FLAG_A + team, 1.0f, rgb);
-  return 1;
+    crowd_paint(pal, CP_POLE, UNIT, rgb);
+  else
+    crowd_cloth(lx - centre, up, top, t, hsh, cfg, pal, team, rgb);
 }
 
 // Paint the step floor and dark riser with a bright top edge.
@@ -715,9 +730,9 @@ __device__ void crowd_step(int y, int row, const float *cfg,
   int tone = (float)y >= edge ? CP_RISER : CP_TREAD;
   if ((float)y >= edge && (float)y < edge + CROWD_RISER)
     tone = CP_EDGE;
-  rgb[0] = pal[3 * tone];
-  rgb[1] = pal[3 * tone + 1];
-  rgb[2] = pal[3 * tone + 2];
+  rgb[RED] = pal[CH * tone];
+  rgb[GREEN] = pal[CH * tone + GREEN];
+  rgb[BLUE] = pal[CH * tone + BLUE];
 }
 
 // Depth shading: higher rows are farther away.
@@ -728,6 +743,31 @@ __device__ float crowd_shade(int row, int rows, const float *cfg)
          + (cfg[CC_SHADE_BOTTOM] - cfg[CC_SHADE_TOP]) * far;
 }
 
+__device__ __forceinline__ void crowd_seat(int x, int y, int r, int team,
+    float t, int side, float boost, const float *cfg, const float *pal, float *rgb)
+{
+  float stagger = (float)((r & CROWD_ODD_BIT) * ((int)cfg[CC_W] / CROWD_HALVES));
+  float cx = (float)x + stagger;
+  int c = (int)(cx / cfg[CC_W]);
+  float lx = cx - (float)c * cfg[CC_W];
+  unsigned int hsh = crowd_hash(c, r);
+  if ((float)(hsh % CROWD_FULL) >= cfg[CC_FILL]) return;
+  float up = (float)(r + 1) * cfg[CC_H] - cfg[CC_STEP] - (float)y
+             - crowd_jump(hsh, t, boost, team, side, cfg);
+  if (!crowd_person(lx, up, hsh, cfg, pal, team, rgb))
+    crowd_flag(hsh, lx, up, t, cfg, pal, team, rgb);
+}
+
+__device__ __forceinline__ void crowd_write(
+    unsigned char *dst, const float *rgb, float shade)
+{
+  for (int c = 0; c < CH; ++c)
+  {
+    float v = rgb[c] * shade * PIXEL_MAX;
+    dst[c] = (unsigned char)(byte_clip(v) + BYTE_ROUND);
+  }
+}
+
 // Paint the stands: one thread per pixel, border check and global memory.
 __global__ void k_crowd(const unsigned char *src, unsigned char *dst,
                           int w, int h, float t, int side, float boost,
@@ -735,33 +775,11 @@ __global__ void k_crowd(const unsigned char *src, unsigned char *dst,
 {
   int x, y;
   if (!pixel_coords(x, y, w, h)) return;
-  int i = (y * w + x) * CH;
-  int row = (int)((float)y / cfg[CC_H]);
-  int rows = (int)((float)h / cfg[CC_H]);
-  float rgb[3];
-  crowd_step(y, row, cfg, pal, rgb);  // step of the current row
-  int team = (x < w / 2) ? 0 : 1;  // one team per half
+  int row = (int)((float)y / cfg[CC_H]), rows = (int)((float)h / cfg[CC_H]);
+  float rgb[CH];
+  crowd_step(y, row, cfg, pal, rgb);
+  int team = (x < w / CROWD_HALVES) ? CROWD_LEFT : CROWD_RIGHT;
   for (int k = 0; k < CROWD_ROWS; ++k)
-  {
-    int r = row + k;  // back to front
-    float stagger = (float)((r & 1) * ((int)cfg[CC_W] / 2));
-    float cx = (float)x + stagger;  // staggered rows
-    int c = (int)(cx / cfg[CC_W]);
-    float lx = cx - (float)c * cfg[CC_W];
-    unsigned int hsh = crowd_hash(c, r);
-    if ((float)(hsh % CROWD_FULL) >= cfg[CC_FILL])
-      continue;  // empty seat
-    float up = (float)(r + 1) * cfg[CC_H] - cfg[CC_STEP] - (float)y
-               - crowd_jump(hsh, t, boost, team, side, cfg);
-    if (crowd_person(lx, up, hsh, cfg, pal, team, rgb))
-      continue;  // the person occludes the flag
-    crowd_flag(hsh, lx, up, t, cfg, pal, team, rgb);
-  }
-  float shade = crowd_shade(row, rows, cfg);
-  for (int c = 0; c < CH; ++c)
-  {
-    float v = rgb[c] * shade * 255.0f;
-    v = v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v);
-    dst[i + c] = (unsigned char)(v + 0.5f);
-  }
+    crowd_seat(x, y, row + k, team, t, side, boost, cfg, pal, rgb);
+  crowd_write(dst + (y * w + x) * CH, rgb, crowd_shade(row, rows, cfg));
 }
