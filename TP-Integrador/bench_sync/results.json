@@ -1,0 +1,241 @@
+{
+  "environment": {
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "capability": "12.0",
+    "sms": 170,
+    "driver_cuda": 13030,
+    "pycuda": "2026.1",
+    "cpu": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+    "cores": 32,
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10",
+    "numpy": "2.5.4",
+    "threads": 8,
+    "processes": 4,
+    "gpu_runs": 200,
+    "five_step_runs": 50,
+    "cpu_runs": {
+      "d_lock": 3,
+      "e_private": 5,
+      "f_bincount": 30
+    }
+  },
+  "cases": [
+    {
+      "size": "720p",
+      "scene": "uniform",
+      "pixels": 921600,
+      "a_global": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "kernel_ms": 0.13148799538612366,
+        "five_steps_ms": 0.7054499874357134
+      },
+      "b_shared": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "kernel_ms": 0.014560000039637089,
+        "five_steps_ms": 0.592500000493601
+      },
+      "d_lock": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 84.83370000612922
+      },
+      "e_private": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 24.43740001763217
+      },
+      "f_bincount": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 5.338750008377247
+      },
+      "race": {
+        "gpu_racy": {
+          "ok": false,
+          "total": 2842,
+          "expected": 921600
+        },
+        "threads_no_lock": {
+          "ok": true,
+          "total": 921600,
+          "expected": 921600
+        },
+        "processes_no_lock": {
+          "ok": false,
+          "total": 913521,
+          "expected": 921600
+        }
+      }
+    },
+    {
+      "size": "720p",
+      "scene": "night",
+      "pixels": 921600,
+      "a_global": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "kernel_ms": 0.11539199948310852,
+        "five_steps_ms": 0.7059000054141507
+      },
+      "b_shared": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "kernel_ms": 0.01056000031530857,
+        "five_steps_ms": 0.5717999883927405
+      },
+      "d_lock": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 87.52940001431853
+      },
+      "e_private": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 25.13080000062473
+      },
+      "f_bincount": {
+        "ok": true,
+        "total": 921600,
+        "expected": 921600,
+        "ms": 5.40785001066979
+      },
+      "race": {
+        "gpu_racy": {
+          "ok": false,
+          "total": 71,
+          "expected": 921600
+        },
+        "threads_no_lock": {
+          "ok": true,
+          "total": 921600,
+          "expected": 921600
+        },
+        "processes_no_lock": {
+          "ok": false,
+          "total": 617999,
+          "expected": 921600
+        }
+      }
+    },
+    {
+      "size": "1080p",
+      "scene": "uniform",
+      "pixels": 2073600,
+      "a_global": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "kernel_ms": 0.2868959903717041,
+        "five_steps_ms": 1.0534499888308346
+      },
+      "b_shared": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "kernel_ms": 0.014816000126302242,
+        "five_steps_ms": 0.7661999843548983
+      },
+      "d_lock": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 200.0077999837231
+      },
+      "e_private": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 56.25819999841042
+      },
+      "f_bincount": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 12.394399993354455
+      },
+      "race": {
+        "gpu_racy": {
+          "ok": false,
+          "total": 5941,
+          "expected": 2073600
+        },
+        "threads_no_lock": {
+          "ok": true,
+          "total": 2073600,
+          "expected": 2073600
+        },
+        "processes_no_lock": {
+          "ok": false,
+          "total": 2055398,
+          "expected": 2073600
+        }
+      }
+    },
+    {
+      "size": "1080p",
+      "scene": "night",
+      "pixels": 2073600,
+      "a_global": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "kernel_ms": 0.25011199712753296,
+        "five_steps_ms": 0.9982500050682575
+      },
+      "b_shared": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "kernel_ms": 0.010495999827980995,
+        "five_steps_ms": 0.7698999979766086
+      },
+      "d_lock": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 196.42750002094544
+      },
+      "e_private": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 55.852599994977936
+      },
+      "f_bincount": {
+        "ok": true,
+        "total": 2073600,
+        "expected": 2073600,
+        "ms": 12.564400007249787
+      },
+      "race": {
+        "gpu_racy": {
+          "ok": false,
+          "total": 145,
+          "expected": 2073600
+        },
+        "threads_no_lock": {
+          "ok": true,
+          "total": 2073600,
+          "expected": 2073600
+        },
+        "processes_no_lock": {
+          "ok": false,
+          "total": 1383563,
+          "expected": 2073600
+        }
+      }
+    }
+  ]
+}
