@@ -6,7 +6,9 @@ No pygame and no numpy here, so the rules are tested without a window.
 
 Perspective: `viewer` is 0 or 1 for a single player (tournament, online)
 and None on a shared screen, where every power that hits one player is
-drawn on top of that player only.
+drawn on top of that player only. The confusion is the exception: the
+twisted pitch is drawn for every viewer, while only the rival walks
+backwards (the simulation does that).
 """
 from fdc import config
 
@@ -113,7 +115,9 @@ def _set_power(params, prop, strength, players, index, viewer):
       params.ice = max(params.ice, strength)
   elif prop == BLACKOUT_PROP and _seen_by(viewer, index):
     params.blackout = _blackout_points(players, index, viewer)
-  elif prop == CONFUSION_PROP and _seen_by(viewer, index):
+  elif prop == CONFUSION_PROP:
+    # Both players see the twisted pitch: whoever took the power must
+    # see its effect too, as on the shared screen of the presentation.
     params.confusion = strength
   elif prop == BURN_PROP:
     # Both players see the embers: the burnt player is on the pitch.

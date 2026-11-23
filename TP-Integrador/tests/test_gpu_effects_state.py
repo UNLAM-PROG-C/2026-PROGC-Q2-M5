@@ -11,6 +11,7 @@ from fdc import config
 from fdc.gpu import effects_state
 from fdc.gpu import exposure
 from fdc.sim import match
+from fdc.sim import powers
 
 G = config.Gpu
 DURATION = 6.0          # s of a power in the state
@@ -66,10 +67,10 @@ class DeriveTest(unittest.TestCase):
     self.assertFalse(self.derive(effects, viewer=1).blackout)
     self.assertEqual(len(self.derive(effects, viewer=0).blackout), 1)
 
-  def test_confusion(self):
+  def test_confusion_is_drawn_for_every_viewer(self):
     effects = [effect("confusion", "p1")]
-    self.assertAlmostEqual(self.derive(effects, viewer=1).confusion, 1.0)
-    self.assertEqual(self.derive(effects, viewer=0).confusion, 0.0)
+    for viewer in (None, 0, 1):
+      self.assertAlmostEqual(self.derive(effects, viewer).confusion, 1.0)
 
   def test_fire_goes_around_the_ball(self):
     fx = self.derive([effect("fire", "ball")])
@@ -86,6 +87,32 @@ class DeriveTest(unittest.TestCase):
     end = self.derive([effect("blackout", "p0", left=0.0)])
     self.assertEqual(start.blackout, ())
     self.assertEqual(end.blackout, ())
+
+
+class PickupConfusionTest(unittest.TestCase):
+  """A confusion taken by the ball in a match, seen by each screen."""
+  ARENA = config.Arena
+  SETTLE = 0.5            # s: the effect is past its fade in
+
+  def taken_by(self, toucher):
+    game = helpers.playing_match()
+    game.players[0].x, game.players[1].x = 250.0, 1030.0
+    game.ball.x = self.ARENA.WIDTH / 2
+    game.ball.y = self.ARENA.FLOOR_Y - game.ball.radius
+    game.last_touch = toucher
+    game.powers.pickup = powers.Pickup(99, "confusion", game.ball.x,
+                                       game.ball.y)
+    helpers.run(game, self.SETTLE)
+    return game.snapshot(1)
+
+  def test_the_taker_sees_the_confusion_he_gave(self):
+    for toucher in (0, 1):
+      snapshot = self.taken_by(toucher)
+      self.assertTrue(snapshot["players"][1 - toucher]["confused"])
+      for viewer in (None, 0, 1):
+        fx = effects_state.derive(snapshot, viewer)
+        self.assertGreater(fx.confusion, 0.0, (toucher, viewer))
+
 
 class ExposureTest(unittest.TestCase):
   """Auto exposure: EMA towards target / mean, with limits."""

@@ -441,7 +441,7 @@ class TournamentMatchScreen(match_screens.MatchScreen):
   # Stage sign at the bottom centre (width, height) in px.
   STAGE_TAG = (330, 34)
   STAGE_TAG_BOTTOM = 6               # px between that sign and the bottom
-  VIEWER = 0                         # the human is always P1 here
+  VIEWER = HUMAN                     # the person plays the right side
 
   def __init__(self, app, tournament):
     self.tournament = tournament
