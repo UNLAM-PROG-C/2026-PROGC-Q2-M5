@@ -929,6 +929,7 @@ class MatchScreen(screens.Screen):
     world = self.app.postfx.begin(surf, self.postfx_state(st))
     self._draw_world(world, view, mode)
     self.app.postfx.finish(surf, self.app.last_dt)
+    self.app.blackout().draw(surf, self.postfx_state(st), self.viewer)
     self.renderer.draw_hud(surf, st)
     self.renderer.draw_center_messages(surf, st)
     self._draw_replay_sign(surf, window)

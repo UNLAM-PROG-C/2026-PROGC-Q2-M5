@@ -15,6 +15,19 @@ from fdc.ui import presentation
 from fdc.ui import screens
 
 
+FRAMES = 3               # frames drawn after a change
+DARK_SHARE = 0.4         # a darkened pixel keeps less than this of its light
+FIRST_X, STEP_X = 40, 40  # px: where the search for a free pixel starts
+SPOT_Y = 600             # px: row of the pitch where that pixel is looked up
+FAR = 230                # px: distance from every light to the free pixel
+BLACKOUT_EFFECT = {"power": "blackout", "prop": "blackout", "target": "p0",
+                   "left": 3.0, "dur": 6.0}
+
+
+def brightness(surface, pos):
+  return sum(surface.get_at(pos)[:3])
+
+
 class PresentationTest(unittest.TestCase):
   """Use the real simulation process and CPU renderer."""
 
@@ -59,11 +72,67 @@ class PresentationTest(unittest.TestCase):
   def test_effect_keys_refresh_and_expire_on_cpu(self):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
     clock = set_clock(self.wait_for_play(drive))
-    cases = ((pygame.K_4, "confusion"), (pygame.K_5, "blackout"))
+    cases = ((pygame.K_4, "confusion"),)
     for key, effect in cases:
       self.check_effect(drive, clock, key, effect,
                         config.POWERS_BY_ID[effect].duration)
     self.check_effect(drive, clock, pygame.K_6, "night", 10.0)
+
+  def test_blackout_key_without_effects_darkens(self):
+    drive = self.open_game("--presentation", "--calidad", "sin-efectos")
+    screen = self.wait_for_play(drive)
+    clock = set_clock(screen)
+    duration = config.POWERS_BY_ID["blackout"].duration
+    spot = self.dark_spot(screen.state)
+    before = brightness(self.app.screen, spot)
+    drive.down(pygame.K_5)
+    self.assertEqual(screen.effects.left("blackout"), duration)
+    clock.advance(duration / 2)
+    drive.frames(FRAMES)
+    self.assertLess(brightness(self.app.screen, spot), before * DARK_SHARE)
+    self.assertFalse(self.app.postfx.enabled)
+    self.check_light_back(drive, screen, clock, spot, before)
+
+  def check_light_back(self, drive, screen, clock, spot, before):
+    clock.advance(config.POWERS_BY_ID["blackout"].duration)
+    drive.frames(FRAMES)
+    self.assertEqual(screen.effects.left("blackout"), 0)
+    self.assertGreater(brightness(self.app.screen, spot), before * DARK_SHARE)
+
+  def test_blackout_in_a_plain_match(self):
+    drive = self.open_game("--sin-efectos")
+    drive.until(lambda: isinstance(drive.screen(), screens.MenuScreen))
+    screen = match_screens.MatchScreen(
+        self.app, config.Presentation.DEFAULT_CHARACTERS)
+    self.app.switch(screen)
+    drive.until(lambda: screen.state is not None)
+    spot = self.dark_spot(screen.state)
+    screen.draw_match(self.app.screen, screen.state, screen.state)
+    before = brightness(self.app.screen, spot)
+    state = dict(screen.state, effects=[BLACKOUT_EFFECT])
+    screen.draw_match(self.app.screen, state, state)
+    self.assertLess(brightness(self.app.screen, spot), before * DARK_SHARE)
+    self.assertIs(self.app.blackout(), self.app.simple_blackout)
+
+  def test_full_keeps_the_chain_and_no_veil(self):
+    drive = self.open_game("--presentation", "--calidad", "full")
+    screen = self.wait_for_play(drive)
+    drive.down(pygame.K_5)
+    drive.frames(FRAMES)
+    self.assertTrue(self.app.postfx.enabled)
+    self.assertIs(self.app.blackout(), self.app.chain_blackout)
+    self.assertEqual(self.app.simple_blackout.builds, 0)
+    self.assertIsNotNone(screen.state)
+
+  def dark_spot(self, state):
+    """A pixel of the pitch far from every player and from the ball."""
+    lights = [(p["x"], p["y"] - config.Gpu.HEAD_ABOVE)
+              for p in state["players"]]
+    lights.append((state["ball"]["x"], state["ball"]["y"]))
+    for x in range(FIRST_X, config.LOGICAL_WIDTH, STEP_X):
+      if all(math.hypot(x - lx, SPOT_Y - ly) > FAR for lx, ly in lights):
+        return (x, SPOT_Y)
+    raise AssertionError("no free pixel on the pitch")
 
   def check_effect(self, drive, clock, key, effect, duration):
     screen = drive.screen()

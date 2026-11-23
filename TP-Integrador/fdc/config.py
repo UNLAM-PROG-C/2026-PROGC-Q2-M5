@@ -447,6 +447,16 @@ class Effects:
   ENABLED = os.environ.get("FDC_EFECTOS", "1") != "0"
 
 
+class SimpleBlackout:
+  """Blackout of the plain mode: dark pygame surface with holes of light."""
+  VEIL = (0, 0, 0, 225)      # rgba: black, 88% opaque, over the pitch
+  CLEAR = (0, 0, 0, 0)       # rgba: transparent centre of each light
+  RIM = (0, 0, 0, 110)       # rgba: half-dark ring around each light
+  RIM_GROWTH = 1.3           # the rim radius is this times the light radius
+  PLAYER_RADIUS = 130.0      # px: light around the head of a player
+  BALL_RADIUS = 60.0         # px: small light so the ball can be followed
+
+
 class Gpu:
   """Knobs of the post-processing chain (CUDA when there is a GPU)."""
   # FDC_GPU=0 means "do not use CUDA": the chain runs on the CPU (numpy).

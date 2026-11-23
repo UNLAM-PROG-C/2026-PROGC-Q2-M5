@@ -1,0 +1,34 @@
+{
+ "backend": "cpu",
+ "quality": "sin-efectos",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": false,
+ "rows": {
+  "sin apagon": {
+   "frames": 5604,
+   "seconds": 10.0,
+   "fps_avg": 560.3,
+   "fps_p1": 395.5,
+   "fps_min": 295.9,
+   "fps_median": 563.0
+  },
+  "con apagon": {
+   "frames": 3934,
+   "seconds": 10.0,
+   "fps_avg": 393.3,
+   "fps_p1": 283.2,
+   "fps_min": 194.4,
+   "fps_median": 411.8,
+   "active_share": 1.0,
+   "presses": 2,
+   "seen": [
+    "ninguno"
+   ],
+   "builds": 1
+  }
+ }
+}

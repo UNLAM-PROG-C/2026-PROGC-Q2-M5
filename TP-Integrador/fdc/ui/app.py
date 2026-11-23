@@ -26,6 +26,7 @@ from fdc.gpu import overlay as gpu_overlay
 from fdc.gpu import sysinfo
 from fdc.ui import assets
 from fdc.ui import audio
+from fdc.ui import blackout
 from fdc.ui import fx
 from fdc.ui import input as ui_input
 from fdc.ui import layout
@@ -268,6 +269,14 @@ class App:
         if postfx else _NoFx()
     if self.postfx.enabled and self.postfx.ops is None:
       self.postfx.start()          # CUDA check now: banner + log
+    self.chain_blackout = blackout.ChainBlackout()
+    self.simple_blackout = blackout.SimpleBlackout()
+
+  def blackout(self):
+    """Strategy of the blackout: the chain in FULL, the veil otherwise."""
+    if self.postfx.enabled:
+      return self.chain_blackout
+    return self.simple_blackout
 
   def _init_state(self):
     options = self.options

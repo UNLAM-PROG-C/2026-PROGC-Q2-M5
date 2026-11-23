@@ -16,6 +16,7 @@ from fdc import config
 from fdc import protocol
 from fdc.gpu import postfx as chain
 from fdc.gpu import replay
+from fdc.ui import blackout
 from fdc.ui import match_screens
 from fdc.ui import online_screens
 
@@ -118,11 +119,13 @@ def history():
 
 def screen(postfx, cls=match_screens.MatchScreen):
   """Screen with only what the replay needs (no window, no audio)."""
-  app = types.SimpleNamespace(postfx=postfx, last_dt=1 / 60.0, fx=FakeFx())
+  app = types.SimpleNamespace(postfx=postfx, last_dt=1 / 60.0, fx=FakeFx(),
+                              blackout=blackout.ChainBlackout)
   ms = object.__new__(cls)
   ms.app = app
   ms.renderer = FakeRenderer()
   ms.t = GOAL_T
+  ms.viewer = None
   ms._init_replay()
   ms.replay_history = history()
   ms.goal_t = GOAL_T

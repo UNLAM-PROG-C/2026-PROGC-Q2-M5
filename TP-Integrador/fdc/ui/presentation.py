@@ -29,6 +29,8 @@ LEGEND = " · ".join(f"{pygame.key.name(k)} {label}"
                     for k, (_, label) in SHORTCUTS.items()) + " · 0 Apagar"
 DURATIONS = {REPLAY: RULES.REPLAY_DURATION, NIGHT: RULES.NIGHT_DURATION}
 MANUAL_POWERS = ("confusion", "blackout")
+# The plain mode draws these by itself (fdc/ui/blackout.py): no switch to FULL.
+LIGHT_EFFECTS = ("blackout",)
 SIM_DURATIONS = {"freeze_rival": {"seconds": RULES.FREEZE_DURATION},
                  "fire": {"seconds": RULES.FIRE_DURATION,
                           "burn": RULES.BURN_DURATION}}
@@ -48,8 +50,9 @@ class ManualEffects:
     now = self.now()
     return max(0.0, self.ends.get(effect, now) - now)
 
-  def clear(self):
-    self.ends.clear()
+  def clear(self, keep=()):
+    self.ends = {name: end for name, end in self.ends.items()
+                 if name in keep}
 
   def powers(self):
     """Display-only copies of the standard power effect parameters."""
@@ -137,7 +140,7 @@ class PresentationScreen(match_screens.MatchScreen):
       self._send(protocol.CMD_DEBUG_POWER, power=effect, mode="p0",
                  **SIM_DURATIONS[effect])
       return
-    if not self._ensure_full():
+    if effect not in LIGHT_EFFECTS and not self._ensure_full():
       return
     if effect == REPLAY and not self._start_clip():
       self.toast("Todavía no hay jugadas para repetir", palette.HUD_TEXT)
@@ -177,8 +180,15 @@ class PresentationScreen(match_screens.MatchScreen):
 
   def update(self, dt):
     if not self.app.postfx.enabled:
-      self._clear_effects()
+      self._clear_full_effects()
     super().update(dt)
+
+  def _clear_full_effects(self):
+    """Without FULL only the light effects (the blackout) can go on."""
+    self.effects.clear(keep=LIGHT_EFFECTS)
+    self.clip = None
+    self.app.postfx.night = False
+    self.app.postfx.skip()
 
   def draw(self, surf):
     self._sync_postfx()
