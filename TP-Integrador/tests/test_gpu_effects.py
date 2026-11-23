@@ -42,7 +42,8 @@ PIXEL_W, PIXEL_H = 1280, 720    # px: the screen the player sees
 FLAT = 130                      # byte of the flat frame of the art tests
 FLAT_GAIN = int(FLAT * config.Gpu.FREEZE_GAIN) + 1   # most the ice may add
 ICE_STATE = {
-    "players": [{"x": 400.0, "y": 640.0}, {"x": 880.0, "y": 640.0}],
+    "players": [{"x": 400.0, "y": 640.0, "frozen": True},
+                {"x": 880.0, "y": 640.0}],
     "ball": SLOW_BALL,
     "effects": [{"power": "freeze_self", "prop": "frozen", "target": "p0",
                  "left": 1.8, "dur": 2.0}],
@@ -71,7 +72,8 @@ PLAY_STATE = {
 }
 # The four F3 powers at once, at full strength, on a shared screen.
 POWER_STATE = {
-    "players": [{"x": 10.0, "y": 40.0}, {"x": 50.0, "y": 40.0}],
+    "players": [{"x": 10.0, "y": 40.0, "frozen": True},
+                {"x": 50.0, "y": 40.0}],
     "ball": FAST_BALL,
     "effects": [
         {"power": "freeze_self", "prop": "frozen", "target": "p0",
@@ -246,7 +248,16 @@ class PowerChainTest(unittest.TestCase):
     self.fx.viewer = 0
     self.assertEqual(self.fx._derive().ice, 1.0)
     self.fx.viewer = None
-    self.assertEqual(self.fx._derive().ice, 1.0)
+    self.assertEqual(self.fx._derive().ice, 0.0)
+
+  def test_shared_ice_only_changes_the_clipped_box(self):
+    self.fx.state = POWER_STATE
+    self.fx.fx = self.fx._derive()
+    original = np.full((H, W, 3), FLAT, np.uint8)
+    out = self.fx._ice(original.copy())
+    assert not np.array_equal(out[:44, :62], original[:44, :62])
+    assert np.array_equal(out[44:], original[44:])
+    assert np.array_equal(out[:, 62:], original[:, 62:])
 
 
 class ReplayChainTest(unittest.TestCase):

@@ -14,6 +14,7 @@ import pygame
 
 from fdc import config
 from fdc import protocol
+from fdc.gpu import effects_state
 from fdc.ui import assets
 from fdc.ui import characters
 from fdc.ui import icons
@@ -100,24 +101,28 @@ MINI_ICON = 32                     # px: icon of an active effect
 MINI_TIMER_GAP = 2                 # px between the icon and its timer
 MIN_DURATION = 0.001               # s: avoids dividing by zero in timers
 # Ice block of a frozen player.
-ICE_W = 96                         # px x scale
-ICE_EXTRA_H = 12                   # px x scale over the player height
-ICE_SINK = 4                       # px it sinks below the feet
-ICE_FILL = (170, 225, 255, 80)     # translucent light blue
+ICE_FILL = (170, 225, 255, 120)    # translucent light blue
+ICE_FACET = (210, 240, 255, 90)    # flat translucent facets
 ICE_EDGE = (240, 250, 255, 230)    # white border of the block
-ICE_EDGE_LINE = 4                  # px: thickness of the border
+ICE_EDGE_LINE = 3                  # px: thickness of the inner border
+ICE_INK_LINE = 2                   # px: thickness of the outer outline
+ICE_TOP_SHARE = 1 / 3              # width share of the upper facet
+ICE_BOTTOM_SHARE = 1 / 4           # width share of the lower facet
+ICE_FROST_COUNT = 5                # teeth along the base
+ICE_TEXT_GAP = 4                   # px: gap from the block to its timer
 ICE_STREAKS = 3                    # diagonal reflections
 ICE_STREAK_FIRST = 0.2             # the first one at 20 % of the width...
 ICE_STREAK_STEP = 0.25             # ...and the others every 25 %
 ICE_STREAK_STEPS = 6               # steps of each reflection
 ICE_STREAK_TOP = 10                # px from the top of the block
-ICE_STREAK_COLOR = (255, 255, 255, 180)   # almost opaque white
+ICE_STREAK_COLOR = (255, 255, 255, 200)   # almost opaque white
 # Burnt player (the fire power: the ball burns whoever touches it).
-BURN_TINT = (150, 110, 90)         # rgb multiplier: the body looks charred
+BURN_TINT = (190, 150, 130)        # rgb multiplier: the body looks charred
 BURN_PROP = "burned"               # property of the burn in the effects
-BURN_FLAME_GAP = 6                 # px above the head where the flame sits
-BURN_FLAME_SIDE = 30               # px to the side of the player centre
+WORLD_TIMERS = (effects_state.ICE_PROP, BURN_PROP)
+BURN_FLAME_SINK = 2                # px below the feet where the flames end
 BURN_TEXT_GAP = 4                  # px between the flame and the seconds
+EFFECT_INDICATOR_GAP = 26          # px: keep the arrow above the timer
 # Ball.
 TRAIL_SPEED = 560                  # px/s: faster than this the ball trails
 TRAIL_MIN_SHARE = 0.4              # the oldest trail is 40 % of the radius...
@@ -289,20 +294,77 @@ def _draw_no_kick(surf, bx, by):
                    (bx - thick // 2, by - length // 2, thick, length))
 
 
-def _draw_ice(surf, p):
-  s = p["scale"]
-  r = pygame.Rect(0, 0, snap(ICE_W * s),
-                  snap((config.PlayerSpec.HEIGHT + ICE_EXTRA_H) * s))
-  r.midbottom = (p["x"], p["y"] + ICE_SINK)
-  ice = pygame.Surface(r.size, pygame.SRCALPHA)
-  ice.fill(ICE_FILL)
-  pygame.draw.rect(ice, ICE_EDGE, ice.get_rect(), ICE_EDGE_LINE)
+def _draw_ice(surf, p, effect):
+  x0, y0, x1, y1 = effects_state.ice_box(p, effect)
+  if y1 <= y0 or x1 <= x0:
+    return
+  ice = pygame.Surface((x1 - x0, y1 - y0), pygame.SRCALPHA)
+  _ice_shell(ice)
+  surf.blit(ice, (x0, y0))
+  if effect:
+    _effect_time(surf, ice.get_rect(topleft=(x0, y0)), effect["left"],
+                 ICE_TEXT_GAP)
+
+
+def _ice_shell(ice):
+  outer = ice.get_rect()
+  edge = _inset(outer, ICE_INK_LINE)
+  fill = _inset(edge, ICE_EDGE_LINE)
+  _ice_layer(ice, outer, palette.INK)
+  _ice_layer(ice, edge, ICE_EDGE)
+  _ice_layer(ice, fill, ICE_FILL)
+  if fill.height > ICE_STREAK_TOP + ICE_STREAK_STEPS * 2 * PX:
+    _ice_facets(ice, fill)
+    _ice_streaks(ice, fill)
+    _ice_frost(ice, fill)
+
+
+def _inset(rect, margin):
+  delta = -margin * 2
+  return rect.inflate(delta, delta)
+
+
+def _ice_layer(ice, rect, colour):
+  if rect.width <= 0 or rect.height <= 0:
+    return
+  x, y = rect.topleft
+  right, bottom = rect.right - 1, rect.bottom - 1
+  bevel = min(PX, rect.width // 2, rect.height // 2)
+  pygame.draw.polygon(ice, colour, (
+      (x + bevel, y), (right - bevel, y), (right, y + bevel),
+      (right, bottom - bevel), (right - bevel, bottom),
+      (x + bevel, bottom), (x, bottom - bevel), (x, y + bevel)))
+
+
+def _ice_facets(ice, rect):
+  x, y = rect.topleft
+  right, bottom = rect.right - 1, rect.bottom - 1
+  top = min(rect.height - 1, snap(rect.width * ICE_TOP_SHARE))
+  low = min(rect.height - 1, snap(rect.width * ICE_BOTTOM_SHARE))
+  pygame.draw.polygon(ice, ICE_FACET, (
+      (x + PX, y + PX), (x + top, y + PX), (x + PX, y + top)))
+  pygame.draw.polygon(ice, ICE_FACET, (
+      (right - PX, bottom - PX), (right - low, bottom - PX),
+      (right - PX, bottom - low)))
+
+
+def _ice_streaks(ice, rect):
+  ice.set_clip(rect)
   for k in range(ICE_STREAKS):
-    x = snap(r.width * (ICE_STREAK_FIRST + ICE_STREAK_STEP * k))
+    share = ICE_STREAK_FIRST + ICE_STREAK_STEP * k
+    x = rect.left + snap(rect.width * share)
     for j in range(ICE_STREAK_STEPS):
-      ice.fill(ICE_STREAK_COLOR, (x - j * PX, ICE_STREAK_TOP + j * 2 * PX,
-                                  PX, 2 * PX))
-  surf.blit(ice, r)
+      y = rect.top + ICE_STREAK_TOP + j * 2 * PX
+      ice.fill(ICE_STREAK_COLOR, (x - j * PX, y, PX, 2 * PX))
+  ice.set_clip(None)
+
+
+def _ice_frost(ice, rect):
+  y = rect.bottom - 1
+  for index in range(ICE_FROST_COUNT):
+    x = rect.left + (index + 1) * rect.width // (ICE_FROST_COUNT + 1)
+    pygame.draw.polygon(ice, ICE_EDGE,
+                        ((x - PX, y), (x, y - 2 * PX), (x + PX, y)))
 
 
 def _burnt(img):
@@ -312,31 +374,17 @@ def _burnt(img):
   return dark
 
 
-def burn_badge(p, ball_x, flame_size, text_size):
-  """Boxes of the flame and the seconds of a burnt player: over its head
-    and on the side away from the ball, so the ball never hides them."""
-  side = 1 if ball_x <= p["x"] else -1
-  head_top = p["y"] - (config.PlayerSpec.HEAD_OFFSET_Y
-                       + config.PlayerSpec.HEAD_RADIUS) * p["scale"]
-  flame = pygame.Rect((0, 0), flame_size)
-  flame.midbottom = (snap(p["x"] + side * BURN_FLAME_SIDE),
-                     int(head_top - BURN_FLAME_GAP))
-  text = pygame.Rect((0, 0), text_size)
-  if side > 0:
-    text.midleft = (flame.right + BURN_TEXT_GAP, flame.centery)
-  else:
-    text.midright = (flame.left - BURN_TEXT_GAP, flame.centery)
-  return flame, text
+def _effect_time(surf, bounds, seconds, gap):
+  label = _label(f"{max(0.0, seconds):.1f}s")
+  surf.blit(label, label.get_rect(
+      midbottom=(bounds.centerx, bounds.top - gap)))
 
 
-def _draw_burn(surf, p, ball_x):
-  """Flame and seconds left over the head of a burnt player."""
-  flame = icons.flame()
-  label = _label(f"{max(0.0, p.get('burned_left') or 0.0):.1f}s")
-  flame_rect, text_rect = burn_badge(p, ball_x, flame.get_size(),
-                                     label.get_size())
-  surf.blit(flame, flame_rect)
-  surf.blit(label, text_rect)
+def _flame_layers(p, time):
+  frame = int(time * icons.FLAME_FPS) % icons.FLAME_FRAMES
+  back, front = icons.flame_crown(frame, p["scale"])
+  rect = back.get_rect(midbottom=(p["x"], p["y"] + BURN_FLAME_SINK))
+  return back, front, rect
 
 
 def _draw_kick_arc(surf, p, f):
@@ -585,23 +633,35 @@ class MatchRenderer:
     return img, (fx, fy), f
 
   def _player(self, surf, i, p, st):
-    img, (fx, fy), f = self._player_image(i, p, st)
-    surf.blit(img, (round(p["x"] - fx), round(p["y"] - fy)))
+    f = self._player_body(surf, i, p, st)
     mine = [e for e in st.get("effects", []) if e["target"] == f"p{i}"]
     self._player_effects(surf, p, f, mine)
     if KICK_ARC_FROM <= p["kick"] <= KICK_ARC_TO:
       _draw_kick_arc(surf, p, f)
     self._over_head(surf, i, p, mine, st.get("last_touch") == i)
-    if p.get("burned"):
-      _draw_burn(surf, p, st["ball"]["x"])
+
+  def _player_body(self, surf, i, p, st):
+    img, (fx, fy), facing = self._player_image(i, p, st)
+    pos = (round(p["x"] - fx), round(p["y"] - fy))
+    if not p.get("burned"):
+      surf.blit(img, pos)
+      return facing
+    back, front, rect = _flame_layers(p, self.t)
+    surf.blit(back, rect)
+    surf.blit(img, pos)
+    surf.blit(front, rect)
+    _effect_time(surf, rect, p.get("burned_left", 0.0), BURN_TEXT_GAP)
+    return facing
 
   def _over_head(self, surf, i, p, mine, last):
     """Arrow of the player and its active effects over the head."""
     spec = config.PlayerSpec
     top = (p["y"] - (spec.HEAD_OFFSET_Y + spec.HEAD_RADIUS) * p["scale"]
            - INDICATOR_GAP)
+    if p.get("frozen") or p.get("burned"):
+      top = min(top, effects_state.ice_box(p)[1] - EFFECT_INDICATOR_GAP)
     self._indicator(surf, p["x"], top, i, last)
-    marks = [e for e in mine if e.get("prop") != BURN_PROP]
+    marks = [e for e in mine if e.get("prop") not in WORLD_TIMERS]
     for k, e in enumerate(marks):
       cx = p["x"] + (k - (len(marks) - 1) / 2) * MINI_EFFECT_STEP
       _draw_mini_effect(surf, e, (cx, top - MINI_EFFECT_RAISE))
@@ -610,7 +670,7 @@ class MatchRenderer:
     """Ice, no kick sign, speed lines and spring of a player."""
     props = {config.POWERS_BY_ID[e["power"]].prop: e for e in mine}
     if p["frozen"]:
-      _draw_ice(surf, p)
+      _draw_ice(surf, p, props.get(effects_state.ICE_PROP))
     if "no_kick" in props:
       _draw_no_kick(surf, snap(p["x"] - f * NO_KICK_BEHIND),
                     int(p["y"] - NO_KICK_HEIGHT))

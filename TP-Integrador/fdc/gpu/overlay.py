@@ -1,5 +1,4 @@
-"""Performance overlay for the projector: what the demo is showing and how
-fast it runs.
+"""Performance overlay for the projector: the active effects and timings.
 
 It is a semitransparent black panel at the bottom left with white text of at
 least 22 px (readable from the back of a classroom) and a big GPU/CPU badge.

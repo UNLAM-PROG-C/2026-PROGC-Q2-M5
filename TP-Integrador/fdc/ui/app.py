@@ -187,9 +187,6 @@ class _NoFx:
     """Always the full size without the effects."""
     return 0
 
-  def force(self, **params):
-    """The demo cannot force anything without the effects."""
-
   def begin_replay(self):
     """No replay without the effects."""
     return False
@@ -210,18 +207,13 @@ class _NoFx:
     """Nothing is active: the effects are off."""
     return "ninguno"
 
-  def other_measurement(self):
-    """No other backend to compare with."""
-    return None
-
 
 class App:
   """The window, the current screen and the shared resources."""
 
   def __init__(self, options):
     self.options = options
-    self.presentation_mode = (getattr(options, "presentation", False)
-                              and not getattr(options, "demo", False))
+    self.presentation_mode = getattr(options, "presentation", False)
     self.screen = self._open_window()
     self.clock = FrameLimiter(config.UI_FPS)
     self._load_resources()
@@ -340,24 +332,12 @@ class App:
     return screens.MenuScreen(self)
 
   def first_screen(self):
-    """After the boot: the name (if not chosen yet) and then the menu.
-        With `--demo` the automatic demo starts instead."""
-    if getattr(self.options, "demo", False):
-      return self.demo_screen()
+    """Enter the presentation, first-run profile or menu after boot."""
     if self.presentation_mode:
       return presentation.PresentationScreen(self)
     if self.profile is None:
       return profile_screen.ProfileScreen(self, first_run=True)
     return self.home()
-
-  def demo_screen(self, menu_return=False):
-    """Same demo for the menu and the command line."""
-    from fdc.gpu import demo   # pylint: disable=import-outside-toplevel
-    return demo.DemoScreen(self, menu_return=menu_return)
-
-  def start_demo(self):
-    """Run the demo and return here on Escape."""
-    self.switch(self.demo_screen(menu_return=True))
 
   def start_presentation(self):
     """Use a local untimed child, without adding an IPC command."""
@@ -463,8 +443,7 @@ class App:
       return None
     menu = isinstance(self.current, screens.OptionsScreen)
     if menu or isinstance(self.current, match_screens.MatchScreen):
-      demo = getattr(self.current, "IS_DEMO", False)
-      return self.quality_controls.draw(self.screen, demo=demo, menu=menu)
+      return self.quality_controls.draw(self.screen, menu=menu)
     return None
 
   def _draw_gpu_notice(self, surf):
@@ -527,11 +506,7 @@ class App:
 
   def _overlay_mode(self):
     """Off / compact / full of the performance overlay (F2)."""
-    mode = getattr(self.options, "overlay", None)
-    if mode:
-      return mode
-    return gpu_overlay.FULL if getattr(self.options, "demo", False) \
-        else gpu_overlay.COMPACT
+    return getattr(self.options, "overlay", None) or gpu_overlay.COMPACT
 
   def _init_overlay(self):
     """Remote session and overlay of this run (F7)."""

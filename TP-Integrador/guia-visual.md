@@ -26,8 +26,8 @@ Regla: 2 colores de equipo + neutros fríos oscuros + césped. Nada más saturad
 - Nada de glow sobre carteles de publicidad ni líneas de cancha: hoy los carteles se ven lavados/borrosos en FULL.
 - Bordes nítidos: sin blur global. Solo halo chico alrededor de fuentes de luz reales (pelota con poder, chispas).
 - **Ningún efecto toca la tribuna ni los carteles**: los focos, el anillo del gol y el calor viven abajo de `PITCH_TOP` (504 px, primera fila de césped). La tribuna se queda quieta y nítida.
-- Hielo: tinte parejo, pero el foco **multiplica** (nunca suma blanco) y la pelota y el rival siempre con contraste pleno.
-- Jugador quemado (1.0.2): se oscurece un poco (tinte `#966E5A` por multiplicación, nunca glow) y lleva el ícono de llama con los segundos que le quedan. En FULL, además, salen **pocas brasas chicas** (2 px a 4 px) desde los pies: nada que sature ni tape al jugador.
+- Hielo: bloque celeste facetado con contorno de tinta. En pantalla compartida, el material se aplica solo al bloque; si el jugador congelado tiene una vista propia, también se tiñe esa vista.
+- Jugador quemado: se oscurece un poco (tinte `#BE9682` por multiplicación) y queda entre dos capas de llamas nítidas, con un contador arriba. En FULL, además, salen **pocas brasas chicas** (2 px a 4 px) desde los pies: nada que sature ni tape al jugador.
 - Cielo blanco quemado = prohibido (distrae y rompe el contraste del HUD). De noche el cielo conserva el ambiente: no toma la ganancia de la autoexposición.
 - Ambos modos dibujan a resolución completa. SIN EFECTOS deja el render original de pygame; FULL aplica el postproceso completo.
 
@@ -43,7 +43,7 @@ Valores objetivo de `fdc/config.py` (clase `Gpu`):
 | `ICE_STRENGTH` | 0.30 | **0.60** (tinte visible en una miniatura) |
 | `ICE_EDGES` | 0.5 | **1.0** |
 | `HEAT_AMP` | 2.5 | 1.0 (ondas de calor deforman la tribuna entera; dejar solo en Fuego) |
-| `FIRE_AMP` | 9 | 14 px (la demo también muestra brasas del jugador) |
+| `FIRE_AMP` | 9 | 14 px (distorsión de la pelota encendida) |
 | `NIGHT_AMBIENT` | 0.25 | 0.18 (más contraste entre los focos) |
 | `NIGHT_RADIUS` | 420 | 300 px |
 | `CROWD_SHADE_TOP` | 0.62 | 0.5 (tribuna más oscura = cancha primero) |

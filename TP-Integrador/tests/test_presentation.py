@@ -59,10 +59,7 @@ class PresentationTest(unittest.TestCase):
   def test_effect_keys_refresh_and_expire_on_cpu(self):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
     clock = set_clock(self.wait_for_play(drive))
-    self.check_effect(drive, clock, pygame.K_1, "freeze_rival",
-                      config.Presentation.FREEZE_DURATION)
-    cases = ((pygame.K_2, "fire"), (pygame.K_4, "confusion"),
-             (pygame.K_5, "blackout"))
+    cases = ((pygame.K_4, "confusion"), (pygame.K_5, "blackout"))
     for key, effect in cases:
       self.check_effect(drive, clock, key, effect,
                         config.POWERS_BY_ID[effect].duration)
@@ -82,6 +79,37 @@ class PresentationTest(unittest.TestCase):
     drive.frames()
     self.assertEqual(screen.effects.left(effect), 0)
     self.assertEqual(self.app.postfx.active_effects(), "ninguno")
+
+  def test_ice_key_freezes_rival_via_ipc_without_postfx(self):
+    drive = self.open_game("--presentation", "--sin-efectos")
+    screen = self.wait_for_play(drive)
+    drive.down(pygame.K_1)
+    drive.until(lambda: screen.state["players"][1]["frozen"])
+    assert not screen.state["players"][0]["frozen"]
+    assert screen.state["effects"][0]["dur"] == 6
+    assert "Hielo: 6 s" in screen._effect_status()
+    assert screen.postfx_state(screen.state) is screen.state
+    assert not self.app.postfx.enabled
+
+  def test_fire_key_ignites_ball_via_ipc(self):
+    drive = self.open_game("--presentation", "--sin-efectos")
+    screen = self.wait_for_play(drive)
+    drive.down(pygame.K_2)
+    drive.until(lambda: bool(screen.state["effects"]))
+    assert screen.state["effects"][0]["dur"] == 10
+    assert "Fuego: pelota encendida" in screen._effect_status()
+    assert screen.postfx_state(screen.state) is screen.state
+
+  def test_fire_burns_on_contact_with_countdown(self):
+    drive = self.open_game("--presentation", "--sin-efectos")
+    screen = self.wait_for_play(drive)
+    drive.down(pygame.K_2)
+    drive.down(pygame.K_d)
+    drive.until(lambda: screen.state["players"][0]["burned"])
+    name = screen.renderer.who(0)
+    assert f"Fuego: {name} 6 s" in screen._effect_status()
+    assert not screen.state["players"][1]["burned"]
+    assert "pelota encendida" not in screen._effect_status()
 
   def test_replay_has_history_even_when_quality_starts_off(self):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
@@ -109,7 +137,7 @@ class PresentationTest(unittest.TestCase):
     drive.down(pygame.K_0)
     self.assertFalse(self.app.postfx.night)
     self.assertIsNone(self.app.postfx.replay_mode())
-    self.assertEqual(screen.effects.status(), "Sin efectos activos")
+    self.assertEqual(screen._effect_status(), "Sin efectos activos")
     drive.down(pygame.K_3)
     self.assertEqual(self.app.postfx.replay_mode(), replay.REPLAY_KIND)
 
@@ -165,6 +193,18 @@ class PresentationTest(unittest.TestCase):
       self.assertNotIn(protocol.EV_POWER_SPAWN, [kind for kind, _ in events])
     self.assertEqual(game.phase, protocol.PHASE_PLAYING)
     self.assertIsNone(game.powers.pickup)
+
+  def test_untimed_match_expires_active_powers_without_pickups(self):
+    game = match.Match(1, seed=7, untimed=True)
+    game.phase = protocol.PHASE_PLAYING
+    dt = config.PHYSICS_DT
+    game.debug_power("freeze_rival", "p0", seconds=dt)
+    game.debug_power("fire", "p0", seconds=dt)
+    assert game.players[1].frozen
+    events = game.step(dt)
+    assert not game.players[1].frozen
+    assert not game.powers.effects and game.powers.pickup is None
+    assert sum(kind == protocol.EV_POWER_EXPIRED for kind, _ in events) == 2
 
 
 class FakeClock:

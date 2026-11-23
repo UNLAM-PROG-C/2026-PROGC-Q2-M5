@@ -13,7 +13,7 @@ Juego de fútbol 2D en pixel art: dos cabezones saltan, cabecean y patean, y la 
 | Mac con Apple Silicon (arm64) | [Mac CPU](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/latest/download/FutbolDeCabeza-mac-arm64.zip) | Descomprimí el ZIP y abrí `FutbolDeCabeza.app`. |
 | Linux o Mac Intel | Sin binario en estas descargas | Usá los pasos desde el código de abajo. |
 
-Para empezar, elegí **Jugar → Multijugador → Local**. J1 usa `A`/`D` para moverse, `W` para saltar y `Espacio` para patear; J2 usa `←`/`→`, `↑` y `P`. `F3` muestra los procesos; `F2`, el rendimiento; `F10` alterna **SIN EFECTOS** y **FULL**. El botón **DEMO** recorre los efectos con jugadas predefinidas.
+Para empezar, elegí **Jugar → Multijugador → Local**. J1 usa `A`/`D` para moverse, `W` para saltar y `Espacio` para patear; J2 usa `←`/`→`, `↑` y `P`. `F3` muestra los procesos; `F2`, el rendimiento; `F10` alterna **SIN EFECTOS** y **FULL**. En **Presentación** (`--presentation`), jugá sin reloj y activá los seis efectos con `1`–`6`: `1` congela a J2 y `2` enciende la pelota, que quema al primero que la toque. `0` apaga los efectos manuales; el hielo y el fuego vencen solos.
 
 ### Desde el código (Windows, macOS y Linux)
 

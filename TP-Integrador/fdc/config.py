@@ -16,7 +16,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identity
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_VERSION = "1.0.7"      # shown in the window title and the release notes
+GAME_VERSION = "1.0.8"      # shown in the window title and the release notes
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
 # Version of the UI <-> simulation protocol (reported in READY and checked by
 # the online server, which refuses a client of another version).
@@ -28,6 +28,7 @@ PROTOCOL_VERSION = 2
 # ---------------------------------------------------------------------------
 LOGICAL_WIDTH = 1280        # px: logical screen width (everything uses it)
 LOGICAL_HEIGHT = 720        # px: logical screen height
+ART_PIXEL = 2              # logical pixels per art pixel
 UI_FPS = 60                 # frames per second drawn by the interface
 MS_PER_SECOND = 1000        # to show times in milliseconds (latency, ACK)
 
@@ -325,6 +326,9 @@ class Presentation:
   NIGHT_DURATION = 10.0      # s of night per key press
   # The normal 2 s freeze and 3 s replay are too short to be seen live.
   FREEZE_DURATION = 6.0      # s of freeze per key press
+  BURN_DURATION = 6.0        # s of burn after the first ball contact
+  FIRE_DURATION = 10.0       # s the ball can wait for contact while lit
+  SIM_POWERS = ("freeze_rival", "fire")
   REPLAY_DURATION = 6.0      # s of replay per key press (buffer: 20 s)
   TARGET_PLAYER = 1         # zero-based index of J2
   DEFAULT_CHARACTERS = ("messi", "maradona")
@@ -521,13 +525,7 @@ class Gpu:
   CRT_NOISE = 0.10          # strength of the grain (0-1)
   CRT_AMOUNT = 0.9          # weight of the whole CRT look (0-1)
   CRT_ROWS = 3              # px between two scan lines
-  # --- Demo and measurements
-  DEMO_SEED = 2026          # first seed of the automatic demo
-  DEMO_SECONDS = 10.0       # s of each segment of the demo
-  DEMO_BOT_LEVEL = 4        # skill of the two bots of the demo
-  DEMO_RESTART_SECONDS = 1.0   # s from whistle to next match
-  DEMO_REPLAY_EVERY = 4.5   # s between replays of segment 7
-  MEASURE_WARMUP = 30       # frames dropped at the start of each segment
+  # --- Performance overlay
   OVERLAY_ALPHA = 245       # opacity of the overlay background (0-255)
   OVERLAY_FONT = 22         # px: minimum size of the overlay text
   OVERLAY_REFRESH = 0.25    # s between overlay text rebuilds (4 Hz)
@@ -671,7 +669,7 @@ def log_dir(platform=None, environ=None, home=None, frozen=None):
 
 
 def data_dir(platform=None, environ=None, home=None, frozen=None):
-  """Folder of the files the game writes beyond the logs (demo CSV)."""
+  """Base folder for game data outside the log directory."""
   if not _is_frozen(frozen):
     return ROOT_DIR
   plat, env, home = _system(platform, environ, home)
@@ -688,4 +686,3 @@ def _ensure(path, fallback):
 
 
 LOG_DIR = _ensure(log_dir(), os.path.join(ROOT_DIR, "logs"))
-MEASUREMENTS_DIR = _ensure(data_dir(), ROOT_DIR)

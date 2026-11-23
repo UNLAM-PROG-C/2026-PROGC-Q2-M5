@@ -4,8 +4,7 @@ Two pieces, both plain Python so the rules are tested without a window:
 
   - `Celebration`: the clock of the party. It says how much shake and flash
     the goal deserves, when the next confetti burst is due and whether the
-    replay can start. Everything comes from the clock, so the automatic demo
-    repeats it frame by frame.
+    replay can start. With the same clock values it plays identically.
   - `ConfettiField`: the pool of paper bits. It advances with simple
     arithmetic and the `confetti` kernel (or its numpy version) turns the live
     rows into paper on the image: one thread per bit and the only atomics are

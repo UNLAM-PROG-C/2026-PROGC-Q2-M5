@@ -280,6 +280,36 @@ class SpawnHeightTest(unittest.TestCase):
     self.assertEqual(set(rolls), set(config.POWER_IDS))
 
 
+def test_freeze_duration_and_grounded_stop():
+  m = quiet_match()
+  rival = m.players[1]
+  rival.on_ground = True
+  rival.vx = 100
+  m.powers.activate("freeze_rival", 0, m, 0, 0, [], seconds=6)
+  assert m.powers.effects[("p1", "frozen")].left == 6
+  assert rival.frozen and rival.vx == 0
+
+
+def test_fire_override_only_burns_first_touch():
+  m = quiet_match()
+  events = []
+  m.powers.activate("fire", 0, m, 0, 0, events, seconds=10, burn=6)
+  assert m.powers.effects[("ball", "fire")].left == 10
+  m.powers.check_burn(m, 1, events)
+  m.powers.check_burn(m, 0, events)
+  assert not m.players[0].burned and m.players[1].burned_left == 6
+  assert (protocol.EV_BURN, {"player": 1, "seconds": 6}) in events
+
+
+def test_default_freeze_and_burn_last_two_seconds():
+  m = quiet_match()
+  activate(m, "freeze_rival", 0)
+  assert m.powers.effects[("p1", "frozen")].left == 2
+  activate(m, "fire", 0)
+  m.powers.check_burn(m, 0, [])
+  assert m.players[0].burned_left == 2
+
+
 def hold_right_and_press(m, i):
   """Inputs of run(): P1 holds right and presses jump and kick."""
   m.set_input(0, False, True, 1 + i, 1 + i)

@@ -15,7 +15,8 @@ from fdc.sim import match
 G = config.Gpu
 DURATION = 6.0          # s of a power in the state
 FULL_LEFT = DURATION - 0.5   # s left: the effect is at full strength
-PLAYERS = ({"x": 200.0, "y": 600.0}, {"x": 900.0, "y": 600.0})
+PLAYERS = ({"x": 200.0, "y": 600.0, "frozen": True, "scale": 1.0},
+           {"x": 900.0, "y": 600.0, "scale": 1.0})
 
 
 def effect(prop, target, left=FULL_LEFT, dur=DURATION, power=""):
@@ -45,7 +46,8 @@ class DeriveTest(unittest.TestCase):
 
   def test_ice_shared_screen(self):
     fx = self.derive([effect("frozen", "p0", power="freeze_rival")])
-    self.assertAlmostEqual(fx.ice, 1.0)
+    self.assertEqual(fx.ice, 0.0)
+    self.assertEqual(fx.ice_boxes, ((148, 482, 252, 604),))
     self.assertEqual(len(fx.blackout), 0)
 
   def test_ice_only_for_the_affected_player(self):

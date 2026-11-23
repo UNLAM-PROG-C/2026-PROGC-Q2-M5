@@ -72,7 +72,7 @@ class CelebrationTest(unittest.TestCase):
     self.assertEqual(self.party.due_bursts(START + 20.0), [])
 
   def test_the_bursts_do_not_depend_on_the_frames(self):
-    """Same clock, same bursts: the demo repeats frame by frame."""
+    """The same clock produces the same bursts."""
     other = celebration.Celebration(START, {"side": 0})
     mine, theirs = [], []
     for frame in range(130):
@@ -145,7 +145,7 @@ class ConfettiFieldTest(unittest.TestCase):
     del pos
 
   def test_the_same_seed_gives_the_same_confetti(self):
-    """The demo needs it: the same burst is the same paper."""
+    """The same burst produces the same paper bits."""
     twin = celebration.ConfettiField()
     for field in (self.field, twin):
       field.burst(self.x, self.y)

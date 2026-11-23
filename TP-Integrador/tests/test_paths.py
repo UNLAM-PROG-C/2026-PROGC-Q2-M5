@@ -1,7 +1,7 @@
-"""Folders the game writes when it runs packaged (logs and demo CSV).
+"""Folders the game writes when it runs packaged (logs and data).
 
 A .app inside /Applications or a .exe inside Program Files may be read only:
-the log and the measurement CSV have to leave the bundle and go to the user
+writable data and logs have to leave the bundle and go to the user
 folder of each system, created on demand and with a silent fallback.
 """
 import os
@@ -11,7 +11,6 @@ import unittest
 # Adds the project root to the path.
 import helpers  # pylint: disable=unused-import
 from fdc import config
-from fdc.gpu import metrics
 
 HOME = "/home/ana"                     # fake home of the tests
 LOCAL = "/win/AppData/Local"           # fake %LOCALAPPDATA%
@@ -25,7 +24,7 @@ class SourceTreeTest(unittest.TestCase):
     folder = config.log_dir(platform="win32", home=HOME, frozen=False)
     self.assertEqual(folder, os.path.join(config.ROOT_DIR, "logs"))
 
-  def test_measurements_stay_in_the_repository(self):
+  def test_data_stays_in_the_repository(self):
     folder = config.data_dir(platform="darwin", home=HOME, frozen=False)
     self.assertEqual(folder, config.ROOT_DIR)
 
@@ -103,16 +102,6 @@ class EnsureTest(unittest.TestCase):
         handle.write("x")
       path = os.path.join(blocker, "logs")
       self.assertEqual(config._ensure(path, root), root)
-
-
-class MeasurementsTest(unittest.TestCase):
-  """The CSV of the demo lives in <data dir>/mediciones."""
-
-  def test_default_path(self):
-    path = metrics.MeasurementLog.default_path()
-    folder = os.path.join(config.MEASUREMENTS_DIR, metrics.CSV_FOLDER)
-    self.assertEqual(os.path.dirname(path), folder)
-    self.assertTrue(os.path.basename(path).endswith(".csv"))
 
 
 if __name__ == "__main__":

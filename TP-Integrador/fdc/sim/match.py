@@ -212,12 +212,12 @@ class Match:
 
   def _play(self, dt):
     """Effective play: powers, physics, pickups, goals and the clock."""
-    if self.clock is not None:
-      self.powers.update(dt, self, self._events)
-      self.powers.apply_modifiers(self)
+    pickups = self.clock is not None
+    self.powers.update(dt, self, self._events, spawn=pickups)
+    self.powers.apply_modifiers(self)
     prev_x = self.ball.x
     self._physics(dt, controls=True)
-    if self.clock is not None:
+    if pickups:
       self.powers.check_pickup(self, self._events)
     self._check_goals(prev_x)
     self._tick_clock(dt)
@@ -400,8 +400,8 @@ class Match:
                           "winner": self.winner}))
 
   # ------------------------------------------------------------- test mode
-  def debug_power(self, power, mode):
-    """Test mode: 'spawn' creates the pickup; 'p0'/'p1' activate it
+  def debug_power(self, power, mode, seconds=None, burn=None):
+    """'spawn' creates the pickup; 'p0'/'p1' activate it
         directly. Returns (ok, detail, events); details are shown."""
     events = []
     if power not in config.POWERS_BY_ID:
@@ -412,9 +412,9 @@ class Match:
       self.powers.place_pickup(power, powers.default_test_spawn(self),
                                events)
     else:
-      receiver = 0 if mode == "p0" else 1
-      self.powers.activate(power, receiver, self, self.ball.x,
-                           self.ball.y, events)
+      self.powers.activate(power, 0 if mode == "p0" else 1, self,
+                           self.ball.x, self.ball.y, events,
+                           seconds=seconds, burn=burn)
     return True, "", events
 
   # ----------------------------------------------------------------- state

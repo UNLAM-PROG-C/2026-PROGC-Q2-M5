@@ -69,7 +69,7 @@ TEST_COMMANDS = {"f7": (protocol.CMD_DEBUG_POWER, "spawn"),
                  "f12": (protocol.CMD_DEBUG_CRASH, None)}
 TEST_STEPS = {"f5": -1, "f6": 1}   # test mode keys that change the power
 # --- replay (F5)
-# Replay rows start below the scoreboard and leave space for demo signs.
+# Replay rows start below the scoreboard.
 REPLAY_BOARD_GAP = 4               # px: padding below the board
 # Align the title just below the scoreboard frame.
 REPLAY_SIGN_TOP = render.BOARD_TOP + render.BOARD[1] + REPLAY_BOARD_GAP

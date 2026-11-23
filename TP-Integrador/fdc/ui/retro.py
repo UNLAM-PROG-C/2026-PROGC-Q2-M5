@@ -6,9 +6,10 @@ smoothing.
 """
 import pygame
 
+from fdc import config
 from fdc.ui import palette
 
-PX = 2                  # logical pixels per art pixel (all pixel art is x2)
+PX = config.ART_PIXEL
 # When pixelizing, pixels less opaque than this become transparent.
 ALPHA_CUT = 110
 MASK_THRESHOLD = 20     # minimum opacity of a pixel to count in the outline

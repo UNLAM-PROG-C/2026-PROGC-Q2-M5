@@ -5,6 +5,7 @@ import time
 import pygame
 
 from fdc import config
+from fdc import protocol
 from fdc.gpu import quality
 from fdc.sim import physics
 from fdc.ui import assets
@@ -26,8 +27,11 @@ SHORTCUTS = {
 }
 LEGEND = " · ".join(f"{pygame.key.name(k)} {label}"
                     for k, (_, label) in SHORTCUTS.items()) + " · 0 Apagar"
-DURATIONS = {REPLAY: RULES.REPLAY_DURATION, NIGHT: RULES.NIGHT_DURATION,
-             "freeze_rival": RULES.FREEZE_DURATION}
+DURATIONS = {REPLAY: RULES.REPLAY_DURATION, NIGHT: RULES.NIGHT_DURATION}
+MANUAL_POWERS = ("confusion", "blackout")
+SIM_DURATIONS = {"freeze_rival": {"seconds": RULES.FREEZE_DURATION},
+                 "fire": {"seconds": RULES.FIRE_DURATION,
+                          "burn": RULES.BURN_DURATION}}
 
 
 class ManualEffects:
@@ -50,16 +54,13 @@ class ManualEffects:
   def powers(self):
     """Display-only copies of the standard power effect parameters."""
     active = []
-    for effect in self.ends.keys() & config.POWERS_BY_ID.keys():
+    for effect in MANUAL_POWERS:
       left = self.left(effect)
       if left:
         active.append(_effect_snapshot(effect, left))
     return active
 
-  def status(self):
-    return " · ".join(self._labels()) or "Sin efectos activos"
-
-  def _labels(self):
+  def labels(self):
     for name, label in SHORTCUTS.values():
       remaining = self.left(name)
       if remaining:
@@ -81,6 +82,8 @@ def _effect_snapshot(effect, left):
 
 class PresentationScreen(match_screens.MatchScreen):
   """Two local people, with post-processing under the presenter's control."""
+
+  TOAST_TOP = 198  # px: below the shortcut legend and live power status
 
   def __init__(self, app):
     super().__init__(app, app.last_characters or RULES.DEFAULT_CHARACTERS)
@@ -130,6 +133,10 @@ class PresentationScreen(match_screens.MatchScreen):
     return True
 
   def _activate(self, effect):
+    if effect in SIM_DURATIONS:
+      self._send(protocol.CMD_DEBUG_POWER, power=effect, mode="p0",
+                 **SIM_DURATIONS[effect])
+      return
     if not self._ensure_full():
       return
     if effect == REPLAY and not self._start_clip():
@@ -156,6 +163,7 @@ class PresentationScreen(match_screens.MatchScreen):
     return self.app.postfx.start_driven_replay(self.clip, DURATIONS[REPLAY])
 
   def _clear_effects(self):
+    """Clear manual effects; simulation powers expire on their own."""
     self.effects.clear()
     self.clip = None
     self.app.postfx.night = False
@@ -175,11 +183,26 @@ class PresentationScreen(match_screens.MatchScreen):
   def draw(self, surf):
     self._sync_postfx()
     super().draw(surf)
-    _draw_hud(surf, self.effects.status())
+    _draw_hud(surf, self._effect_status())
 
   def postfx_state(self, st):
     powers = self.effects.powers()
-    return dict(st, effects=powers) if powers else st
+    effects = st.get("effects", [])
+    return dict(st, effects=[*effects, *powers]) if powers else st
+
+  def _effect_status(self):
+    labels = (*self._sim_labels(), *self.effects.labels())
+    return " · ".join(labels) or "Sin efectos activos"
+
+  def _sim_labels(self):
+    state = self.state or {}
+    players = state.get("players", ())
+    for label in _field_labels(players, state.get("effects", ())):
+      yield label
+    for index, player in enumerate(players):
+      if player.get("burned"):
+        name = self.renderer.who(index)
+        yield f"Fuego: {name} {math.ceil(player['burned_left'])} s"
 
   def _sync_postfx(self):
     chain = self.app.postfx
@@ -190,6 +213,17 @@ class PresentationScreen(match_screens.MatchScreen):
     elif self.clip is not None:
       chain.end_goal_replay()
       self.clip = None
+
+
+def _field_labels(players, effects):
+  target = RULES.TARGET_PLAYER
+  for effect in effects:
+    prop, actor = effect["prop"], effect["target"]
+    if prop == "frozen" and actor == f"p{target}":
+      if target < len(players) and players[target].get("frozen"):
+        yield f"Hielo: {math.ceil(effect['left'])} s"
+    if prop == "fire" and actor == "ball":
+      yield "Fuego: pelota encendida"
 
 
 def _quality_settings(chain):

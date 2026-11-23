@@ -9,6 +9,7 @@ radius of the pictogram (y grows downwards). So each shape below is a list
 of points that does not depend on the final icon size. Stroke widths are
 in those units too.
 """
+import functools
 import math
 
 import pygame
@@ -64,6 +65,24 @@ FLAME_ART = (
 FLAME_COLORS = {"o": palette.ORANGE, "y": palette.GOLD,
                 "w": palette.CREAM}
 FLAME_OUTLINE_PX = 1               # px of dark outline around the flame
+# World-space flame crown (logical px at normal player scale).
+FLAME_W, FLAME_H = 88, 110
+FLAME_RED = (226, 64, 32)          # RGB of the back layer
+FLAME_ORANGE = (255, 150, 40)      # RGB of the front layer
+FLAME_YELLOW = (255, 226, 90)      # RGB of the core
+FLAME_FPS = 10                    # frames per second
+FLAME_FRAMES = 3                  # number of looping frames
+FLAME_FRONT = 0.60                # front share of the back height
+FLAME_CORE_SHARE = 0.62           # core share of the front height
+FLAME_FRONT_ALPHA = 200          # surface alpha of the front layer
+FLAME_CACHE = 90                 # cached scale/frame combinations
+FLAME_LEAN = (-2, 1, -1, 2, -1)    # tip offset per tongue in art pixels
+# Each row gives the heights of the five tongues in art pixels.
+FLAME_HEIGHTS = ((47, 54, 37, 52, 46), (49, 52, 38, 54, 45),
+                 (46, 53, 39, 51, 48))
+FLAME_OVERLAP = 2                 # art pixels of overlap at each root
+FLAME_BEND = 0.42                 # height share where the tongue narrows
+FLAME_SHOULDER = 0.22             # height share of the widest point
 
 # Target of the powers that affect the rival (bottom right).
 TARGET_AT = 0.62                   # offset from the centre (share of radius)
@@ -583,3 +602,62 @@ def _flame_bits():
         surf.set_at((x, y), (*FLAME_COLORS[char], palette.OPAQUE))
   return surf
 
+
+def flame_crown(frame, scale):
+  """Cached rear and front layers, aligned to the same bottom anchor."""
+  size = tuple(max(2 * FLAME_OUTLINE_PX + 1, int(px * scale / retro.PX))
+               for px in (FLAME_W, FLAME_H))
+  return _crown(frame % FLAME_FRAMES, size)
+
+
+@functools.lru_cache(maxsize=FLAME_CACHE)
+def _crown(frame, size):
+  edge = FLAME_OUTLINE_PX
+  w, h = (side - 2 * edge for side in size)
+  back, front = art.canvas(w, h), art.canvas(w, h)
+  heights = FLAME_HEIGHTS[frame]
+  for i, (height, lean) in enumerate(zip(heights, FLAME_LEAN)):
+    span = _tongue_span(i, len(heights), w)
+    _paint_tongue(back, front, span, height, lean)
+  outlined = retro.outline_native(back, palette.INK, edge)
+  face = art.canvas(*size)
+  face.blit(front, (edge, edge))
+  return retro.scale_px(outlined), _scale_flame_front(face)
+
+
+def _scale_flame_front(face):
+  face = retro.scale_px(face)
+  face.set_alpha(FLAME_FRONT_ALPHA)
+  return face
+
+
+def _tongue_span(index, count, width):
+  left = max(0, index * width // count - FLAME_OVERLAP)
+  right = min(width - 1, (index + 1) * width // count + FLAME_OVERLAP)
+  return left, right
+
+
+def _paint_tongue(back, front, span, height, lean):
+  base = back.get_height() - 1
+  length = round(height * back.get_height() * retro.PX / FLAME_H)
+  front_h = round(length * FLAME_FRONT)
+  pygame.draw.polygon(back, FLAME_RED,
+                      _tongue(span, base, length, lean))
+  pygame.draw.polygon(front, FLAME_ORANGE,
+                      _tongue(span, base, front_h, lean))
+  left, right = span
+  core = (min(left + 1, right), max(left, right - 1))
+  if core[0] <= core[1]:
+    pygame.draw.polygon(front, FLAME_YELLOW, _tongue(
+        core, base, round(front_h * FLAME_CORE_SHARE), lean))
+
+
+def _tongue(span, base, length, lean):
+  left, right = span
+  middle = (left + right) // 2
+  tip = min(right, max(left, middle + lean))
+  bend = base - round(length * FLAME_BEND)
+  shoulder = base - round(length * FLAME_SHOULDER)
+  return ((left, base), (left, shoulder), (middle - 1, bend),
+          (tip, max(0, base - length)), (tip + 1, bend),
+          (right, shoulder), (right, base))

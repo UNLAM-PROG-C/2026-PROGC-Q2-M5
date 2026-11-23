@@ -18,15 +18,21 @@ BLACKOUT_PROP = "blackout"
 CONFUSION_PROP = "confusion"
 FIRE_PROP = "fire"
 PLAYER_PREFIX = "p"     # effect target of a player: "p0", "p1"
+ICE_W = 104            # px x player scale
+ICE_EXTRA_H = 16       # px x scale above the normal player height
+ICE_SINK = 4           # px that the base extends below the feet
+ICE_GROW = 0.15        # s to grow the block from the feet
 
 
 class FxParams:
   """Everything the chain needs to know of one frame (see spec §5)."""
 
-  __slots__ = ("ice", "blackout", "confusion", "fire", "night", "burned")
+  __slots__ = ("ice", "ice_boxes", "blackout", "confusion", "fire", "night",
+               "burned")
 
   def __init__(self, night=False):
     self.ice = 0.0            # 0-1: ice tint and bright edges
+    self.ice_boxes: tuple = ()  # (x0, y0, x1, y1) of frozen players
     self.blackout = ()        # points (x, y) that keep their light
     self.confusion = 0.0      # 0-1: inverted and rotated image
     self.fire = None          # (x, y, radius) of the hot air
@@ -49,10 +55,40 @@ def derive(state, viewer, night=False):
   state = state or {}
   players = state.get("players") or ()
   params = FxParams(night=bool(night))
-  for effect in state.get("effects") or ():
+  effects = state.get("effects") or ()
+  params.ice_boxes = _ice_boxes(players, effects)
+  for effect in effects:
     _add_power(params, effect, players, viewer)
   params.fire = _fire(params.fire, state)
   return params
+
+
+def _ice_boxes(players, effects):
+  timers = {e.get("target"): e for e in effects if e.get("prop") == ICE_PROP}
+  return tuple(ice_box(p, timers.get(f"p{i}"))
+               for i, p in enumerate(players) if p and p.get("frozen"))
+
+
+def ice_box(player, effect=None):
+  """Bounds of the growing block, in logical pixels (right/bottom open)."""
+  scale = player.get("scale", 1.0)
+  width = _snap(ICE_W * scale)
+  height = (config.PlayerSpec.HEIGHT + ICE_EXTRA_H) * scale
+  growth = _ice_growth(effect)
+  left = _snap(player["x"] - width / 2)
+  bottom = _snap(player["y"] + ICE_SINK)
+  return left, bottom - _snap(height * growth), left + width, bottom
+
+
+def _ice_growth(effect):
+  if effect is None:
+    return FULL
+  elapsed = effect.get("dur", 0.0) - effect.get("left", 0.0)
+  return _fade(elapsed, ICE_GROW) if effect.get("dur") else FULL
+
+
+def _snap(value):
+  return int(value) // config.ART_PIXEL * config.ART_PIXEL
 
 
 def _add_power(params, effect, players, viewer):
@@ -73,7 +109,8 @@ def _add_power(params, effect, players, viewer):
 def _set_power(params, prop, strength, players, index, viewer):
   """Parameter of one power, with the perspective of the viewer."""
   if prop == ICE_PROP:
-    _set_ice(params, strength if _seen_by(viewer, index) else 0.0)
+    if viewer == index and players[index].get("frozen"):
+      params.ice = max(params.ice, strength)
   elif prop == BLACKOUT_PROP and _seen_by(viewer, index):
     params.blackout = _blackout_points(players, index, viewer)
   elif prop == CONFUSION_PROP and _seen_by(viewer, index):
@@ -82,9 +119,6 @@ def _set_power(params, prop, strength, players, index, viewer):
     # Both players see the embers: the burnt player is on the pitch.
     params.burned = params.burned + (_feet(_player(players, index)),)
 
-
-def _set_ice(params, strength):
-  params.ice = max(params.ice, strength)
 
 
 def _seen_by(viewer, index):

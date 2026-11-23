@@ -7,7 +7,7 @@ from fdc.ui import palette
 
 HINT = "F10: SIN EFECTOS / FULL · F1: ayuda"
 HELP = "F2: pasos CUDA · F4: CPU/GPU en FULL"
-DEMO_HELP = " · Tab: siguiente"
+
 NOTICE_MS = 3000  # Duration of the confirmation in milliseconds.
 MARGIN = 8        # Pixels between the chips and the screen edge.
 GAP = 6           # Pixels between neighboring chips.
@@ -37,7 +37,7 @@ class QualityControls:
     """The confirmation text while it lasts, else empty."""
     return self.message if pygame.time.get_ticks() < self.expires else ""
 
-  def draw(self, surf, demo=False, menu=False):
+  def draw(self, surf, menu=False):
     """Draw the chips at the bottom right; return the area they cover."""
     right = surf.get_width() - MARGIN
     bottom = surf.get_height() - (FOOTER_SPACE if menu else MARGIN)
@@ -47,8 +47,7 @@ class QualityControls:
         if message else hint
     if not self.show_help:
       return bounds
-    label = HELP + (DEMO_HELP if demo else "")
-    return bounds.union(_chip(surf, label, (right, hint.top - GAP)))
+    return bounds.union(_chip(surf, HELP, (right, hint.top - GAP)))
 
 
 def _chip(surf, label, bottomright):

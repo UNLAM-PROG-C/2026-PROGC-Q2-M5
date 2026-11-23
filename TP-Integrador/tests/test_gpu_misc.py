@@ -1,149 +1,13 @@
-"""Demo clock, CSV and flags without a visible window."""
-import csv
-import os
-import tempfile
+"""Overlay, flags and machine information without a visible window."""
 import types
 import unittest
-from unittest import mock
 
 import helpers  # pylint: disable=unused-import
 import main as main_module
 from fdc import config
 from fdc.gpu import backend
-from fdc.gpu import demo
-from fdc.gpu import metrics
 from fdc.gpu import overlay
 from fdc.gpu import sysinfo
-
-G = config.Gpu
-DT = 1.0 / config.UI_FPS  # s between frames
-
-
-class DirectorTest(unittest.TestCase):
-  """The demo clock runs the seven segments in order."""
-
-  def test_all_segments_in_order(self):
-    director = demo.DemoDirector(seconds=1.0)
-    seen = []
-    for _ in range(int(len(demo.SEGMENTS) * config.UI_FPS) + 1):
-      index = director.step(DT, DT)
-      if not seen or seen[-1] != index:
-        seen.append(index)
-    self.assertEqual(seen, list(range(len(demo.SEGMENTS))))
-
-  def test_names_are_the_ones_of_the_spec(self):
-    self.assertEqual(demo.SEGMENTS, (
-        ("sin efectos", None), ("hielo", "ice"), ("apagón", "blackout"),
-        ("confusión", "confusion"), ("fuego", "fire"),
-        ("noche + autoexposición", "night"),
-        ("repetición con look de TV vieja", "replay"),
-    ))
-
-  def test_frame_clock_is_repeatable(self):
-    director = demo.DemoDirector(seconds=0.5, frame_clock=True)
-    indexes = [director.step(0.0, DT) for _ in range(40)]
-    self.assertEqual(indexes[-1], 1)
-
-  def test_done_after_the_last_segment(self):
-    director = demo.DemoDirector(seconds=1.0, frame_clock=True)
-    frames = int(len(demo.SEGMENTS) * config.UI_FPS / 1.0) + 2
-    director.step(0.0, 0.0)
-    for _ in range(frames):
-      director.step(1.0, 1.0)
-    self.assertTrue(director.done)
-    self.assertEqual(director.remaining(), 0.0)
-
-  def test_label_and_forcing(self):
-    director = demo.DemoDirector(seconds=1.0)
-    self.assertEqual(director.kind(), None)
-    self.assertIn("EFECTO 1/7", director.label())
-    for _ in range(int(config.UI_FPS) + 2):
-      director.step(DT, DT)
-    self.assertEqual(director.kind(), "ice")
-    self.assertIn("HIELO", director.label())
-
-  def test_every_kind_has_a_name(self):
-    kinds = [kind for _, kind in demo.SEGMENTS[1:]]
-    for kind in kinds:
-      self.assertTrue(kind)
-
-
-class DemoPassesTest(unittest.TestCase):
-  """Which backends the demo measures, with and without the GPU."""
-
-  def _options(self, **kw):
-    opts = types.SimpleNamespace(demo_backends="both", force_cpu=False)
-    for name, value in kw.items():
-      setattr(opts, name, value)
-    return opts
-
-  def test_both_measures_gpu_first(self):
-    with mock.patch.object(config.Gpu, "ENABLED", True):
-      with mock.patch.object(backend, "available", return_value=True):
-        self.assertEqual(demo._passes(self._options()),
-                         ["gpu", "cpu"])
-
-  def test_fdc_gpu_0_measures_the_cpu_once(self):
-    with mock.patch.object(config.Gpu, "ENABLED", False):
-      with mock.patch.object(backend, "available", return_value=True):
-        self.assertEqual(demo._passes(self._options()), ["cpu"])
-
-  def test_a_machine_without_nvidia_measures_once(self):
-    with mock.patch.object(backend, "available", return_value=False):
-      self.assertEqual(demo._passes(self._options()), ["cpu"])
-
-  def test_forced_cpu_measures_numpy_only(self):
-    with mock.patch.object(backend, "available", return_value=True):
-      opts = self._options(force_cpu=True)
-      self.assertEqual(demo._passes(opts), ["cpu"])
-
-  def test_one_backend_is_respected(self):
-    opts = self._options(demo_backends="cpu")
-    self.assertEqual(demo._passes(opts), ["cpu"])
-
-
-class MeasurementLogTest(unittest.TestCase):
-  """The CSV of the demo: warm-up, columns and percentiles."""
-
-  def setUp(self):
-    self.folder = tempfile.mkdtemp()
-    self.path = os.path.join(self.folder, "demo.csv")
-    self.log = metrics.MeasurementLog(self.path)
-    self.log.begin_segment(1, "hielo", "gpu", "RTX", "1280x720",
-                           "1280x720", False, "Q0", "32x8")
-
-  def test_warmup_is_dropped(self):
-    for _ in range(G.MEASURE_WARMUP + 10):
-      self.log.add_frame(10.0, 5.0)
-    self.assertEqual(len(self.log.frames), 10)
-
-  def test_row_has_every_column(self):
-    for _ in range(G.MEASURE_WARMUP + 2):
-      self.log.add_frame(10.0, 5.0)
-    row = self.log.end_segment({"gray": 1.0})
-    self.assertEqual(tuple(row), metrics.COLUMNS)
-    self.assertEqual(row["backend"], "gpu")
-    self.assertEqual(row["frames"], 2)
-
-  def test_file_has_header_and_row(self):
-    for _ in range(G.MEASURE_WARMUP + 2):
-      self.log.add_frame(10.0, 5.0)
-    self.log.end_segment()
-    with open(self.path, newline="", encoding="utf-8") as fh:
-      rows = list(csv.DictReader(fh))
-    self.assertEqual(len(rows), 1)
-    self.assertEqual(rows[0]["effect"], "hielo")
-
-  def test_percentile(self):
-    values = [10.0, 20.0, 30.0, 40.0]
-    self.assertEqual(metrics.percentile(values), 40.0)
-    self.assertEqual(metrics.percentile([]), 0.0)
-
-  def test_no_segment_open(self):
-    other = metrics.MeasurementLog(
-        os.path.join(self.folder, "vacio.csv"))
-    self.assertIsNone(other.end_segment())
-
 
 class OverlayTest(unittest.TestCase):
   """The lines of the overlay (readable from the back of a classroom)."""
@@ -190,13 +54,11 @@ class FlagsTest(unittest.TestCase):
                      (config.LOGICAL_WIDTH, config.LOGICAL_HEIGHT))
 
   def test_parse_args_accepts_the_new_flags(self):
-    options = main_module.parse_args(["--demo", "--demo-seconds", "2",
-                                      "--demo-backends", "cpu",
+    options = main_module.parse_args(["--presentation",
                                       "--overlay", "full",
                                       "--calidad", "full",
                                       "--backend", "cpu"])
-    self.assertTrue(options.demo)
-    self.assertEqual(options.demo_seconds, 2.0)
+    self.assertTrue(options.presentation)
     self.assertEqual(options.overlay, "full")
     self.assertEqual(options.quality_mode, "full")
 

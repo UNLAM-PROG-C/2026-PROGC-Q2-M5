@@ -234,6 +234,19 @@ class OrphanTest(unittest.TestCase):
 
 
 class NoTestModeTest(unittest.TestCase):
+  def test_untimed_power_allowlist(self):
+    link = ipc.SimLink(untimed=True, test_mode=False, log_to_file=False)
+    link.start()
+    self.addCleanup(link.stop)
+    wait_ready(link)
+    link.send_command(protocol.CMD_START, match=1)
+    for power in ("freeze_rival", "fire", "speed_up"):
+      link.send_command(protocol.CMD_DEBUG_POWER, power=power, mode="p0")
+    msgs, _ = pump(link, 2, until=lambda m, s: len(
+        acks(m, protocol.CMD_DEBUG_POWER)) == 3)
+    replies = acks(msgs, protocol.CMD_DEBUG_POWER)
+    self.assertEqual([a["ok"] for a in replies], [True, True, False])
+
   def test_debug_commands_rejected(self):
     link = ipc.SimLink(test_mode=False, log_to_file=False)
     link.start()
@@ -245,7 +258,7 @@ class NoTestModeTest(unittest.TestCase):
   def check_rejected(self, link):
     wait_ready(link)
     link.send_command(protocol.CMD_START, match=1)
-    link.send_command(protocol.CMD_DEBUG_POWER, power="grow", mode="p0")
+    link.send_command(protocol.CMD_DEBUG_POWER, power="fire", mode="p0")
     link.send_command(protocol.CMD_DEBUG_CRASH)
     msgs, _ = pump(link, 2, until=lambda m, s: acks(
         m, protocol.CMD_DEBUG_CRASH))

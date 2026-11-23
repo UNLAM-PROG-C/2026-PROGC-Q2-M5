@@ -127,19 +127,23 @@ class PowerManager:
     self.spawn_timer = self._roll_spawn()
 
   # ------------------------------------------------------------- timers
-  def update(self, dt, match, events):
+  def update(self, dt, match, events, spawn=True):
     """Called only during effective play."""
     self._expire_effects(dt, events)
     self._refresh_burns(match)
-    self._age_pickup(dt, events)
-    self.spawn_timer -= dt
-    if self.spawn_timer <= 0 and self.pickup is None:
-      self._spawn(match, events)
+    if spawn:
+      self._tick_pickup(dt, match, events)
     for bomb in list(self.bombs):
       bomb.fuse -= dt
       if bomb.fuse <= 0:
         self.bombs.remove(bomb)
         self._explode(bomb, match, events)
+
+  def _tick_pickup(self, dt, match, events):
+    self._age_pickup(dt, events)
+    self.spawn_timer -= dt
+    if self.spawn_timer <= 0 and self.pickup is None:
+      self._spawn(match, events)
 
   def _expire_effects(self, dt, events):
     for key, effect in list(self.effects.items()):
@@ -206,13 +210,14 @@ class PowerManager:
     self.activate(pickup.power, match.last_touch, match, pickup.x,
                   pickup.y, events)
 
-  def activate(self, power, receiver, match, x, y, events):
+  def activate(self, power, receiver, match, x, y, events,
+               seconds=None, burn=None):
     """Applies a power to its targets. Returns False if it had none."""
     pdef = config.POWERS_BY_ID[power]
     if pdef.target in config.PERSONAL_TARGETS and receiver is None:
       return False
     targets = resolve_targets(pdef, receiver)
-    self._add_effects(pdef, targets)
+    self._add_effects(pdef, targets, seconds, burn)
     if pdef.prop == "bomb":
       self._arm_bomb(events)
     events.append((protocol.EV_POWER, {
@@ -221,11 +226,12 @@ class PowerManager:
     self.apply_modifiers(match)
     return True
 
-  def _add_effects(self, pdef, targets):
+  def _add_effects(self, pdef, targets, seconds, burn):
+    value = burn if pdef.prop == FIRE_PROP else pdef.value
     for target in targets:
       # Same key -> renews or replaces (never multiplies).
       self.effects[(target, pdef.prop)] = Effect(
-          pdef.id, target, pdef.prop, pdef.value, pdef.duration)
+          pdef.id, target, pdef.prop, value, seconds or pdef.duration)
 
   def _arm_bomb(self, events):
     bomb_x = self.rng.uniform(*RULES.BOMB_ZONE_X)
@@ -241,10 +247,10 @@ class PowerManager:
       return
     self._fire_out(effect, events)
     key = f"p{user}"
+    seconds = effect.value or RULES.BURN_DURATION
     self.effects[(key, BURN_PROP)] = Effect(
-        effect.power, key, BURN_PROP, None, RULES.BURN_DURATION)
-    events.append((protocol.EV_BURN, {"player": user,
-                                      "seconds": RULES.BURN_DURATION}))
+        effect.power, key, BURN_PROP, None, seconds)
+    events.append((protocol.EV_BURN, {"player": user, "seconds": seconds}))
     self.apply_modifiers(match)
 
   def _fire_out(self, effect, events):
@@ -268,9 +274,12 @@ class PowerManager:
     """Base values plus the effects the match keeps on the player."""
     effects = self.effects
     key = f"p{player.idx}"
+    frozen = (key, "frozen") in effects
+    if frozen and not player.frozen and player.on_ground:
+      player.vx = 0.0  # Stop existing ground motion, not future impulses.
     player.clear_modifiers()
     self._set_multipliers(player, key)
-    player.frozen = (key, "frozen") in effects
+    player.frozen = frozen
     player.no_kick = (key, "no_kick") in effects
     player.confused = (key, CONFUSION_PROP) in effects
     self._set_burn(player, effects.get((key, BURN_PROP)))

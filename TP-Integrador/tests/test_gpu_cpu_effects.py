@@ -1,6 +1,6 @@
 """FDC_GPU only decides about CUDA: without it the effects run on the CPU.
 
-The Mac, the notebooks of the demo and the "Windows CPU" exe have no CUDA,
+The Mac, notebooks without NVIDIA and the Windows CPU build lack CUDA,
 and there FULL has to show the effects with the numpy backend (slower but
 complete). `FDC_GPU=0` only disables CUDA. `FDC_EFECTOS=0` or
 `--sin-efectos` disables the chain entirely.
@@ -15,8 +15,6 @@ import sys
 import unittest
 
 import helpers  # pylint: disable=unused-import
-from fdc import config
-from fdc.gpu import demo
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(PROJECT, "tests", "check_effects_env.py")
@@ -100,19 +98,6 @@ class EffectsOffTest(unittest.TestCase):
 
   def test_no_effects_flag_is_the_same_switch(self):
     self.assertTrue(helpers.main_options(["--sin-efectos"]).no_gpu)
-
-
-class NoCudaDemoTest(unittest.TestCase):
-  """The demo measures one backend when there is no CUDA for it."""
-
-  def test_one_pass_without_cuda(self):
-    saved = config.Gpu.ENABLED
-    config.Gpu.ENABLED = False
-    try:
-      options = helpers.main_options(["--demo"])
-      self.assertEqual(demo._passes(options), ["cpu"])
-    finally:
-      config.Gpu.ENABLED = saved
 
 
 if __name__ == "__main__":

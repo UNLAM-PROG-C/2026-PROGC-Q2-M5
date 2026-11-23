@@ -69,28 +69,9 @@ COMMAND_LINE = (
     (("--overlay",), {"dest": "overlay", "default": None,
                       "choices": ("off", "compact", "full", "steps"),
                       "help": "overlay de rendimiento (F2 lo cambia en vivo)"}),
-    (("--demo",), {"dest": "demo", "action": "store_true",
-                   "help": "demo automática de 7 segmentos, sin menús"}),
     (("--presentation",), {"action": "store_true",
                            "help": "partido local sin reloj, con efectos "
                                    "a demanda"}),
-    (("--demo-seconds",), {"dest": "demo_seconds", "type": float,
-                           "default": None,
-                           "help": "segundos de cada segmento (por defecto "
-                                   "10)"}),
-    (("--demo-backends",), {"dest": "demo_backends", "default": "both",
-                            "choices": ("both", "gpu", "cpu"),
-                            "help": "la demo corre en los dos backends o en "
-                                    "uno solo"}),
-    (("--demo-frame-clock",), {"dest": "demo_frame_clock",
-                               "action": "store_true",
-                               "help": "la demo avanza con 1/60 s fijo por "
-                                       "frame (para capturas reproducibles)"}),
-    (("--measure-csv",), {"dest": "measure_csv", "default": None,
-                          "help": "CSV de tiempos de la demo (por defecto "
-                                  "mediciones/demo_<fecha>_<host>.csv)"}),
-    (("--measure-frames",), {"dest": "measure_frames", "action": "store_true",
-                             "help": "además del resumen, un CSV por frame"}),
 )
 
 

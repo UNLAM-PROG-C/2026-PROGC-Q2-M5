@@ -3,9 +3,7 @@ __pycache__/
 .venv/
 logs/
 
-# Measurements, demo frames, captures and the Colab package (they are
-# regenerated with tools/run_demo.py, tools/record_frames.py,
-# tools/capture_celebration.py and tools/pack_colab.py).
+# Benchmark measurements, recorded frames, captures and the Colab package.
 mediciones/
 frames/
 capturas/

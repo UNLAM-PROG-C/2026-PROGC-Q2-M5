@@ -80,7 +80,6 @@ class PostFx:
     self._init_buffers(size)
     self._init_effects()
     self._init_mode(options)
-    self.forced = {}            # FxParams forced by the demo director
 
   def _init_buffers(self, size):
     """Metrics, particles, target surface and the effect buffers."""
@@ -406,25 +405,7 @@ class PostFx:
 
   def _derive(self):
     """FxParams of this frame (pure rules, see effects_state)."""
-    fx = effects_state.derive(self.state, self.viewer, night=self.night)
-    return self._forced(fx) if self.forced else fx
-
-  def _forced(self, fx):
-    """Demo: the director forces the parameters of the segment."""
-    for name in ("ice", "confusion"):
-      if name in self.forced:
-        setattr(fx, name, self.forced[name])
-    for name in ("blackout", "fire", "burned"):
-      if name in self.forced:
-        setattr(fx, name, self.forced[name](self.state))
-    return fx
-
-  def force(self, **params):
-    """Forces (or clears, with `clear=True`) the params of the demo."""
-    if params.pop("clear", False):
-      self.forced = {}
-      return
-    self.forced = params
+    return effects_state.derive(self.state, self.viewer, night=self.night)
 
   def begin_replay(self):
     """Starts a replay of the last seconds of real play."""
@@ -476,7 +457,8 @@ class PostFx:
     """Readable list of the effects on this frame (overlay line 4)."""
     names = []
     for name in ("ice", "blackout", "confusion", "fire", "burned", "night"):
-      value = getattr(self.fx, name, None)
+      value = self.fx.ice_boxes or self.fx.ice if name == "ice" else getattr(
+          self.fx, name, None)
       if value not in (None, (), 0, 0.0, False):
         names.append(_EFFECT_NAMES.get(name, name))
     if self.player is not None:
@@ -512,16 +494,23 @@ class PostFx:
     return self._timed("confusion_rot", self.ops.rotate, out, angle)
 
   def _ice(self, image):
-    """ICE: bright edges, then a blue tint weighted by the strength.
+    """Tint the viewer if frozen, and apply material inside each block."""
+    if self.fx.ice > 0:
+      image = self._ice_material(image, self.fx.ice)
+    h, w = image.shape[:2]
+    for x0, y0, x1, y1 in self.fx.ice_boxes:
+      left, top = max(0, x0), max(0, y0)
+      right, bottom = min(w, x1), min(h, y1)
+      if left < right and top < bottom:
+        region = image[top:bottom, left:right]
+        region[:] = self._ice_material(region, 1.0)
+    return image
 
-        One fused stage (`ops.ice`): the edges, the tint and the mix happen in
-        two device passes, so the ice no longer costs six round trips.
-        """
-    if self.fx.ice <= 0:
-      return image
+  def _ice_material(self, image, level):
+    """Existing edge and tint passes; full strength for the block itself."""
     gpu = config.Gpu
-    amount = gpu.ICE_STRENGTH * self.fx.ice
-    strength = gpu.ICE_EDGES * self.fx.ice
+    amount = gpu.ICE_STRENGTH * level
+    strength = gpu.ICE_EDGES * level
     return self._timed("ice", self.ops.ice, image, min(1.0, strength),
                        gpu.ICE_TINT,
                        min(1.0, amount * self._pulse(gpu.ICE_PULSE)))

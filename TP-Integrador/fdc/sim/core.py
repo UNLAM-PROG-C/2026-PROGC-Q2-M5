@@ -162,14 +162,22 @@ class SimulationCore:
       self.publish_state()
 
   def _debug_power(self, cmd):
-    if not self.test_mode or self.match is None:
-      self._ack(cmd, False, "modo de prueba desactivado"
-                if not self.test_mode else "sin partido")
+    error = self._power_error(cmd.get("power"))
+    if error or self.match is None:
+      self._ack(cmd, False, error or "sin partido")
       return
     ok, detail, events = self.match.debug_power(
-        cmd.get("power"), cmd.get("mode", "spawn"))
+        cmd.get("power"), cmd.get("mode", "spawn"),
+        seconds=cmd.get("seconds"), burn=cmd.get("burn"))
     self._ack(cmd, ok, detail)
     self.flush_match_events(events)
+
+  def _power_error(self, power):
+    if not (self.test_mode or self.untimed):
+      return "modo de prueba desactivado"
+    if not self.test_mode and power not in config.Presentation.SIM_POWERS:
+      return "poder no disponible en presentación"
+    return ""
 
   def _debug_crash(self, cmd):
     if not self.test_mode:
