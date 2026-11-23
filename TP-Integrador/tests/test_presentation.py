@@ -9,12 +9,15 @@ import main
 from fdc import config
 from fdc import protocol
 from fdc.gpu import replay
+from fdc.gpu import quality
 from fdc.sim import match
 from fdc.ui import match_screens
 from fdc.ui import presentation
 from fdc.ui import screens
 
 
+FULL_ONLY_KEYS = (pygame.K_3, pygame.K_6)  # replay and night
+PLAIN_KEYS = (pygame.K_1, pygame.K_2, pygame.K_4, pygame.K_5)
 FRAMES = 3               # frames drawn after a change
 DARK_SHARE = 0.4         # a darkened pixel keeps less than this of its light
 FIRST_X, STEP_X = 40, 40  # px: where the search for a free pixel starts
@@ -70,13 +73,55 @@ class PresentationTest(unittest.TestCase):
     drive.until(lambda: isinstance(drive.screen(), screens.MenuScreen))
 
   def test_effect_keys_refresh_and_expire_on_cpu(self):
-    drive = self.open_game("--presentation", "--calidad", "sin-efectos")
+    drive = self.open_game("--presentation", "--calidad", "full")
     clock = set_clock(self.wait_for_play(drive))
     cases = ((pygame.K_4, "confusion"),)
     for key, effect in cases:
       self.check_effect(drive, clock, key, effect,
                         config.POWERS_BY_ID[effect].duration)
     self.check_effect(drive, clock, pygame.K_6, "night", 10.0)
+
+  def test_full_only_keys_do_nothing_without_effects(self):
+    drive = self.open_game("--presentation", "--calidad", "sin-efectos")
+    screen = self.wait_for_play(drive)
+    before = self.app.postfx.quality_mode
+    for key in FULL_ONLY_KEYS:
+      drive.down(key)
+    drive.frames(FRAMES)
+    self.assertEqual(self.app.postfx.quality_mode, before)
+    self.assertFalse(self.app.postfx.enabled)
+    self.assertFalse(screen.effects.left(presentation.NIGHT))
+    self.assertFalse(screen.effects.left(presentation.REPLAY))
+    self.assertEqual(screen._effect_status(), "Sin efectos activos")
+
+  def test_legend_lists_only_the_available_keys(self):
+    for key in FULL_ONLY_KEYS:
+      self.assertNotIn(pygame.key.name(key), presentation.PLAIN_LEGEND)
+      self.assertIn(pygame.key.name(key), presentation.LEGEND)
+    for key in PLAIN_KEYS:
+      self.assertIn(pygame.key.name(key), presentation.PLAIN_LEGEND)
+    self.assertIn(presentation.CLEAR_LABEL, presentation.PLAIN_LEGEND)
+
+  def test_confusion_works_without_effects(self):
+    drive = self.open_game("--presentation", "--calidad", "sin-efectos")
+    screen = self.wait_for_play(drive)
+    drive.down(pygame.K_RIGHT)
+    drive.down(pygame.K_4)
+    self.assertFalse(self.app.postfx.enabled)
+    self.assertEqual(screen.controls(True)[1][:2], [True, False])
+    self.assertIn("Confusión", screen._effect_status())
+
+  def test_leaving_full_drops_the_full_only_effects(self):
+    drive = self.open_game("--presentation", "--calidad", "full")
+    screen = self.wait_for_play(drive)
+    for key in (pygame.K_6, pygame.K_4, pygame.K_5):
+      drive.down(key)
+    self.app.postfx.set_quality_mode(quality.OFF)
+    drive.frames(FRAMES)
+    self.assertFalse(screen.effects.left(presentation.NIGHT))
+    self.assertTrue(screen.effects.left("blackout"))
+    self.assertNotIn("Noche", screen._effect_status())
+    self.assertFalse(self.app.postfx.night)
 
   def test_blackout_key_without_effects_darkens(self):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
@@ -180,8 +225,8 @@ class PresentationTest(unittest.TestCase):
     assert not screen.state["players"][1]["burned"]
     assert "pelota encendida" not in screen._effect_status()
 
-  def test_replay_has_history_even_when_quality_starts_off(self):
-    drive = self.open_game("--presentation", "--calidad", "sin-efectos")
+  def test_replay_plays_in_full_with_the_history(self):
+    drive = self.open_game("--presentation", "--calidad", "full")
     screen = self.wait_for_play(drive)
     clock = set_clock(screen)
     duration = config.Presentation.REPLAY_DURATION
@@ -196,10 +241,8 @@ class PresentationTest(unittest.TestCase):
     self.assertIsNone(self.app.postfx.replay_mode())
 
   def test_zero_cancels_effects_without_losing_the_replay_buffer(self):
-    drive = self.open_game("--presentation", "--sin-efectos")
+    drive = self.open_game("--presentation", "--calidad", "full")
     screen = self.wait_for_play(drive)
-    drive.down(pygame.K_0)
-    self.assertFalse(self.app.postfx.enabled)
     for key in (pygame.K_6, pygame.K_4, pygame.K_3):
       drive.down(key)
     self.assertTrue(self.app.postfx.enabled)

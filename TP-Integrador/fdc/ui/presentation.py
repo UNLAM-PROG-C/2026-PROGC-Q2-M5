@@ -6,7 +6,6 @@ import pygame
 
 from fdc import config
 from fdc import protocol
-from fdc.gpu import quality
 from fdc.sim import physics
 from fdc.ui import assets
 from fdc.ui import layout
@@ -25,12 +24,23 @@ SHORTCUTS = {
     pygame.K_5: ("blackout", "Apagón"),
     pygame.K_6: (NIGHT, "Noche"),
 }
-LEGEND = " · ".join(f"{pygame.key.name(k)} {label}"
-                    for k, (_, label) in SHORTCUTS.items()) + " · 0 Apagar"
+# Effects that exist in the plain mode. Freeze and fire are simulation rules,
+# confusion reverses the controls and the blackout is drawn by
+# fdc/ui/blackout.py. Replay and night are FULL post-processing only.
+PLAIN_EFFECTS = ("freeze_rival", "fire", "confusion", "blackout")
+CLEAR_LABEL = "0 Apagar"
+
+
+def _legend(keys):
+  parts = [f"{pygame.key.name(k)} {SHORTCUTS[k][1]}" for k in keys]
+  return " · ".join([*parts, CLEAR_LABEL])
+
+
+LEGEND = _legend(SHORTCUTS)
+PLAIN_LEGEND = _legend(k for k, (name, _) in SHORTCUTS.items()
+                       if name in PLAIN_EFFECTS)
 DURATIONS = {REPLAY: RULES.REPLAY_DURATION, NIGHT: RULES.NIGHT_DURATION}
 MANUAL_POWERS = ("confusion", "blackout")
-# The plain mode draws these by itself (fdc/ui/blackout.py): no switch to FULL.
-LIGHT_EFFECTS = ("blackout",)
 SIM_DURATIONS = {"freeze_rival": {"seconds": RULES.FREEZE_DURATION},
                  "fire": {"seconds": RULES.FIRE_DURATION,
                           "burn": RULES.BURN_DURATION}}
@@ -94,7 +104,6 @@ class PresentationScreen(match_screens.MatchScreen):
     self.clip = None
     chain = self.app.postfx
     self.was_night = chain.night
-    self.original_quality = _quality_settings(chain)
 
   def presentation(self):
     """Do not hold goals for an automatic replay."""
@@ -108,7 +117,6 @@ class PresentationScreen(match_screens.MatchScreen):
     chain = self.app.postfx
     chain.clear()
     chain.night = self.was_night
-    _restore_quality(chain, self.original_quality)
     super().leave()
 
   def _start(self, cmd):
@@ -140,25 +148,16 @@ class PresentationScreen(match_screens.MatchScreen):
       self._send(protocol.CMD_DEBUG_POWER, power=effect, mode="p0",
                  **SIM_DURATIONS[effect])
       return
-    if effect not in LIGHT_EFFECTS and not self._ensure_full():
+    if not self._available(effect):
       return
     if effect == REPLAY and not self._start_clip():
       self.toast("Todavía no hay jugadas para repetir", palette.HUD_TEXT)
       return
     self.effects.activate(effect)
 
-  def _ensure_full(self):
-    chain = self.app.postfx
-    if chain.enabled:
-      return True
-    if self.original_quality is None:
-      self.toast("Efectos no disponibles", palette.HUD_TEXT)
-      return False
-    chain.allowed = True  # The override only lasts for this presentation.
-    chain.chosen_mode = True
-    chain.set_quality_mode(quality.FULL)
-    self.app.quality_controls.announce(chain.quality_mode_name())
-    return True
+  def _available(self, effect):
+    """FULL-only effects need FULL: the quality is never changed here."""
+    return effect in PLAIN_EFFECTS or self.app.postfx.enabled
 
   def _start_clip(self):
     if not self.effects.left(REPLAY):
@@ -184,8 +183,8 @@ class PresentationScreen(match_screens.MatchScreen):
     super().update(dt)
 
   def _clear_full_effects(self):
-    """Without FULL only the light effects (the blackout) can go on."""
-    self.effects.clear(keep=LIGHT_EFFECTS)
+    """Without FULL only the plain effects can go on."""
+    self.effects.clear(keep=PLAIN_EFFECTS)
     self.clip = None
     self.app.postfx.night = False
     self.app.postfx.skip()
@@ -193,7 +192,8 @@ class PresentationScreen(match_screens.MatchScreen):
   def draw(self, surf):
     self._sync_postfx()
     super().draw(surf)
-    _draw_hud(surf, self._effect_status())
+    legend = LEGEND if self.app.postfx.enabled else PLAIN_LEGEND
+    _draw_hud(surf, legend, self._effect_status())
 
   def postfx_state(self, st):
     powers = self.effects.powers()
@@ -236,26 +236,14 @@ def _field_labels(players, effects):
       yield "Fuego: pelota encendida"
 
 
-def _quality_settings(chain):
-  if hasattr(chain, "set_quality_mode"):
-    return chain.allowed, chain.chosen_mode, chain.quality_mode
-  return None
-
-
-def _restore_quality(chain, settings):
-  if settings is not None and _quality_settings(chain) != settings:
-    chain.allowed, chain.chosen_mode, mode = settings
-    chain.set_quality_mode(mode)
-
-
 def _reverse_horizontal(controls):
   left, right, _, _ = controls
   direction = physics.effective_direction(int(right) - int(left), True)
   controls[:2] = [direction < 0, direction > 0]
 
 
-def _draw_hud(surf, status):
-  bottom = _draw_chip(surf, LEGEND, RULES.HUD_TOP)
+def _draw_hud(surf, legend, status):
+  bottom = _draw_chip(surf, legend, RULES.HUD_TOP)
   _draw_chip(surf, status, bottom + RULES.HUD_ROW_GAP)
 
 
