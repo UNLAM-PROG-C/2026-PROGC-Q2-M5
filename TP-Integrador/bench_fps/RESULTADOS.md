@@ -1,6 +1,7 @@
-# FPS por efecto: GPU vs CPU (1.0.9)
+# FPS por efecto: GPU vs CPU
 
-Medido el 2026-11-23 con la 1.0.9 (`9384ce7`, rama `estilo`).
+Medido el 2026-11-23. La RTX 5090 y la notebook se midieron con la 1.0.9
+(`9384ce7`, rama `estilo`); la RTX 3080, con el paquete GPU de Windows 1.0.10.
 
 ## Hardware
 
@@ -53,16 +54,52 @@ de 60**: promedio de unos 10 s por fila, y entre paréntesis el 1% bajo
   repetición duran 6 s), se vuelve a apretar. Entre filas, `0` y se espera a
   que la cadena no tenga ningún efecto activo, así una fila no arrastra la
   anterior.
-- El efecto estuvo activo en el 97% al 100% de los frames de cada fila
-  (`active_share` en los JSON). Confusión y apagón muestran unos pocos frames
-  sin efecto en la cadena: son el arranque y el renovado de la tecla.
+- En las corridas de 1.0.9 el efecto estuvo activo en el 97% al 100% de los
+  frames de cada fila (`active_share` en los JSON). Confusión y apagón
+  muestran unos pocos frames sin efecto en la cadena: son el arranque y
+  el renovado de la tecla.
 - p1 = FPS del percentil 99 del tiempo de frame; mínimo = el frame más lento.
 - Backend `gpu` = PyCUDA con `kernels.fatbin`; backend `cpu` = la versión
   numpy de los mismos efectos (`--backend cpu`).
-- Ojo: con SDL `dummy` no se paga el envío a pantalla ni el vsync. Es igual
-  para todas las columnas, pero con ventana real el FPS absoluto es algo
-  menor. La repetición en GPU da más que «sin efecto» porque muestra frames
-  guardados en vez de dibujar el partido.
+- SDL `dummy` no presenta en pantalla ni usa vsync; los FPS con ventana
+  visible no se midieron. En la 5090 la repetición en GPU da más que «sin
+  efecto» porque muestra frames guardados en vez de dibujar el partido.
 - Datos crudos: `pc-gpu-full.json`, `pc-cpu-full.json`,
   `pc-cpu-sin-efectos.json`, `notebook-cpu-full.json` y
   `notebook-cpu-sin-efectos.json`. La tabla sale de `bench_fps/table.py`.
+
+## Segunda PC: RTX 3080 (1.0.10)
+
+**Hardware:** Intel Core i7-7700K @ 4,20 GHz (4 núcleos / 8 hilos), NVIDIA
+GeForce RTX 3080 de 10 GiB (10 240 MiB), driver 591.74, 16 GiB RAM
+(2 × 8 GiB a 2133 MT/s), Windows 10 Pro for Workstations 10.0.19045.6332.
+
+Mismo arnés de Presentación: SDL `dummy` a 1280×720, sin límite de 60 y
+10 s por fila, un efecto por vez. Se verificó el SHA-256 del ZIP publicado.
+El `.exe` original pasó `--help`; para medir se usó una copia local con el
+punto de entrada instrumentado, sin modificar los módulos del juego, sus
+bibliotecas ni el `kernels.fatbin` del ZIP. Python 3.12.10, pygame 2.6.1 y
+SDL 2.28.4 incluidos en el paquete; no se instaló Python ni Git en la PC.
+CUDA comprobado en `sm_86`, sin fallback a CPU. El efecto estuvo activo en
+el 99,4–99,8% de los frames en GPU y en el 94,1–98,2% en CPU.
+
+| Efecto (FULL) | RTX 3080 GPU | i7-7700K CPU | GPU/CPU |
+|---|---|---|---|
+| Sin efecto | 55,3 (45,9 / 40,3) | 9,0 (7,6 / 7,6) | 6,1x |
+| Hielo | 47,0 (34,3 / 31,3) | 7,6 (6,3 / 6,3) | 6,2x |
+| Fuego | 36,3 (26,6 / 19,8) | 2,8 (2,6 / 2,6) | 13,0x |
+| Repetición | 60,9 (47,7 / 26,2) | 5,5 (5,0 / 5,0) | 11,1x |
+| Confusión | 37,0 (28,5 / 21,7) | 3,3 (2,8 / 2,8) | 11,2x |
+| Apagón | 38,8 (27,5 / 20,8) | 3,2 (2,7 / 2,7) | 12,1x |
+| Noche | 36,6 (29,0 / 22,2) | 2,4 (2,2 / 2,2) | 15,3x |
+| **CPU en SIN EFECTOS** | | **789,5** (602,3 / 247,1) | |
+
+- En GPU FULL, la PC con la 5090 rindió **3,3–3,7×** más según la fila.
+  Es una comparación entre dos equipos y versiones, no un diferencial
+  medido cambiando solo la placa de video.
+- El i7-7700K dio **2,4–9,0 FPS** en CPU FULL; en CPU SIN EFECTOS dio
+  **789,5 FPS**, contra **1739,5 FPS** del 9950X3D en la misma prueba.
+
+Datos crudos: `pc3080-gpu-full.json`, `pc3080-cpu-full.json` y
+`pc3080-cpu-sin-efectos.json`. En SIN EFECTOS solo corresponde la fila sin
+un efecto activo; no se intentan medir efectos deshabilitados.
