@@ -69,3 +69,7 @@ Medianas a **1280 × 720** en el equipo con **NVIDIA GeForce RTX 5090**: 50 corr
 | Histograma de Noche | 5,988 | 0,1460 | 1,590 | 3,8× |
 
 Son mediciones de operaciones aisladas, **no FPS ni tiempos del partido entero**. Por ejemplo, hielo a 1080p pasó de 120,193 a 1,940 ms (61,9× en el ciclo completo). En Noche la medición GPU termina al descargar los conteos y el máximo; no incluye el resumen que sí calcula la referencia CPU. Acelerar el kernel no elimina las transferencias: por eso importa el total.
+
+En el histograma aislado a 1080p uniforme, contar por bloque en memoria compartida redujo el tiempo de kernel en la RTX 5090 de **0,2869 a 0,0148 ms (19,4×)**.
+Con los cinco pasos, el tiempo pasó de **1,053 a 0,766 ms (1,37×)**; mover los datos sigue costando.
+La comparación con locks en CPU y la prueba de conteo sin atómicas están en [los resultados de sincronización](bench_sync/RESULTADOS.md).
