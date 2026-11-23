@@ -16,7 +16,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identity
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_VERSION = "1.0.6"      # shown in the window title and the release notes
+GAME_VERSION = "1.0.7"      # shown in the window title and the release notes
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
 # Version of the UI <-> simulation protocol (reported in READY and checked by
 # the online server, which refuses a client of another version).
@@ -323,6 +323,9 @@ PERSONAL_TARGETS = ("self", "rival", "rival_goal")
 class Presentation:
   """Live presentation mode (without automatic pickups)."""
   NIGHT_DURATION = 10.0      # s of night per key press
+  # The normal 2 s freeze and 3 s replay are too short to be seen live.
+  FREEZE_DURATION = 6.0      # s of freeze per key press
+  REPLAY_DURATION = 6.0      # s of replay per key press (buffer: 20 s)
   TARGET_PLAYER = 1         # zero-based index of J2
   DEFAULT_CHARACTERS = ("messi", "maradona")
   HUD_TOP = 132             # px, below the scoreboard and above the pitch

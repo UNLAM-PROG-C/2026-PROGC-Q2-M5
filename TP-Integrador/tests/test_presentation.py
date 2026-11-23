@@ -59,8 +59,10 @@ class PresentationTest(unittest.TestCase):
   def test_effect_keys_refresh_and_expire_on_cpu(self):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
     clock = set_clock(self.wait_for_play(drive))
-    cases = ((pygame.K_1, "freeze_rival"), (pygame.K_2, "fire"),
-             (pygame.K_4, "confusion"), (pygame.K_5, "blackout"))
+    self.check_effect(drive, clock, pygame.K_1, "freeze_rival",
+                      config.Presentation.FREEZE_DURATION)
+    cases = ((pygame.K_2, "fire"), (pygame.K_4, "confusion"),
+             (pygame.K_5, "blackout"))
     for key, effect in cases:
       self.check_effect(drive, clock, key, effect,
                         config.POWERS_BY_ID[effect].duration)
@@ -85,7 +87,7 @@ class PresentationTest(unittest.TestCase):
     drive = self.open_game("--presentation", "--calidad", "sin-efectos")
     screen = self.wait_for_play(drive)
     clock = set_clock(screen)
-    duration = config.MatchRules.GOAL_REPLAY
+    duration = config.Presentation.REPLAY_DURATION
     drive.down(pygame.K_3)
     self.assertEqual(self.app.postfx.replay_mode(), replay.REPLAY_KIND)
     self.assertEqual(screen.effects.left("replay"), duration)

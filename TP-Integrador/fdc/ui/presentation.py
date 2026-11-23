@@ -26,7 +26,8 @@ SHORTCUTS = {
 }
 LEGEND = " · ".join(f"{pygame.key.name(k)} {label}"
                     for k, (_, label) in SHORTCUTS.items()) + " · 0 Apagar"
-DURATIONS = {REPLAY: config.MatchRules.GOAL_REPLAY, NIGHT: RULES.NIGHT_DURATION}
+DURATIONS = {REPLAY: RULES.REPLAY_DURATION, NIGHT: RULES.NIGHT_DURATION,
+             "freeze_rival": RULES.FREEZE_DURATION}
 
 
 class ManualEffects:
@@ -75,7 +76,7 @@ def _effect_snapshot(effect, left):
   power = config.POWERS_BY_ID[effect]
   target = "ball" if power.target == "ball" else f"p{RULES.TARGET_PLAYER}"
   return {"power": effect, "prop": power.prop, "target": target,
-          "left": left, "dur": power.duration}
+          "left": left, "dur": _duration(effect)}
 
 
 class PresentationScreen(match_screens.MatchScreen):
