@@ -16,7 +16,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Identity
 # ---------------------------------------------------------------------------
 GAME_NAME = "Futbol De Cabeza"
-GAME_VERSION = "1.0.10"     # shown in the window title and the release notes
+GAME_VERSION = "1.0.11"     # shown in the window title and the release notes
 GAME_TAGLINE = "Duelo de cabezones - solo, de a dos u online"
 # Version of the UI <-> simulation protocol (reported in READY and checked by
 # the online server, which refuses a client of another version).
