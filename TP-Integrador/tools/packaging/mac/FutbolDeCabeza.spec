@@ -1,8 +1,8 @@
 # PyInstaller spec: FutbolDeCabeza.app (macOS arm64, CPU only, no PyCUDA).
-# Use packaging/mac/build.sh (it runs this spec and adds servidor.txt).
+# Use tools/packaging/mac/build.sh (it runs this spec and adds servidor.txt).
 import os
 
-ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
+ROOT = os.path.abspath(os.path.join(SPECPATH, "..", "..", ".."))
 ICON = os.path.join(SPECPATH, "FutbolDeCabeza.icns")
 
 analysis = Analysis(

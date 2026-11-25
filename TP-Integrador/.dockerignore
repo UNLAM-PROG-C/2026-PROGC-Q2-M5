@@ -1,4 +1,4 @@
-# Contexto de la imagen del servidor: sólo entra lo que server.py importa.
+# Contexto de la imagen del servidor: sólo entra lo que deploy/server.py importa.
 .git
 .gitignore
 .venv

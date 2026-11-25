@@ -71,7 +71,7 @@ mimetypes.add_type("image/webp", ".webp")
 CACHE_LONG = "public, max-age=3600"
 CACHE_NONE = "no-cache"
 CACHE_PREFIXES = ("img/", "media/")     # folders with the heavy media
-# Command line options of server.py.
+# Command line options of deploy/server.py.
 COMMAND_LINE = (
     ("--host", {"default": ALL_INTERFACES[0],
                 "help": "interface to listen on (0.0.0.0 = all)"}),
@@ -685,7 +685,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-  """Entry point of server.py."""
+  """Entry point of deploy/server.py."""
   args = parse_args(argv)
   setup_logging()
   server = GameServer(web_dir=args.web, duration=args.duration,

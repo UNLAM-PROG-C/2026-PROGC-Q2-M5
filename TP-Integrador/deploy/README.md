@@ -1,6 +1,6 @@
 # Servidor online en el NAS (Docker)
 
-El servidor del modo online (`server.py`) escucha en **8765 dentro del
+El servidor del modo online (`deploy/server.py`) escucha en **8765 dentro del
 contenedor** y no necesita pygame ni numpy: la simulación corre sin
 interfaz. Por eso la imagen lleva sólo `websockets`
 (`deploy/requirements-server.txt`).

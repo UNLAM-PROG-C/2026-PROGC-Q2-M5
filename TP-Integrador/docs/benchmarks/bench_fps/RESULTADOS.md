@@ -44,7 +44,7 @@ de 60**: promedio de unos 10 s por fila, y entre paréntesis el 1% bajo
 
 ## Método
 
-- Script: `bench_fps/bench_fps.py BACKEND CALIDAD SEGUNDOS SALIDA.json`, la
+- Script: `docs/benchmarks/bench_fps/bench_fps.py BACKEND CALIDAD SEGUNDOS SALIDA.json`, la
   misma técnica de `presentacion_gpu.py` (1.0.7): la App real en modo
   Presentación (`--presentation --seed 7 --overlay off --no-audio`), manejada
   con `tests/driver.py` (SDL `dummy`, sin ventana visible) y con
@@ -66,7 +66,7 @@ de 60**: promedio de unos 10 s por fila, y entre paréntesis el 1% bajo
   efecto» porque muestra frames guardados en vez de dibujar el partido.
 - Datos crudos: `pc-gpu-full.json`, `pc-cpu-full.json`,
   `pc-cpu-sin-efectos.json`, `notebook-cpu-full.json` y
-  `notebook-cpu-sin-efectos.json`. La tabla sale de `bench_fps/table.py`.
+  `notebook-cpu-sin-efectos.json`. La tabla sale de `docs/benchmarks/bench_fps/table.py`.
 
 ## Segunda PC: RTX 3080 (1.0.10)
 

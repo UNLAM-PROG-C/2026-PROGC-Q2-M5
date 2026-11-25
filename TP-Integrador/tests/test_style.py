@@ -1,6 +1,6 @@
 """Google style with the course overrides: two spaces and short functions.
 
-The shared inventory covers fdc/, tools/, tests/, main.py and server.py.
+The shared inventory covers fdc/, tools/, tests/, main.py and deploy/server.py.
 Only docstrings and decorators are excluded from function length. Player
 facing UI strings may be Spanish; technical logging messages may not.
 Quoted UI text and literal paths in English documentation are exempt.

@@ -16,7 +16,7 @@ COPY deploy/requirements-server.txt ./requirements-server.txt
 RUN pip install --no-cache-dir -r requirements-server.txt
 
 # Server code.
-COPY server.py ./server.py
+COPY deploy/server.py ./server.py
 COPY fdc ./fdc
 
 # Usuario sin privilegios y su carpeta de registros (logs/server.log).

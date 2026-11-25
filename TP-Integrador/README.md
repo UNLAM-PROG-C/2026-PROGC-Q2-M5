@@ -10,7 +10,7 @@ Juego de fútbol 2D en pixel art: dos cabezones saltan, cabecean y patean, y la 
 | --- | --- | --- |
 | Windows con NVIDIA compatible | [Windows GPU](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/latest/download/FutbolDeCabeza-windows-gpu.zip) | Descomprimí el ZIP completo y abrí `FutbolDeCabeza-windows-gpu.exe`. Requiere un driver NVIDIA compatible; los kernels ya vienen compilados. |
 | Windows sin NVIDIA | [Windows CPU](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/latest/download/FutbolDeCabeza-windows-cpu.zip) | Descomprimí el ZIP completo y abrí `FutbolDeCabeza-windows-cpu.exe`; no requiere CUDA. |
-| Mac con Apple Silicon (arm64) | [Mac CPU](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/latest/download/FutbolDeCabeza-mac-arm64.zip) | Descomprimí el ZIP y abrí `FutbolDeCabeza.app`. |
+| Mac con Apple Silicon (arm64) | [Mac CPU](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/download/v1.0.10/FutbolDeCabeza-mac-arm64.zip) | Descomprimí el ZIP y abrí `FutbolDeCabeza.app`. |
 | Linux o Mac Intel | Sin binario en estas descargas | Usá los pasos desde el código de abajo. |
 
 Para empezar, elegí **Jugar → Multijugador → Local**. J1 usa `A`/`D` para moverse, `W` para saltar y `Espacio` para patear; J2 usa `←`/`→`, `↑` y `P`. `F3` muestra los procesos; `F2`, el rendimiento; `F10` alterna **SIN EFECTOS** y **FULL**. En **Presentación** (`--presentation`), jugá sin reloj y activá los seis efectos con `1`–`6`: `1` congela a J2 y `2` enciende la pelota, que quema al primero que la toque. `0` apaga los efectos manuales; el hielo y el fuego vencen solos. Presentación no cambia la calidad (eso lo hace `F10`): en **SIN EFECTOS** quedan `1` Hielo, `2` Fuego, `4` Confusión y `5` Apagón; `3` Repetición y `6` Noche son solo de **FULL**, y la leyenda no los muestra.
@@ -35,8 +35,8 @@ python3 -m venv .venv
 .venv/bin/python main.py --backend cpu
 ```
 
-- **Online desde el código:** instalá también `requirements-online.txt` con el mismo intérprete (`-m pip install -r requirements-online.txt`). Para una prueba local de red, arrancá `server.py` con ese intérprete y abrí los dos clientes con `--server ws://127.0.0.1:8765/ws` y perfiles distintos. Las descargas ya traen una dirección de servidor configurada. Más detalles en [Modo online](docs/ONLINE.md).
-- **Efectos en CPU:** agregá `--calidad full` o presioná `F10`. Para usar CUDA desde el código, necesitás una GPU NVIDIA compatible, su driver y las [dependencias GPU](requirements-gpu.txt); arrancá con `--backend auto` para usar CUDA cuando inicialice o pasar a NumPy si no está disponible.
+- **Online desde el código:** instalá también [los requisitos online](tools/requirements/requirements-online.txt) con el mismo intérprete (`-m pip install -r tools/requirements/requirements-online.txt`). Para una prueba local de red, arrancá el servidor con `-m deploy.server` con ese intérprete y abrí los dos clientes con `--server ws://127.0.0.1:8765/ws` y perfiles distintos. Las descargas ya traen una dirección de servidor configurada. Más detalles en [Modo online](docs/ONLINE.md).
+- **Efectos en CPU:** agregá `--calidad full` o presioná `F10`. Para usar CUDA desde el código, necesitás una GPU NVIDIA compatible, su driver y las [dependencias GPU](tools/requirements/requirements-gpu.txt); arrancá con `--backend auto` para usar CUDA cuando inicialice o pasar a NumPy si no está disponible.
 
 ## Arquitectura: concurrencia y GPU
 
@@ -72,4 +72,19 @@ Son mediciones de operaciones aisladas, **no FPS ni tiempos del partido entero**
 
 En el histograma aislado a 1080p uniforme, contar por bloque en memoria compartida redujo el tiempo de kernel en la RTX 5090 de **0,2869 a 0,0148 ms (19,4×)**.
 Con los cinco pasos, el tiempo pasó de **1,053 a 0,766 ms (1,37×)**; mover los datos sigue costando.
-La comparación con locks en CPU y la prueba de conteo sin atómicas están en [los resultados de sincronización](bench_sync/RESULTADOS.md).
+La comparación con locks en CPU y la prueba de conteo sin atómicas están en [los resultados de sincronización](docs/benchmarks/bench_sync/RESULTADOS.md).
+
+Consultá también [los FPS por efecto](docs/benchmarks/bench_fps/RESULTADOS.md).
+
+## Estructura del repositorio
+
+| Ruta | Contenido |
+| --- | --- |
+| `main.py`, `requirements.txt` | Entrada del juego y dependencias base. |
+| [`fdc/`](fdc/) | Simulación, interfaz, red y efectos CPU/CUDA. |
+| [`assets/`](assets/) | Recursos gráficos y de audio. |
+| [`deploy/`](deploy/) | Lanzador del servidor, [Dockerfile y Compose](deploy/README.md). |
+| [`docs/`](docs/) | Guías, [diseño visual](docs/guia-visual.md) y benchmarks reproducibles. |
+| [`tests/`](tests/) | Pruebas de simulación, red, interfaz y estilo. |
+| [`tools/`](tools/) | Instaladores [Windows](tools/windows/), empaquetado [Mac](tools/packaging/mac/), utilidades de build/GPU y dependencias auxiliares. |
+| `.dockerignore`, `.gitattributes`, `.gitignore` | Contexto de imagen, finales de línea y exclusiones locales. |

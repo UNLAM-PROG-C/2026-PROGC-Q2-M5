@@ -14,7 +14,7 @@ try:
   import websockets  # pylint: disable=unused-import
 except ImportError:  # the local game does not need it: skipped without it
   raise unittest.SkipTest(
-      "websockets is missing (pip install -r requirements-online.txt)"
+      "websockets is missing (pip install -r tools/requirements/requirements-online.txt)"
   ) from None
 
 import helpers  # pylint: disable=unused-import

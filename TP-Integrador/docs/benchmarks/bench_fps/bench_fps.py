@@ -1,7 +1,7 @@
 """FPS per visual effect, without the 60 FPS cap (Presentation mode).
 
 Usage (project root, GPU venv active):
-  python bench_fps/bench_fps.py BACKEND QUALITY SECONDS OUT.json
+  python docs/benchmarks/bench_fps/bench_fps.py BACKEND QUALITY SECONDS OUT.json
     BACKEND: gpu | cpu      QUALITY: full | sin-efectos
 Runs the real App with SDL "dummy" (tests/driver.py) at the default
 1280x720 window. For each effect it presses its key and renders frames as
@@ -15,7 +15,7 @@ import statistics
 import sys
 import time
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(REPO), str(REPO / "tests")]
 
 import driver  # noqa: E402  (SDL dummy)

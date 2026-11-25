@@ -25,7 +25,7 @@ FRAMES = 3              # frames of the chain in each test
 DT = 1 / 60.0           # s between frames
 SEED = 3                # fixed random surface
 NIGHT_FRAMES = 12       # frames with the night mode on
-# Night rules (`guia-visual.md`): below the day, above the black, no burns.
+# Night rules (`docs/guia-visual.md`): below the day, above the black, no burns.
 NIGHT_SETTLE = 40       # frames until the gain of the night stops moving
 WHITE_LEVEL = 255       # a frame as bright as it gets
 NIGHT_TOP = 250         # from here a pixel would look burnt
@@ -369,7 +369,7 @@ class ReplayChainTest(unittest.TestCase):
 
 
 class ArtRulesTest(unittest.TestCase):
-  """Rules of `guia-visual.md`: no effect touches the stands."""
+  """Rules of `docs/guia-visual.md`: no effect touches the stands."""
 
   def setUp(self):
     pygame.init()

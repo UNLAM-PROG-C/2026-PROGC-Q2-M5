@@ -3,12 +3,12 @@ import os
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FOLDERS = ("fdc", "tools", "tests")
-ROOT_SCRIPTS = ("main.py", "server.py")
+ENTRY_SCRIPTS = ("main.py", "deploy/server.py")
 
 
 def project_files(include_tests=True):
   """Yield only the agreed scope; landing, assets and web are excluded."""
-  for name in ROOT_SCRIPTS:
+  for name in ENTRY_SCRIPTS:
     yield os.path.join(PROJECT, name)
   for folder in FOLDERS:
     if folder != "tests" or include_tests:

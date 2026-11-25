@@ -1,7 +1,7 @@
 """FPS of the plain mode with and without the blackout (no 60 FPS cap).
 
 Usage (project root):
-  python bench_fps/bench_blackout.py SECONDS OUT.json
+  python docs/benchmarks/bench_fps/bench_blackout.py SECONDS OUT.json
 Same method as bench_fps.py: the real App, SDL "dummy", 1280x720, frames as
 fast as possible; the blackout row presses key 5 again whenever it expires.
 """

@@ -63,7 +63,7 @@ LAMP_COLOR = (255, 250, 214)       # warm light
 TIERS = ((56, 112), (116, 176), (180, 232))
 TIER_RAIL = 4                      # rail over each stand (height, px)
 SEAT_ROW = 6                       # height of each row of seats (px)
-# Shirts of the crowd: the muted tones of the animated stands (guia-visual).
+# Shirts of the crowd: muted tones from docs/guia-visual.md.
 # Skin and hair come from the same table in both renders.
 CROWD_COLORS = [tuple(round(channel * 255) for channel in shirt)
                 for shirt in config.Gpu.CROWD_SHIRTS]

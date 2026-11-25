@@ -98,7 +98,7 @@ def main(argv=None):
 
 
 def _prepare_toolchain(options):
-  """nvcc and cl.exe in the PATH (jugar.bat does not activate them)."""
+  """nvcc and cl.exe in the PATH (tools/windows/jugar.bat does not activate them)."""
   if options.backend == "cpu" or options.no_gpu:
     return
   if not (config.Gpu.ENABLED and config.Effects.ENABLED):

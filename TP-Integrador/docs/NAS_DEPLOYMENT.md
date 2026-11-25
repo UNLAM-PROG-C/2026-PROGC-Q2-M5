@@ -60,14 +60,14 @@ En el resto de la guía se usa la carpeta `C:\FutbolDeCabeza`. Si elegís otra, 
 ```powershell
 cd C:\FutbolDeCabeza
 py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements-online.txt
+.venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
 ```
 
 - **Servidor:** necesita sólo `websockets`.
 ### 1.5 Probarlo en la misma NAS
 
 ```powershell
-.venv\Scripts\python server.py
+.venv\Scripts\python -m deploy.server
 ```
 
 1. Al arrancar, el servidor muestra las direcciones donde escucha, por ejemplo `http://127.0.0.1:8765` y la de tu red local (`http://192.168.0.50:8765`).
@@ -123,8 +123,8 @@ Así el juego vuelve a andar después de un corte de luz o de una actualización
 4. **Acciones → Nueva → Iniciar un programa:**
    - *Programa:* `C:\FutbolDeCabeza\.venv\Scripts\python.exe`
    - *Agregar argumentos:*
-     - camino A: `server.py`
-     - caminos B, C y D: `server.py --host 127.0.0.1` (así el juego sólo acepta conexiones de la propia NAS y desde afuera se entra únicamente por el túnel o por Caddy)
+     - camino A: `-m deploy.server`
+     - caminos B, C y D: `-m deploy.server --host 127.0.0.1` (así el juego sólo acepta conexiones de la propia NAS y desde afuera se entra únicamente por el túnel o por Caddy)
    - *Iniciar en:* `C:\FutbolDeCabeza`
 5. **Condiciones:** desmarcá *"Iniciar la tarea sólo si el equipo está conectado a la corriente alterna"* si la NAS es una notebook.
 6. **Configuración:**
@@ -238,7 +238,7 @@ Los nombres de los menús de Cloudflare cambian seguido. Si no encontrás algo, 
 
 ### 4.4 Ajustar el servidor
 
-En la tarea del paso 2, los argumentos tienen que ser `server.py --host 127.0.0.1`. No hace falta tocar el router ni el firewall.
+En la tarea del paso 2, los argumentos tienen que ser `-m deploy.server --host 127.0.0.1`. No hace falta tocar el router ni el firewall.
 
 ### 4.5 WebSockets activados
 
@@ -275,7 +275,7 @@ Para esto tenés que tener IP pública (paso 3.1). Caddy saca y renueva solo el 
    - *Programa:* `C:\Caddy\caddy.exe`
    - *Argumentos:* `run --config C:\Caddy\Caddyfile`
    - *Iniciar en:* `C:\Caddy`
-7. **Servidor del juego:** con `server.py --host 127.0.0.1` (paso 2).
+7. **Servidor del juego:** con `-m deploy.server --host 127.0.0.1` (paso 2).
 8. **Probar** desde afuera con el cliente: `wss://futbol.tudominio.com/ws`.
 
 Algunos proveedores bloquean el puerto 80 entrante. Si Caddy no consigue el certificado, revisá eso o pasate al camino B.
@@ -320,7 +320,7 @@ Limitaciones:
 ```powershell
 cd C:\FutbolDeCabeza
 git pull
-.venv\Scripts\python -m pip install -r requirements-online.txt
+.venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
 ```
 
 Después reiniciá la tarea del servidor (Programador de tareas → *Finalizar* y *Ejecutar*).

@@ -29,7 +29,7 @@ La página del sitio ofrece las descargas. Sólo el modo online usa el servidor:
 
 ```
  Casa A: escritorio ─┐               ┌──────────── servidor ─────────────────────────────┐
-                     ├── WebSocket ─►│ server.py :8765 (/ws)                             │
+                     ├── WebSocket ─►│ deploy/server.py :8765 (/ws)                      │
  Casa B: escritorio ─┘               │                                │                   │
                                       │   proceso SERVIDOR (asyncio, un hilo)              │
                                       │     ├─ por conexión: tarea lectora + escritora     │
@@ -84,8 +84,8 @@ Del servidor también llegan:
 ## Probarlo en la computadora
 
 ```bash
-.venv/bin/python -m pip install -r requirements-online.txt   # una sola vez: websockets
-.venv/bin/python server.py                                  # http://127.0.0.1:8765
+.venv/bin/python -m pip install -r tools/requirements/requirements-online.txt   # una sola vez: websockets
+.venv/bin/python -m deploy.server                                  # http://127.0.0.1:8765
 ```
 
 - **Prueba local:** ejecutá dos instancias con `main.py --server ws://127.0.0.1:8765/ws`, elegí nombres distintos, creá una sala con una y unite con la otra.
@@ -112,7 +112,7 @@ Los mismos datos están en JSON en `/status.json` y `/status/full.json`.
 **Contraseña de la vista completa.** Se pasa al arrancar el servidor:
 
 ```bash
-.venv/bin/python server.py --panel-password UNA-CLAVE
+.venv/bin/python -m deploy.server --panel-password UNA-CLAVE
 ```
 
 También sirve la variable de entorno `FDC_PANEL_PASSWORD`, que es mejor en la NAS porque la clave no queda a la vista en los argumentos de la tarea:
@@ -144,8 +144,8 @@ Así, en la defensa se puede mostrar desde el navegador que cada sala es un proc
 
 ```powershell
 py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements-online.txt
-.venv\Scripts\python server.py
+.venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
+.venv\Scripts\python -m deploy.server
 ```
 
 - **Dependencias:** el servidor sólo necesita `websockets` (no carga pygame).
@@ -156,7 +156,7 @@ py -3.13 -m venv .venv
 Con el **Programador de tareas** de Windows:
 
 1. Creá una tarea con el desencadenador **Al iniciar el sistema**.
-2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `server.py --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`. Para la vista completa del panel, definí antes la variable `FDC_PANEL_PASSWORD` (ver "Panel del servidor").
+2. En *Acción*, poné el programa `C:\ruta\al\proyecto\.venv\Scripts\python.exe`, los argumentos `-m deploy.server --host 127.0.0.1` y *Iniciar en* `C:\ruta\al\proyecto`. Para la vista completa del panel, definí antes la variable `FDC_PANEL_PASSWORD` (ver "Panel del servidor").
 3. En *General*, marcá **Ejecutar tanto si el usuario inició sesión como si no**.
 4. En *Configuración*, elegí **Si la tarea no se ejecuta, reiniciar cada 1 minuto**.
 
@@ -189,7 +189,7 @@ Para cifrar las conexiones públicas usá **HTTPS para el sitio y WSS para el ju
 
 ```powershell
 git pull
-.venv\Scripts\python -m pip install -r requirements-online.txt
+.venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
 ```
 
 Después reiniciá la tarea del servidor. Las salas viven en memoria: reiniciar el servidor las cierra.

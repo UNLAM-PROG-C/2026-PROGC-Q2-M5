@@ -1,9 +1,9 @@
 """Futbol De Cabeza online server (1 against 1 rooms over the internet).
 
 Usage:
-    .venv/bin/python server.py                 # port 8765, all interfaces
-    .venv/bin/python server.py --port 9000
-    .venv/bin/python server.py --duration 20   # short matches (tests)
+    .venv/bin/python -m deploy.server                 # port 8765, all interfaces
+    .venv/bin/python -m deploy.server --port 9000
+    .venv/bin/python -m deploy.server --duration 20   # short matches (tests)
 
 It serves the downloads page (landing/) and the
 WebSocket /ws on the same port. See docs/ONLINE.md.

@@ -66,7 +66,7 @@ class ThreadTransport:
     except ImportError:
       self._put(("closed", {"code": None, "reason": (
           "Falta la librería websockets: pip install -r "
-          "requirements-online.txt")}))
+          "tools/requirements/requirements-online.txt")}))
       return
     self._put(("closed", self._read_all(sync_client, ws_exceptions)))
 

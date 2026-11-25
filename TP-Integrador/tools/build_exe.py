@@ -1,6 +1,6 @@
 """Builds the Windows exe of the game with PyInstaller (one command).
 
-Usage (PowerShell, from the repository, with the venv installed):
+Usage (PowerShell, from the repo; install tools/requirements/requirements-build.txt):
     .venv\\Scripts\\python.exe tools\\build_exe.py               # CPU
     .venv\\Scripts\\python.exe tools\\build_exe.py --mode full   # CPU + GPU
     .venv\\Scripts\\python.exe tools\\build_exe.py --console     # to read the

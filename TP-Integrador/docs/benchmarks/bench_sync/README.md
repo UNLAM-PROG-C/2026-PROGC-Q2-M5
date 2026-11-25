@@ -19,12 +19,10 @@ Archivos: `kernels.cu` (kernels), `frames.py` (cuadros y referencia),
 
 ## Cómo correrlo (PC con GPU, Windows)
 
-Desde la raíz del proyecto, con el entorno de PyCUDA del juego:
+Desde la raíz del repo, con el entorno de PyCUDA del juego instalado en `.venv`:
 
 ```powershell
-activar-gpu.bat
-cd original\futbolDeCabeza\bench_sync
-py run_all.py
+.\.venv\Scripts\python.exe docs\benchmarks\bench_sync\run_all.py
 ```
 
 Imprime una línea JSON por caso (720p y 1080p, escena uniforme y escena

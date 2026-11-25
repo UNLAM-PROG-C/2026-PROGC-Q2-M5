@@ -29,7 +29,7 @@ no las colas de `multiprocessing` ni el estado del partido.
 ## 2. Mapa general
 
 ```
- VERSIÓN DE ESCRITORIO (main.py)                         SERVIDOR ONLINE (server.py)         
+ VERSIÓN DE ESCRITORIO (main.py)                         SERVIDOR ONLINE (deploy/server.py)
  ┌──────────────────────────────┐                        ┌────────────────────────────────────────────────┐
  │ PROCESO 1: interfaz (pygame) │                        │ PROCESO SERVIDOR: un hilo con el bucle asyncio │
  │  hilo principal: ventana,    │   4 colas acotadas     │  ├ por conexión: tarea lectora + tarea escritora│

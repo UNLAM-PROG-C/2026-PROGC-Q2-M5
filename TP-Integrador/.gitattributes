@@ -1,3 +1,3 @@
 * text=auto eol=lf
 *.bat text eol=crlf
-packaging/mac/*.sh text eol=lf
+tools/packaging/mac/*.sh text eol=lf

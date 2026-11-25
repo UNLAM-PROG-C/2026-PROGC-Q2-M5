@@ -2,7 +2,7 @@
 # Style Guide (https://google.github.io/styleguide/pylintrc), unchanged
 # except for the lines marked "Project:".
 #
-# Run it with:  .venv/bin/pylint fdc tools web tests main.py server.py
+# Run it with:  .venv/bin/pylint --rcfile=tools/pylintrc fdc tools tests main.py deploy/server.py
 #
 # This Pylint rcfile contains a best-effort configuration to uphold the
 # best-practices and style described in the Google Python style guide:

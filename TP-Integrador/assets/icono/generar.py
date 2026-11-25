@@ -8,7 +8,7 @@ The geometry is written once in 1024 units and every raster is drawn at the
 exact target size (canvas = size * supersampling, coordinates scaled), so a
 16 px icon is a 16 px icon and not a shrunken 1024. Each size gets the detail
 its level allows: the wordmark only from 64 px, the ball pattern from 32 px
-and just the ball below that. Palette: guia-visual.md (cream #F6E7C1, ink
+and just the ball below that. Palette: docs/guia-visual.md (cream #F6E7C1, ink
 #23252F) plus the two institutional accents of unlam.edu.ar (#AE152D bordo,
 #0F9977 green), taken from the CSS of the site. Own shapes: no escudo and no
 official typography are copied.
