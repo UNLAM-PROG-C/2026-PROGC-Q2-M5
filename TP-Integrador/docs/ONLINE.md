@@ -138,12 +138,12 @@ Así, en la defensa se puede mostrar desde el navegador que cada sala es un proc
 
 ### 1. Instalar
 
-1. Instalá **Python 3.13** desde python.org y marcá *Add python.exe to PATH*.
+1. Instalá **Python 3.12** desde python.org y marcá *Add python.exe to PATH*.
 2. Copiá la carpeta del proyecto, o cloná el repo con `git clone`.
 3. En una terminal (PowerShell), dentro de la carpeta:
 
 ```powershell
-py -3.13 -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
 .venv\Scripts\python -m deploy.server
 ```

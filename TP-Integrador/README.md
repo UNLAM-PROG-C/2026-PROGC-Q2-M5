@@ -17,12 +17,12 @@ Para empezar, elegí **Jugar → Multijugador → Local**. J1 usa `A`/`D` para m
 
 ### Desde el código (Windows, macOS y Linux)
 
-Usá **Python 3.13** y abrí una terminal en la carpeta que contiene `main.py`. Estos comandos arrancan en CPU, sin depender de CUDA. El entorno `.venv` es local al proyecto y no necesita activación.
+Usá **Python 3.12** y abrí una terminal en la carpeta que contiene `main.py`. Estos comandos arrancan en CPU, sin depender de CUDA. El entorno `.venv` es local al proyecto y no necesita activación.
 
 **Windows (PowerShell):**
 
 ```powershell
-py -3.13 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py --backend cpu
 ```

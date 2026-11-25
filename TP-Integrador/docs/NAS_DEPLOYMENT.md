@@ -27,17 +27,17 @@ Para que alguien de otra red entre al juego hay cuatro caminos. La parte 1 (prep
 
 ## 1. Preparar la NAS (una sola vez)
 
-### 1.1 Instalar Python 3.13
+### 1.1 Instalar Python 3.12
 
-1. Bajalo de <https://www.python.org/downloads/windows/> (*Windows installer 64-bit* de la versión 3.13).
+1. Bajalo de <https://www.python.org/downloads/windows/> (*Windows installer 64-bit* de la versión 3.12).
 2. En el instalador, **marcá "Add python.exe to PATH"** y dejá marcado el *py launcher*.
 3. Abrí **PowerShell** y verificá:
 
 ```powershell
-py -3.13 --version
+py -3.12 --version
 ```
 
-Tiene que decir `Python 3.13.x`.
+Tiene que decir `Python 3.12.x`.
 
 ### 1.2 Instalar Git
 
@@ -59,7 +59,7 @@ En el resto de la guía se usa la carpeta `C:\FutbolDeCabeza`. Si elegís otra, 
 
 ```powershell
 cd C:\FutbolDeCabeza
-py -3.13 -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r tools/requirements/requirements-online.txt
 ```
 
