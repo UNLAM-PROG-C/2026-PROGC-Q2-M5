@@ -1,7 +1,7 @@
 """Futbol De Cabeza online server (1 against 1 rooms over the internet).
 
 Usage:
-    .venv/bin/python -m deploy.server                 # port 8765, all interfaces
+    .venv/bin/python -m deploy.server           # port 8765, all interfaces
     .venv/bin/python -m deploy.server --port 9000
     .venv/bin/python -m deploy.server --duration 20   # short matches (tests)
 

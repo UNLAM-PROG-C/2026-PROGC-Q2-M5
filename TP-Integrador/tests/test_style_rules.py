@@ -108,7 +108,8 @@ class PythonStyleRulesTest(unittest.TestCase):
   def test_source_inventory_matches_scope(self):
     paths = [os.path.relpath(path, style_files.PROJECT)
              for path in style_files.project_files()]
-    self.assertEqual(paths[:2], ['main.py', os.path.join('deploy', 'server.py')])
+    entry_points = ['main.py', os.path.join('deploy', 'server.py')]
+    self.assertEqual(paths[:2], entry_points)
     self.assertFalse(any(path.startswith(('web/', 'assets/', 'landing/'))
                          for path in paths))
     self.assertTrue(any(path.startswith('tests/') for path in paths))
