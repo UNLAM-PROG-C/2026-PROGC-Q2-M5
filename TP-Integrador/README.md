@@ -1,6 +1,51 @@
 # Futbol De Cabeza
 
-Juego de fútbol 2D en pixel art: dos cabezones saltan, cabecean y patean, y la pelota activa poderes al tocar los objetos de la cancha. Hay tres modos de escritorio: **dos personas en el mismo teclado**, **Mundialito contra la computadora** y **1 contra 1 online por salas**. Es el trabajo integrador de **Programación Concurrente (UNLaM)**.
+## Finalidad
+
+Futbol De Cabeza es un juego de fútbol de cabeza 2D en pixel art: los jugadores saltan, cabecean y patean, y la pelota activa poderes al tocar los objetos de la cancha.
+Se puede jugar de a dos en el mismo teclado, contra la computadora en Mundialito o mano a mano online por salas.
+Lo hicimos como TP integrador de Programación Concurrente (UNLaM, Grupo 5) para mostrar cómo se comunican y se sincronizan los procesos.
+También implementamos efectos visuales en CUDA y medimos su rendimiento frente a la versión en CPU.
+
+## Lenguajes y versiones
+
+El juego de escritorio y el servidor están escritos en **Python 3.12**. Los [kernels de los efectos](fdc/gpu/kernels.cu) están escritos en **CUDA C**.
+
+## Frameworks, bibliotecas y herramientas
+
+| Componente | Versión declarada | Uso |
+| --- | --- | --- |
+| pygame | `2.6.1` | Ventana, teclado, dibujo y sonido del juego. |
+| NumPy | `2.5.4` | Procesamiento de los efectos visuales en CPU. |
+| PyCUDA | `2026.1` (opcional) | Carga y lanza los kernels, y transfiere datos entre CPU y GPU. |
+| `multiprocessing` | Biblioteca estándar de Python 3.12 | Procesos de simulación, colas de mensajes y señal de cierre. |
+| `asyncio` | Biblioteca estándar de Python 3.12 | Atención concurrente de conexiones y coordinación de salas en el servidor. |
+| `websockets` | `17.1` | Conexión WebSocket del cliente de escritorio y del servidor. |
+| Docker | Sin versión de motor fijada; imagen base `python:3.12-slim` | Construye y ejecuta el contenedor del servidor. |
+| Docker Compose | Sin versión fijada; se usa `docker compose` | Configura el servicio, las redes y los chequeos de estado del servidor. |
+| PyInstaller | `6.22.3` en los requisitos de build | Arma los ejecutables de Windows y el paquete `.app` de macOS. |
+
+Las versiones salen de [`requirements.txt`](requirements.txt), los [requisitos opcionales y de build](tools/requirements/) y la [configuración del servidor](deploy/).
+
+## Requisitos y restricciones por descarga
+
+| Descarga | Sistema probado | Hardware y restricciones |
+| --- | --- | --- |
+| Windows GPU | Windows 11 Pro (build 26200) y Windows 10 22H2 (build 19045) | Requiere una NVIDIA compatible con CUDA y un driver compatible con el paquete; no hace falta instalar el CUDA Toolkit para jugar. Pruebas: RTX 5090 con Ryzen 9 9950X3D y 32 GB de RAM; RTX 3080 con Core i7-7700K y 16 GiB de RAM. |
+| Windows CPU | Windows 11 Pro y Windows 10 22H2 en las pruebas de rendimiento en CPU | No requiere NVIDIA ni CUDA. Los dos equipos de la fila anterior son referencias de rendimiento, no requisitos mínimos. |
+| Mac CPU | macOS 26.6.1 en Apple Silicon (`arm64`) | Probado en un Apple M3 Max. El paquete no usa CUDA y no es para Mac Intel. |
+
+El [`fatbin`](fdc/gpu/kernels.fatbin) trae código para `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100` y `sm_120`; el [build](tools/build_kernels.py) también incorpora PTX para `compute_120`. `sm_75` (Turing) es la arquitectura más antigua incluida, no una GPU mínima probada.
+
+Si jugás en CPU, elegí **SIN EFECTOS** (`F10` para alternar). En el [benchmark de FPS](docs/benchmarks/bench_fps/RESULTADOS.md), a 1280 × 720 y sin tope de cuadros ni ventana visible, este modo dio 1739,5 FPS en el Ryzen 9 9950X3D, 789,5 en el Core i7-7700K y 669,7 en la notebook de referencia (Core i7-8565U, 16 GB de RAM, Ubuntu 26.04). Son cifras del banco de pruebas, no FPS en pantalla. En CPU con **FULL**, los tres equipos quedaron por debajo de 30 FPS en todos los casos medidos.
+
+## Navegador
+
+No aplica: el juego se descarga y se ejecuta como aplicación de escritorio. No corre en el navegador.
+
+## Servidor online
+
+El servidor público corre en Docker en un NAS con Linux. El cliente de escritorio se comunica por WebSocket sobre TCP, con mensajes JSON. El servidor comprueba la versión del protocolo al conectar: `PROTOCOL_VERSION = 2`. Los detalles están en [Modo online](docs/ONLINE.md) y en la [configuración de Docker](deploy/README.md).
 
 **[Página del juego](https://futbol.timecore.com.ar/) · [Descargas de escritorio](https://github.com/alejandroruiz9/futbol-de-cabeza/releases/latest)**
 
