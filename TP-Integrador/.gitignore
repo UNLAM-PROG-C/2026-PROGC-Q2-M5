@@ -22,3 +22,32 @@ build/
 # deployment files of the server (deploy/.env has the tunnel token).
 dist/
 deploy/.env
+
+# Notas, specs y registros de trabajo: no van al repositorio.
+# En la raíz sólo se versiona README.md; la documentación nueva va en docs/.
+/*.md
+!/README.md
+# Carpetas ocultas de herramientas locales (configuración, entornos).
+/.*/
+NOTAS*.md
+spec*.md
+revision-*.md
+pasos-nas*
+AGENTS.md
+capturas/
+*.log
+*.bundle
+
+# Sitio y material de estudio fuera del repositorio público.
+/estudio/
+/estudio-v2/
+/landing/
+/landing-estudio/
+/landing-v2/
+/tools/capturas_landing.py
+/tools/capture_comparador.py
+/tools/landing_v2_assets.py
+/tools/make_landing_assets.py
+/kernels-largos-defensa.md
+/tests/test_landing*
+/tests/test_estudio*
