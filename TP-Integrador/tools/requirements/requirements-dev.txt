@@ -1,0 +1,4 @@
+# Development tools (not needed to play): style checks.
+pylint==4.1.3
+# Window captures of the exe (tools/shot_window.py).
+pywin32==312

@@ -1,0 +1,55 @@
+{
+ "backend": "cpu",
+ "quality": "sin-efectos",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": false,
+ "rows": {
+  "sin efecto": {
+   "frames": 7895,
+   "seconds": 10.0,
+   "fps_avg": 789.5,
+   "fps_p1": 602.3,
+   "fps_min": 247.1,
+   "fps_median": 808.6
+  }
+ },
+ "release_runtime": {
+  "game_version": "1.0.10",
+  "python": "3.12.10",
+  "pygame": "2.6.1",
+  "sdl": "dummy",
+  "actual": {
+   "glow": 0.0,
+   "composite": 0.0,
+   "particles": 0.0,
+   "confetti": 0.0,
+   "lights": 0.0,
+   "heat": 0.0,
+   "histogram": 0.0,
+   "fire": 0.0,
+   "confusion": 0.0,
+   "confusion_rot": 0.0,
+   "ice": 0.0,
+   "blackout": 0.0,
+   "night": 0.0,
+   "exposure": 0.0,
+   "crt": 0.0,
+   "crowd": 0.0,
+   "frame": 0.0,
+   "fps": 0.0,
+   "frames": 0,
+   "mode": "off",
+   "quality": "-",
+   "quality_level": "Q0",
+   "quality_mode": "sin-efectos",
+   "quality_name": "SIN EFECTOS",
+   "active": "ninguno",
+   "gpu": "CPU",
+   "reason": null
+  }
+ }
+}

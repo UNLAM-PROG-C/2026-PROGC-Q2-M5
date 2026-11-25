@@ -1,0 +1,141 @@
+{
+ "backend": "cpu",
+ "quality": "full",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": true,
+ "rows": {
+  "sin efecto": {
+   "frames": 90,
+   "seconds": 10.04,
+   "fps_avg": 9.0,
+   "fps_p1": 7.6,
+   "fps_min": 7.6,
+   "fps_median": 9.0
+  },
+  "Hielo": {
+   "frames": 76,
+   "seconds": 10.01,
+   "fps_avg": 7.6,
+   "fps_p1": 6.3,
+   "fps_min": 6.3,
+   "fps_median": 7.7,
+   "active_share": 0.961,
+   "presses": 2,
+   "seen": [
+    "hielo"
+   ],
+   "full": true
+  },
+  "Fuego": {
+   "frames": 29,
+   "seconds": 10.34,
+   "fps_avg": 2.8,
+   "fps_p1": 2.6,
+   "fps_min": 2.6,
+   "fps_median": 2.8,
+   "active_share": 0.966,
+   "presses": 1,
+   "seen": [
+    "fuego"
+   ],
+   "full": true
+  },
+  "Repetición": {
+   "frames": 55,
+   "seconds": 10.05,
+   "fps_avg": 5.5,
+   "fps_p1": 5.0,
+   "fps_min": 5.0,
+   "fps_median": 5.5,
+   "active_share": 0.982,
+   "presses": 2,
+   "seen": [
+    "repetición"
+   ],
+   "full": true
+  },
+  "Confusión": {
+   "frames": 34,
+   "seconds": 10.28,
+   "fps_avg": 3.3,
+   "fps_p1": 2.8,
+   "fps_min": 2.8,
+   "fps_median": 3.2,
+   "active_share": 0.941,
+   "presses": 2,
+   "seen": [
+    "confusión",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Apagón": {
+   "frames": 32,
+   "seconds": 10.0,
+   "fps_avg": 3.2,
+   "fps_p1": 2.7,
+   "fps_min": 2.7,
+   "fps_median": 3.1,
+   "active_share": 0.969,
+   "presses": 2,
+   "seen": [
+    "apagón",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Noche": {
+   "frames": 25,
+   "seconds": 10.34,
+   "fps_avg": 2.4,
+   "fps_p1": 2.2,
+   "fps_min": 2.2,
+   "fps_median": 2.4,
+   "active_share": 0.96,
+   "presses": 1,
+   "seen": [
+    "noche"
+   ],
+   "full": true
+  }
+ },
+ "release_runtime": {
+  "game_version": "1.0.10",
+  "python": "3.12.10",
+  "pygame": "2.6.1",
+  "sdl": "dummy",
+  "actual": {
+   "glow": 0.0,
+   "composite": 0.0,
+   "particles": 0.0,
+   "confetti": 0.0,
+   "lights": 0.0,
+   "heat": 0.0,
+   "histogram": 0.0,
+   "fire": 0.0,
+   "confusion": 0.0,
+   "confusion_rot": 0.0,
+   "ice": 0.0,
+   "blackout": 0.0,
+   "night": 0.0,
+   "exposure": 0.0,
+   "crt": 0.0,
+   "crowd": 0.0,
+   "frame": 0.0,
+   "fps": 0.0,
+   "frames": 0,
+   "mode": "cpu",
+   "quality": "alta",
+   "quality_level": "Q0",
+   "quality_mode": "full",
+   "quality_name": "FULL",
+   "active": "ninguno",
+   "gpu": "CPU",
+   "reason": null
+  }
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "backend": "cpu",
+ "quality": "sin-efectos",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": false,
+ "rows": {
+  "sin efecto": {
+   "frames": 17395,
+   "seconds": 10.0,
+   "fps_avg": 1739.5,
+   "fps_p1": 1400.8,
+   "fps_min": 782.2,
+   "fps_median": 1781.9
+  }
+ }
+}

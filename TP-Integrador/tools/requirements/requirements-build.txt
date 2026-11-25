@@ -1,0 +1,4 @@
+# Herramientas del armado del exe (no hacen falta para jugar):
+#   .venv\Scripts\python.exe -m pip install -r tools/requirements/requirements-build.txt
+#   .venv\Scripts\python.exe tools\build_exe.py
+pyinstaller==6.22.3

@@ -1,0 +1,5 @@
+# Servidor online por defecto: el puerto directo del NAS (sin túnel).
+# Se cambia por otro servidor escribiendo su dirección en la primera línea
+# que no empiece con # (ws:// o wss://; sin esquema se toma como ws://).
+# También valen la opción --server y la variable FDC_SERVER, en ese orden.
+ws://setcomnas.ddns.net:18765/ws

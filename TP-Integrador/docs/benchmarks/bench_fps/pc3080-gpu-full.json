@@ -1,0 +1,143 @@
+{
+ "backend": "gpu",
+ "quality": "full",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": true,
+ "rows": {
+  "sin efecto": {
+   "frames": 553,
+   "seconds": 10.01,
+   "fps_avg": 55.3,
+   "fps_p1": 45.9,
+   "fps_min": 40.3,
+   "fps_median": 53.9
+  },
+  "Hielo": {
+   "frames": 471,
+   "seconds": 10.01,
+   "fps_avg": 47.0,
+   "fps_p1": 34.3,
+   "fps_min": 31.3,
+   "fps_median": 47.4,
+   "active_share": 0.994,
+   "presses": 2,
+   "seen": [
+    "hielo"
+   ],
+   "full": true
+  },
+  "Fuego": {
+   "frames": 364,
+   "seconds": 10.02,
+   "fps_avg": 36.3,
+   "fps_p1": 26.6,
+   "fps_min": 19.8,
+   "fps_median": 38.9,
+   "active_share": 0.995,
+   "presses": 1,
+   "seen": [
+    "fuego"
+   ],
+   "full": true
+  },
+  "Repetición": {
+   "frames": 609,
+   "seconds": 10.0,
+   "fps_avg": 60.9,
+   "fps_p1": 47.7,
+   "fps_min": 26.2,
+   "fps_median": 62.2,
+   "active_share": 0.998,
+   "presses": 2,
+   "seen": [
+    "repetición"
+   ],
+   "full": true
+  },
+  "Confusión": {
+   "frames": 371,
+   "seconds": 10.01,
+   "fps_avg": 37.0,
+   "fps_p1": 28.5,
+   "fps_min": 21.7,
+   "fps_median": 39.5,
+   "active_share": 0.995,
+   "presses": 3,
+   "seen": [
+    "confusión",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Apagón": {
+   "frames": 388,
+   "seconds": 10.01,
+   "fps_avg": 38.8,
+   "fps_p1": 27.5,
+   "fps_min": 20.8,
+   "fps_median": 38.1,
+   "active_share": 0.997,
+   "presses": 2,
+   "seen": [
+    "apagón",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Noche": {
+   "frames": 367,
+   "seconds": 10.02,
+   "fps_avg": 36.6,
+   "fps_p1": 29.0,
+   "fps_min": 22.2,
+   "fps_median": 38.7,
+   "active_share": 0.997,
+   "presses": 1,
+   "seen": [
+    "noche"
+   ],
+   "full": true
+  }
+ },
+ "release_runtime": {
+  "game_version": "1.0.10",
+  "python": "3.12.10",
+  "pygame": "2.6.1",
+  "sdl": "dummy",
+  "actual": {
+   "glow": 0.0,
+   "composite": 0.0,
+   "particles": 0.0,
+   "confetti": 0.0,
+   "lights": 0.0,
+   "heat": 0.0,
+   "histogram": 0.0,
+   "fire": 0.0,
+   "confusion": 0.0,
+   "confusion_rot": 0.0,
+   "ice": 0.0,
+   "blackout": 0.0,
+   "night": 0.0,
+   "exposure": 0.0,
+   "crt": 0.0,
+   "crowd": 0.0,
+   "frame": 0.0,
+   "fps": 0.0,
+   "frames": 0,
+   "mode": "gpu",
+   "quality": "alta",
+   "quality_level": "Q0",
+   "quality_mode": "full",
+   "quality_name": "FULL",
+   "active": "ninguno",
+   "gpu": "NVIDIA GeForce RTX 3080",
+   "reason": null
+  },
+  "arch": "sm_86",
+  "prebuilt": "kernels.fatbin"
+ }
+}

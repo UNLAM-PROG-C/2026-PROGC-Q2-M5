@@ -1,0 +1,2 @@
+# WebSocket for the desktop client and online server.
+websockets==17.1

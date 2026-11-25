@@ -1,0 +1,106 @@
+{
+ "backend": "gpu",
+ "quality": "full",
+ "secs": 10.0,
+ "window": [
+  1280,
+  720
+ ],
+ "full": true,
+ "rows": {
+  "sin efecto": {
+   "frames": 1835,
+   "seconds": 10.01,
+   "fps_avg": 183.4,
+   "fps_p1": 142.8,
+   "fps_min": 127.3,
+   "fps_median": 186.1
+  },
+  "Hielo": {
+   "frames": 1669,
+   "seconds": 10.0,
+   "fps_avg": 166.9,
+   "fps_p1": 131.9,
+   "fps_min": 121.5,
+   "fps_median": 169.1,
+   "active_share": 0.997,
+   "presses": 2,
+   "seen": [
+    "hielo"
+   ],
+   "full": true
+  },
+  "Fuego": {
+   "frames": 1351,
+   "seconds": 10.0,
+   "fps_avg": 135.1,
+   "fps_p1": 102.0,
+   "fps_min": 75.6,
+   "fps_median": 135.8,
+   "active_share": 0.998,
+   "presses": 1,
+   "seen": [
+    "fuego"
+   ],
+   "full": true
+  },
+  "Repetición": {
+   "frames": 1982,
+   "seconds": 10.0,
+   "fps_avg": 198.1,
+   "fps_p1": 164.2,
+   "fps_min": 133.2,
+   "fps_median": 202.4,
+   "active_share": 0.999,
+   "presses": 2,
+   "seen": [
+    "repetición"
+   ],
+   "full": true
+  },
+  "Confusión": {
+   "frames": 1359,
+   "seconds": 10.0,
+   "fps_avg": 135.8,
+   "fps_p1": 101.1,
+   "fps_min": 88.5,
+   "fps_median": 136.6,
+   "active_share": 0.999,
+   "presses": 3,
+   "seen": [
+    "confusión",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Apagón": {
+   "frames": 1445,
+   "seconds": 10.0,
+   "fps_avg": 144.5,
+   "fps_p1": 110.2,
+   "fps_min": 91.7,
+   "fps_median": 146.1,
+   "active_share": 0.999,
+   "presses": 2,
+   "seen": [
+    "apagón",
+    "ninguno"
+   ],
+   "full": true
+  },
+  "Noche": {
+   "frames": 1286,
+   "seconds": 10.0,
+   "fps_avg": 128.6,
+   "fps_p1": 113.5,
+   "fps_min": 88.7,
+   "fps_median": 129.2,
+   "active_share": 0.999,
+   "presses": 2,
+   "seen": [
+    "noche"
+   ],
+   "full": true
+  }
+ }
+}

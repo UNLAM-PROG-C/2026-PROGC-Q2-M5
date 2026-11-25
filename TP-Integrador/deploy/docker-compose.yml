@@ -1,0 +1,67 @@
+# Servidor online de Futbol de Cabeza para el NAS (Docker + Compose).
+#
+#   cp deploy/.env.example deploy/.env     (y completar lo que haga falta)
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# El puerto del HOST es configurable porque en el NAS el 8765 y el 8080 ya
+# están ocupados: dentro del contenedor el servidor sigue en 8765.
+services:
+  fdc-server:
+    # Nombre fijo: el túnel de Cloudflare apunta a http://fdc-server:8765
+    # (nombre de contenedor y puerto, no la IP del NAS).
+    container_name: fdc-server
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: fdc-server:local
+    environment:
+      # Vacío = sólo la vista pública del panel (/status).
+      FDC_PANEL_PASSWORD: ${FDC_PANEL_PASSWORD:-}
+    # Sólo para probar desde la LAN: el túnel NO usa este puerto.
+    ports:
+      - "${FDC_HOST_PORT:-18765}:8765"
+    mem_limit: 256m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/status.json', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - fdc
+      - tunnel
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Opcional: un cloudflared propio para este servidor. En el NAS ya corre
+  # el túnel de timecore.com.ar, así que lo normal es NO usar este servicio
+  # y sumar el hostname al túnel existente (ver deploy/README.md).
+  cloudflared:
+    profiles: ["tunel"]
+    image: cloudflare/cloudflared:latest
+    container_name: fdc-tunnel
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
+    mem_limit: 128m
+    restart: unless-stopped
+    depends_on:
+      - fdc-server
+    networks:
+      - tunnel
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  fdc:
+    name: fdc-net
+  # La red bridge donde vive el cloudflared que ya corre en el NAS. Es
+  # externa: la crea (y la nombra) el proyecto de ese túnel.
+  tunnel:
+    name: ${FDC_TUNNEL_NETWORK:-timecore-prod_default}
+    external: true
